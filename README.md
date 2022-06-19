@@ -33,11 +33,6 @@ python -m unittest discover -v
 
 Or, install [**tox**](https://tox.wiki/en/latest/index.html), then from within `rodeo-jax` enter command line: `tox`.
 
-## Results
+## Usage
 
-Our main results are the four figures in our paper and a table of computational comparisons.
-
-For the figures please open the jupyter notebook `./results/figures.ipnyb` and run the cells in the notebook.
-
-For the table of timings please open the jupyer notebook `./results/timings.ipynb` and run the cells in the notebook. The output corresponds to the last 4 columns of Table 1 respectively.
-
+Please see the detailed example in the tutorial [introduction](examples/tutorial.ipynb).
