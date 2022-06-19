@@ -1,0 +1,9 @@
+.ipynb_checkpoints
+.DS_Store
+__pycache__
+dist
+build
+.tox
+/rodeo.egg-info/
+/examples/figures/
+/examples/saves/
