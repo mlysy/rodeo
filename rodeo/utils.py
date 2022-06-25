@@ -24,32 +24,6 @@ def block_diag(X):
         
     return mat
 
-def zero_pad(W, X, p):
-    r"""
-    Pad an array of blocks with 0s such that every block has the same dimension.
-
-    Args:
-        W (ndarray(n_block, n_eq, n_deriv + 1)): Initial W to be padded.
-        X (ndarray(n_block, n_deriv + 1)): Initial X0 to be padded.
-        p (int): Number of derivatives for each block in the prior.
-
-    Returns:
-        (tuple)
-        - **X_pad** (ndarray(n_block, n_deriv_prior)): Padded X0.
-        - **W_pad** (ndarray(n_block, n_eq, n_deriv_prior)): Padded W.
-    
-    """
-    def pad_fun(w, x):
-        n_deriv = w.shape[1]
-        pad_dim = p - n_deriv
-        w_pad = jnp.pad(w, [(0, 0), (0, pad_dim)])
-        x_pad = jnp.pad(x, [(0, pad_dim)])
-        return w_pad, x_pad
-
-    W_pad, X_pad = jax.vmap(lambda w, x: pad_fun(w, x))(W, X)
-
-    return W_pad, X_pad
-
 def mvncond(mu, Sigma, icond):
     """
     Calculates A, b, and V such that :math:`y[!icond] | y[icond] \sim N(A y[icond] + b, V)`.
