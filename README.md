@@ -36,3 +36,19 @@ Or, install [**tox**](https://tox.wiki/en/latest/index.html), then from within `
 ## Usage
 
 Please see the detailed example in the tutorial [introduction](examples/tutorial.ipynb).
+
+## Results
+
+**rodeo** is also capable of performing parameter inference. The main results for three different ODEs found in `/examples/`:
+
+### FitzHugh-Nagumo
+
+![fitzhugh](/docs/figures/fitzfigure.png)
+
+### SEIRAH
+
+![seirah](/docs/figures/seirahfigure.png)
+
+### Hes1
+
+![hes1](/docs/figures/hes1figure.png)
