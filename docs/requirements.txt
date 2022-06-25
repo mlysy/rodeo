@@ -1,0 +1,4 @@
+jax
+jaxlib
+sphinx_rtd_theme
+recommonmark

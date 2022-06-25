@@ -9,7 +9,7 @@ on the time interval :math:`t \in [a, b]` with initial condition :math:`X_a = x_
 
 The stochastic solver proceeds via Kalman filtering and smoothing of "interrogations" of the ODE model as described in Chkrebtii et al 2016, Schober et al 2019.  In the context of the underlying Kalman filterer/smoother, the Gaussian state-space model is
 
-:: math::
+.. math::
 
 X_n = c_n + Q_n x_{n-1} + R_n^{1/2} \epsilon_n
 

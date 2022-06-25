@@ -164,9 +164,9 @@ def _smooth(var_state_filt, var_state_pred, wgt_state):
     Common part of :func:`kalmantv.smooth_sim` and :func:`kalmantv.smooth_mv`.
 
     Args:
-        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by: math: `\Sigma_{n | n}`.
-        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\Sigma_{n | n-1}`.
-        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by: math: `Q`.
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
 
     Returns:
         (tuple):
@@ -185,24 +185,24 @@ def smooth_mv(mu_state_next,
               mu_state_pred,
               var_state_pred,
               wgt_state):
-    """
+    r"""
     Perform one step of the Kalman mean/variance smoother.
 
-    Calculates: math: `\theta_{n|N}` from: math: `\theta_{n+1|N}`, : math: `\theta_{n|n}`, and: math: `\theta_{n+1|n}`.
+    Calculates :math:`\theta_{n|N}` from :math:`\theta_{n+1|N}`, :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
 
     Args:
-        mu_state_next(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...N]; denoted by: math: `\mu_{n+1 | N}`.
-        var_state_next(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...N]; denoted by: math: `\Sigma_{n+1 | N}`.
-        mu_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by: math: `\mu_{n | n}`.
-        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by: math: `\Sigma_{n | n}`.
-        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\mu_{n | n-1}`.
-        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\Sigma_{n | n-1}`.
-        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by: math: `Q`.
+        mu_state_next(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...N]; denoted by :math:`\mu_{n+1 | N}`.
+        var_state_next(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...N]; denoted by :math:`\Sigma_{n+1 | N}`.
+        mu_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by :math:`\mu_{n | n}`.
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\mu_{n | n-1}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
 
     Returns:
         (tuple):
-        - **mu_state_smooth ** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N]; denoted by: math: `\mu_{n | N}`.
-        - **var_state_smooth ** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N]; denoted by: math: `\Sigma_{n | N}`.
+        - **mu_state_smooth** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N]; denoted by :math:`\mu_{n | N}`.
+        - **var_state_smooth** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N]; denoted by :math:`\Sigma_{n | N}`.
 
     """
     var_state_temp, var_state_temp_tilde = _smooth(
@@ -224,18 +224,18 @@ def smooth_sim(x_state_next,
     r"""
     Perform one step of the Kalman sampling smoother.
 
-    Calculates a draw: math: `x_{n|N}` from: math: `x_{n+1|N}`, : math: `\theta_{n|n}`, and: math: `\theta_{n+1|n}`.
+    Calculates a draw :math:`x_{n|N}` from :math:`x_{n+1|N}`, :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
 
     Args:
-        x_state_next(ndarray(n_state)): Simulated state at time n+1 given observations from times[0...N]; denoted by: math: `\x_{n+1 | N}`.
-        mu_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by: math: `\mu_{n | n}`.
-        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by: math: `\Sigma_{n | n}`.
-        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\mu_{n | n-1}`.
-        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\Sigma_{n | n-1}`.
-        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by: math: `Q`.
+        x_state_next(ndarray(n_state)): Simulated state at time n+1 given observations from times[0...N]; denoted by :math:`\x_{n+1 | N}`.
+        mu_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by :math: `\mu_{n | n}`.
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\mu_{n | n-1}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
 
     Returns:
-        (ndarray(n_state)): Sample solution at time n given observations from times[0...N]; denoted by: math: `X_{n | N}`.
+        (ndarray(n_state)): Sample solution at time n given observations from times[0...N]; denoted by :math:`X_{n | N}`.
 
     """
     var_state_temp, var_state_temp_tilde = _smooth(
@@ -259,23 +259,23 @@ def smooth(x_state_next,
     r"""
     Perform one step of both Kalman mean/variance and sampling smoothers.
 
-    Combines: func: `kalmantv.smooth_mv` and : func: `kalmantv.smooth_sim` steps to get : math: `x_{n|N}` and : math: `\theta_{n|N}` from : math: `\theta_{n+1|N}`, : math: `\theta_{n|n}`, and : math: `\theta_{n+1|n}`.
+    Combines :func:`kalmantv.smooth_mv` and :func:`kalmantv.smooth_sim` steps to get :math:`x_{n|N}` and :math:`\theta_{n|N}` from :math:`\theta_{n+1|N}`, :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
 
     Args:
-        x_state_next(ndarray(n_state)): Simulated state at time n+1 given observations from times[0...N]; denoted by: math: `\x_{n+1 | N}`.
-        mu_state_next(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...N]; denoted by: math: `\mu_{n+1 | N}`.
-        var_state_next(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...N]; denoted by: math: `\Sigma_{n+1 | N}`.
-        mu_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by: math: `\mu_{n | n}`.
-        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by: math: `\Sigma_{n | n}`.
-        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\mu_{n | n-1}`.
-        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\Sigma_{n | n-1}`.
-        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by: math: `Q`.
+        x_state_next(ndarray(n_state)): Simulated state at time n+1 given observations from times[0...N]; denoted by :math:`\x_{n+1 | N}`.
+        mu_state_next(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...N]; denoted by :math:`\mu_{n+1 | N}`.
+        var_state_next(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...N]; denoted by :math:`\Sigma_{n+1 | N}`.
+        mu_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by :math:`\mu_{n | n}`.
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\mu_{n | n-1}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
         
     Returns:
         (tuple):
-        - **x_state_smooth ** (ndarray(n_state)): Sample solution at time n given observations from times[0...N]; denoted by: math: `X_{n | N}`.
-        - **mu_state_smooth ** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N]; denoted by: math: `\mu_{n | N}`.
-        - **var_state_smooth ** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N]; denoted by: math: `\Sigma_{n | N}`.
+        - **x_state_smooth** (ndarray(n_state)): Sample solution at time n given observations from times[0...N]; denoted by :math:`X_{n | N}`.
+        - **mu_state_smooth** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N]; denoted by :math:`\mu_{n | N}`.
+        - **var_state_smooth** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N]; denoted by :math:`\Sigma_{n | N}`.
 
     """
     var_state_temp, var_state_temp_tilde = _smooth(
@@ -304,16 +304,16 @@ def forecast(mu_state_pred,
     Forecasts the mean and variance of the measurement at time step n given observations from times[0...n-1].
 
     Args:
-        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\mu_{n | n-1}`.
-        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by: math: `\Sigma_{n | n-1}`.
-        mu_meas(ndarray(n_meas)): Transition offsets defining the measure prior; denoted by: math: `d`.
-        wgt_meas(ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by: math: `W`.
-        var_meas(ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by: math: `\Sigma_n`.
+        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\mu_{n | n-1}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        mu_meas(ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d`.
+        wgt_meas(ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W`.
+        var_meas(ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
 
     Returns:
         (tuple):
-        - **mu_fore ** (ndarray(n_meas)): Mean estimate for measurement at n given observations from [0...n-1]
-        - **var_fore ** (ndarray(n_meas, n_meas)): Covariance of estimate for state at time n given observations from times[0...n-1]
+        - **mu_fore** (ndarray(n_meas)): Mean estimate for measurement at n given observations from [0...n-1]
+        - **var_fore** (ndarray(n_meas, n_meas)): Covariance of estimate for state at time n given observations from times[0...n-1]
     """
     mu_fore = wgt_meas.dot(mu_state_pred) + mu_meas
     var_fore = jnp.linalg.multi_dot(
