@@ -15,7 +15,6 @@ Please note that this is the **jax**-only version of **rodeo**. For the legacy v
 ## Installation
 
 Download the repo from GitHub and then install with the `setup.cfg` script:
-
 ```bash
 git clone https://github.com/mlysy/rodeo-jax.git
 cd rodeo-jax
@@ -25,13 +24,22 @@ pip install .
 ## Unit Testing
 
 The unit tests can be ran through the following commands:
-
 ```bash
 cd tests
 python -m unittest discover -v
 ```
 
 Or, install [**tox**](https://tox.wiki/en/latest/index.html), then from within `rodeo-jax` enter command line: `tox`.
+
+## Documentation
+
+The HTML documentation can be compiled from the root folder:
+```bash
+pip install .[docs]
+cd docs
+make html
+```
+This will create the documentation in `docs/build`.
 
 ## Usage
 
