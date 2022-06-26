@@ -159,4 +159,5 @@ Functions Documentation
    ./ode_solve
    ./kalmantv
    ./ibm
+   ./gauss_markov
    ./utils
