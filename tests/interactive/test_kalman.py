@@ -38,12 +38,14 @@ wgt_state = jnp.repeat(_wgt_state[jnp.newaxis], n_tot*n_res-1, 0)
 # meas
 _mu_meas = jax.random.normal(subkeys[3], (n_meas,))
 mu_meas = jnp.repeat(_mu_meas[jnp.newaxis], n_tot*n_res, 0)
-_var_meas = jax.random.normal(subkeys[4], (n_meas, n_meas))
-_var_meas = _var_meas.dot(_var_meas.T)
+# _var_meas = jax.random.normal(subkeys[4], (n_meas, n_meas))
+# _var_meas = _var_meas.dot(_var_meas.T)
+_var_meas = 1e-10*jnp.eye(n_meas)
 var_meas = jnp.repeat(_var_meas[jnp.newaxis], n_tot*n_res, 0)
 _wgt_meas = jax.random.normal(subkeys[5], (n_meas, n_state))
 wgt_meas = jnp.repeat(_wgt_meas[jnp.newaxis], n_tot*n_res, 0)
-z_meas = jax.random.normal(subkeys[6], (n_tot*n_res, n_meas))
+# z_meas = jax.random.normal(subkeys[6], (n_tot*n_res, n_meas))
+z_meas = jnp.zeros((n_tot*n_res, n_meas))
 # obs
 _mu_obs = jax.random.normal(subkeys[7], (n_obs,))
 mu_obs = jnp.repeat(_mu_obs[jnp.newaxis], n_tot*n_res, 0)
@@ -98,7 +100,7 @@ var_block = jnp.vstack([var11_12, var21_22])
 logdens2 = jsp.stats.multivariate_normal.logpdf(y_obs.flatten(), 
                                                 mean=mu_ycz.flatten(), 
                                                 cov=var_block)
-print_diff("logdens", logdens, logdens2)
+print_diff("gss logdens", logdens, logdens2)
 
 # --- n_res > 1 ------------------------------------------------------------------------
 n_res = 2
@@ -160,4 +162,21 @@ var_block = jnp.vstack([var11_12, var21_22])
 logdens2 = jsp.stats.multivariate_normal.logpdf(y_obs.flatten(), 
                                                 mean=mu_ycz.flatten(), 
                                                 cov=var_block)
-print_diff("logdens", logdens, logdens2)
+print_diff("gss logdens, n_res>1", logdens, logdens2)
+
+# --- ODE ------------------------------------------------------------------------
+tmin = 0.
+tmax = 1.
+x0 = mu_state_init
+W = wgt_meas[0]
+theta = jnp.zeros((n_state,))
+
+def ode_fun(X, t, theta):
+    return -mu_meas[0]
+
+logdens3 = double_ode_filter(key, ode_fun, x0, theta,
+                             tmin, tmax, W,
+                             mu_state[1], wgt_state[0], var_state[1],
+                             z_meas, mu_obs[0], wgt_obs[0], var_obs[0], y_out)
+
+print_diff("ode logdens", logdens, logdens3)
