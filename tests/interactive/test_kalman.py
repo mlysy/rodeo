@@ -114,6 +114,7 @@ mu_meas = jnp.repeat(_mu_meas[jnp.newaxis], n_tot*n_res, 0)
 var_meas = jnp.repeat(_var_meas[jnp.newaxis], n_tot*n_res, 0)
 wgt_meas = jnp.repeat(_wgt_meas[jnp.newaxis], n_tot*n_res, 0)
 z_meas = jax.random.normal(subkeys[6], (n_tot*n_res, n_meas))
+z_meas = jnp.zeros((n_tot*n_res, n_meas))
 # obs
 mu_obs = jnp.repeat(_mu_obs[jnp.newaxis], n_tot*n_res, 0)
 var_obs = jnp.repeat(_var_obs[jnp.newaxis], n_tot*n_res, 0)
@@ -177,6 +178,6 @@ def ode_fun(X, t, theta):
 logdens3 = double_ode_filter(key, ode_fun, x0, theta,
                              tmin, tmax, W,
                              mu_state[1], wgt_state[0], var_state[1],
-                             z_meas, mu_obs[0], wgt_obs[0], var_obs[0], y_out)
+                             mu_obs[0], wgt_obs[0], var_obs[0], y_out)
 
 print_diff("ode logdens", logdens, logdens3)
