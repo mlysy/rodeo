@@ -96,7 +96,7 @@ def fitz_example(load_calcs=False):
             theta_euler[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_euler[i, :, :n_theta] = np.exp(theta_euler[i, :, :n_theta])
             
-        #np.save('saves/fitz_theta_euler.npy', theta_euler)
+        np.save('saves/fitz_theta_euler.npy', theta_euler)
         
         # Parameter inference using Kalman solver
         theta_kalman = np.zeros((len(dtlst), n_samples, n_theta+n_obs))
@@ -110,14 +110,14 @@ def fitz_example(load_calcs=False):
                                            gamma, phi_init = phi_init)
             theta_kalman[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_kalman[i, :, :n_theta] = np.exp(theta_kalman[i, :, :n_theta])
-        #np.save('saves/fitz_theta_kalman.npy', theta_kalman)
+        np.save('saves/fitz_theta_kalman.npy', theta_kalman)
 
         # Parameter inference using diffrax
         phi_hat, phi_var = inf.phi_fit(Y_t, np.array([None, None]), obs_t, obs_t, phi_mean, phi_sd, inf.diffrax_nlpost,
                                       gamma, phi_init = phi_init)
         theta_diffrax = inf.phi_sample(phi_hat, phi_var, n_samples)
         theta_diffrax[:, :n_theta] = np.exp(theta_diffrax[:, :n_theta])
-        #np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
+        np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
         
     # Produces the graph in Figure 3
     plt.rcParams.update({'font.size': 20})

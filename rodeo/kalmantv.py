@@ -319,4 +319,34 @@ def forecast(mu_state_pred,
     var_fore = jnp.linalg.multi_dot(
         [wgt_meas, var_state_pred, wgt_meas.T]) + var_meas
     return mu_fore, var_fore
-    
+
+
+def smooth_cond(mu_state_filt,
+                var_state_filt,
+                mu_state_pred,
+                var_state_pred,
+                wgt_state):
+    r"""
+    Perform one step of the Kalman sampling smoother conditional.
+
+    Calculates :math:`A_{n|N}`, :math:`b_{n|N}`, :math:`V_{n|N}` from :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
+
+    Args:
+        mu_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by :math:`\mu_{n | n}`.
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        mu_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\mu_{n | n-1}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
+
+    Returns:
+        - **wgt_state_cond** (ndarray(n_state, n_state)): Transition of smooth conditional at time n given observations from times[0...N]; :math:`A_{n|N}`.
+        - **mu_state_cond** (ndarray(n_state)): Offset of smooth conditional at time n given observations from times[0...N]; :math:`b_{n|N}`.
+        - *var_state_cond** (ndarray(n_state, n_state)): Variance of smooth conditional at time n given observations from times[0...N]; :math:`V_{n|N}`.
+
+    """
+    var_state_temp, wgt_state_cond = _smooth(
+        var_state_filt, var_state_pred, wgt_state
+    )
+    mu_state_cond = mu_state_filt - wgt_state_cond.dot(mu_state_pred)
+    var_state_cond = var_state_filt - wgt_state_cond.dot(var_state_temp.T)
+    return wgt_state_cond, mu_state_cond, var_state_cond

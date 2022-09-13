@@ -8,6 +8,7 @@ from jax import random, jacfwd, jacrev, grad, lax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from double_filter import *
+from fenrir_filter import *
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -17,7 +18,9 @@ import matplotlib.lines as mlines
 import warnings
 warnings.filterwarnings('ignore')
 
-df_jit = jax.jit(double_ode_filter, static_argnums=(1, ))
+# jit double filter and fenrir
+df_jit = jax.jit(double_ode_filter, static_argnums=(1, 14, 15))
+f_jit = jax.jit(fenrir_filter, static_argnums=(0))
 
 class filter_inference:
     r"""
@@ -82,8 +85,8 @@ class filter_inference:
                 xx0.append(x0[i])
         return jnp.array(xx0)
 
-    def double_filter_nlpost(self, phi, Y_t, x0, phi_mean, phi_sd):
-        r"Compute the negative loglikihood of :math:`Y_t` using the KalmanODE."
+    def double_filter_nlpost(self, phi, Y_t, x0, phi_mean, phi_sd, double, varzero):
+        r"Compute the negative loglikihood of :math:`Y_t` using the double filter algorithm."
         phi_ind = len(phi_mean)
         xx0 = self.x0_initialize(phi, x0, phi_ind)
         phi = phi[:phi_ind]
@@ -91,27 +94,43 @@ class filter_inference:
         xx0 = self.funpad(xx0, 0, theta)
         self.key, subkey = jax.random.split(self.key)
         lp = df_jit(subkey, self.fun, xx0, theta, self.tmin, self.tmax, self.W, 
-                    self.mu_state, self.wgt_state, self.var_state,
-                    self.mu_obs, self.wgt_obs, self.var_obs, Y_t)
+                    self.wgt_state, self.mu_state, self.var_state,
+                    self.wgt_obs, self.mu_obs, self.var_obs, Y_t, double, varzero)
         lp += self.logprior(phi, phi_mean, phi_sd)
         return -lp
 
-    def phi_fit(self, Y_t, x0, phi_mean, phi_sd, phi_init, method="Newton-CG"):
+    def fenrir_nlpost(self, phi, Y_t, x0, phi_mean, phi_sd, double, varzero):
+        r"Compute the negative loglikihood of :math:`Y_t` using the fenrir algorithm."
+        phi_ind = len(phi_mean)
+        xx0 = self.x0_initialize(phi, x0, phi_ind)
+        phi = phi[:phi_ind]
+        theta = jnp.exp(phi)
+        xx0 = self.funpad(xx0, 0, theta)
+        lp = f_jit(self.fun, xx0, theta, self.tmin, self.tmax, self.W, 
+                   self.wgt_state, self.mu_state, self.var_state,
+                   self.wgt_obs, self.mu_obs, self.var_obs, Y_t)
+        lp += self.logprior(phi, phi_mean, phi_sd)
+        return -lp
+
+
+    def phi_fit(self, Y_t, x0, phi_mean, phi_sd, phi_init, obj_fun, method="Newton-CG", double=True, varzero=True):
         r"""Compute the optimized :math:`\log{\theta}` and its variance given 
             :math:`Y_t`."""
         
         n_phi = len(phi_init)
-        gradf = grad(self.double_filter_nlpost)
-        hes = jacfwd(jacrev(self.double_filter_nlpost))
-        opt_res = sp.optimize.minimize(self.double_filter_nlpost, phi_init,
-                                       args=(Y_t, x0, phi_mean, phi_sd),
+        gradf = grad(obj_fun)
+        hes = jacfwd(jacrev(obj_fun))
+        opt_res = sp.optimize.minimize(obj_fun, phi_init,
+                                       args=(Y_t, x0, phi_mean, phi_sd, double, varzero),
                                        method=method,
                                        jac=gradf)
         phi_hat = opt_res.x
-        phi_fisher = hes(phi_hat, Y_t, x0, phi_mean, phi_sd)
-        phi_cho, low = jsp.linalg.cho_factor(phi_fisher)
-        phi_var = jsp.linalg.cho_solve((phi_cho, low), jnp.eye(n_phi))
-        return phi_hat, phi_var
+        phi_fisher = hes(phi_hat, Y_t, x0, phi_mean, phi_sd, double, varzero)
+        # phi_cho, low = jsp.linalg.cho_factor(phi_fisher)
+        # phi_var = jsp.linalg.cho_solve((phi_cho, low), jnp.eye(n_phi))
+        phi_var = jsp.linalg.inv(phi_fisher)
+        return phi_hat, phi_var, phi_fisher
+
         
     def phi_sample(self, phi_hat, phi_var, n_samples):
         r"""Simulate :math:`\theta` given the :math:`\log{\hat{\theta}}` 

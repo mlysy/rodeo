@@ -62,6 +62,44 @@ def kalman_theta(m, y, mu, Sigma):
         V_mn = V_mn.squeeze(axis=(0, 2))
     return mu_mn, V_mn
 
+def gauss_dens(z, y, mu, Sigma, n_res):
+    """
+    Calculate p(Y_{0:T} | Z_{1:T}).
+
+    Args:
+        z (ndarray(n,n_meas)): Measurement variable observations; Z_{1:T}.
+        mu (ndarray(k,n_dim)): Joint mean.
+        Sigma (ndarray(k,n_dim,k,n_dim)): Joint variance.
+        n_res (int): Resolution number.
+
+    Returns:
+        float: Logdensity of p(Y_{0:T}|Z_{1:T}).
+    """
+    # dimensions
+    n_tot, n_dim = mu.shape
+    n_z, n_meas = z.shape
+    n_obs = n_dim - n_meas
+    z0_ind = np.arange(n_obs, n_dim)
+    # conditioning indices
+    icond = np.full((n_tot, n_dim), False)
+    icond[:, n_obs:n_dim] = True
+    # delete z_0 indices
+    icond = np.delete(np.ravel(icond), z0_ind)
+    mu = np.delete(np.ravel(mu), z0_ind)
+    Sigma = np.reshape(Sigma, (n_tot*n_dim, n_tot*n_dim))
+    Sigma = np.delete(Sigma, z0_ind, axis=0)
+    Sigma = np.delete(Sigma, z0_ind, axis=1)
+    A, b, V = mvncond(mu=mu,
+                      Sigma=Sigma,
+                      icond=icond)
+    imarg = ([True]*n_obs + [False]*n_obs*(n_res-1))*(n_tot//n_res)
+    mu_ycz = (A.dot(np.ravel(z)) + b)[np.array(imarg)]
+    var_ycz = V[np.ix_(imarg, imarg)]
+    logdens = jsp.stats.multivariate_normal.logpdf(y.flatten(),
+                                                   mean=mu_ycz,
+                                                   cov=var_ycz)
+    return logdens
+
 def fitz_setup(self):
     n_deriv = 1  # Total state
     n_obs = 2  # Total measures
