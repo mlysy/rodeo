@@ -133,12 +133,10 @@ class TestKalmanTVGM(unittest.TestCase):
         mu_state_smooth, var_state_smooth = utils.kalman_theta(
             m=[0, 1], y=self.x_meas, mu=self.mu_gm, Sigma=self.var_gm
         )
-        icond = [False]*self.n_state + [True]*self.n_state
-        icond = jnp.array(icond)
         A, b, V = mvncond(
             mu=mu_state_smooth.ravel(),
             Sigma=var_state_smooth.reshape(2*self.n_state, 2*self.n_state),
-            icond=icond
+            icond=jnp.array([False]*self.n_state + [True]*self.n_state)
         )
         mu_state_sim1 = A.dot(self.x_state_next)+b
         # x_state_smooth1 = random.multivariate_normal(self.key, A.dot(self.x_state_next)+b, V)
@@ -178,12 +176,10 @@ class TestKalmanTVGM(unittest.TestCase):
         mu_state_smooth1, var_state_smooth1 = utils.kalman_theta(
             m=[0, 1], y=self.x_meas, mu=self.mu_gm, Sigma=self.var_gm
         )
-        icond = [False]*self.n_state + [True]*self.n_state
-        icond = jnp.array(icond)
         A, b, V = mvncond(
             mu=mu_state_smooth1.ravel(),
             Sigma=var_state_smooth1.reshape(2*self.n_state, 2*self.n_state),
-            icond=icond
+            icond=jnp.array([False]*self.n_state + [True]*self.n_state)
         )
         mu_state_sim1 = A.dot(self.x_state_next)+b
         #x_state_smooth1 = ktv._state_sim(

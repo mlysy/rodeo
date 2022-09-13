@@ -125,7 +125,7 @@ def kalman_setup(self):
     key = random.PRNGKey(0)
     key, *subkey = random.split(key, 3)
     self.n_meas = random.randint(subkey[0], (1,), 1, 4)[0] 
-    self.n_state = self.n_meas + random.randint(subkey[1], (1,), 1, 5)[0]
+    self.n_state = int(self.n_meas + random.randint(subkey[1], (1,), 1, 5)[0])
     self.n_tot = 2
     #self.n_meas = 3
     #self.n_state = 4
