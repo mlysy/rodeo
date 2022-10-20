@@ -233,6 +233,44 @@ class TestKalmanTVGM(unittest.TestCase):
         self.assertAlmostEqual(utils.rel_err(V, var_state_sim2), 0.0)
         self.assertAlmostEqual(utils.rel_err(mu_state_smooth1[0], mu_state_smooth2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var_state_smooth1[0, :, 0, :].squeeze(), var_state_smooth2), 0.0)
+    
+    def test_smooth_cond(self):
+        # theta_{0|0}
+        mu_state_filt, var_state_filt = utils.kalman_theta(
+            m=0, y=jnp.atleast_2d(self.x_meas[0]), mu=self.mu_gm, Sigma=self.var_gm
+        )
+        # theta_{1|0}
+        mu_state_pred, var_state_pred = utils.kalman_theta(
+            m=1, y=jnp.atleast_2d(self.x_meas[0]), mu=self.mu_gm, Sigma=self.var_gm
+        )
+        # theta_{0:1|1}
+        mu_state_smooth, var_state_smooth = utils.kalman_theta(
+            m=[0, 1], y=self.x_meas, mu=self.mu_gm, Sigma=self.var_gm
+        )
+        A, b, V = mvncond(
+            mu=mu_state_smooth.ravel(),
+            Sigma=var_state_smooth.reshape(2*self.n_state, 2*self.n_state),
+            icond=jnp.array([False]*self.n_state + [True]*self.n_state)
+        )
+        # mu_state_sim1 = A.dot(self.x_state_next)+b
+        # x_state_smooth1 = random.multivariate_normal(self.key, A.dot(self.x_state_next)+b, V)
+        #x_state_smooth1 = ktv._state_sim(
+        #    mu_state=A.dot(self.x_state_next)+b,
+        #    var_state=V,
+        #    z_state=self.z_state
+        #)
+
+        A2, b2, V2 = ktv.smooth_cond(
+            mu_state_filt=mu_state_filt,
+            var_state_filt=var_state_filt,
+            mu_state_pred=mu_state_pred,
+            var_state_pred=var_state_pred,
+            wgt_state=self.wgt_state[0]
+        )
+
+        self.assertAlmostEqual(utils.rel_err(A, A2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(b, b2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(V, V2), 0.0)
 
 if __name__ == '__main__':
     unittest.main()

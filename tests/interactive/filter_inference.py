@@ -21,6 +21,7 @@ warnings.filterwarnings('ignore')
 # jit double filter and fenrir
 df_jit = jax.jit(double_ode_filter, static_argnums=(1, 14, 15))
 f_jit = jax.jit(fenrir_filter, static_argnums=(0))
+ng_jit = jax.jit(fenrir_filterng, static_argnums=(0, 13))
 
 class filter_inference:
     r"""
@@ -69,6 +70,7 @@ class filter_inference:
         self.wgt_obs = None
         self.var_obs = None
         self.funpad = None
+        self.obs_fun = None
 
     def logprior(self, x, mean, sd):
         r"Calculate the loglikelihood of the lognormal distribution."
@@ -112,6 +114,18 @@ class filter_inference:
         lp += self.logprior(phi, phi_mean, phi_sd)
         return -lp
 
+    def fenrir_nlpostng(self, phi, Y_t, x0, phi_mean, phi_sd, double, varzero):
+        r"Compute the negative loglikihood of :math:`Y_t` using the non-gaussian algorithm."
+        phi_ind = len(phi_mean)
+        xx0 = self.x0_initialize(phi, x0, phi_ind)
+        phi = phi[:phi_ind]
+        theta = jnp.exp(phi)
+        xx0 = self.funpad(xx0, 0, theta)
+        lp = ng_jit(self.fun, xx0, theta, self.tmin, self.tmax, self.W, 
+                    self.wgt_state, self.mu_state, self.var_state,
+                    self.wgt_obs, self.mu_obs, self.var_obs, Y_t, self.obs_fun)
+        lp += self.logprior(phi, phi_mean, phi_sd)
+        return -lp
 
     def phi_fit(self, Y_t, x0, phi_mean, phi_sd, phi_init, obj_fun, method="Newton-CG", double=True, varzero=True):
         r"""Compute the optimized :math:`\log{\theta}` and its variance given 
