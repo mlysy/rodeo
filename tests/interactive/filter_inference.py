@@ -20,8 +20,8 @@ warnings.filterwarnings('ignore')
 
 # jit double filter and fenrir
 df_jit = jax.jit(double_ode_filter, static_argnums=(1, 14, 15))
-f_jit = jax.jit(fenrir_filter, static_argnums=(0))
-ng_jit = jax.jit(fenrir_filterng, static_argnums=(0, 13))
+f_jit = jax.jit(fenrir_filter, static_argnums=(0, 5))
+ng_jit = jax.jit(fenrir_filterng, static_argnums=(0, 5, 13, 14))
 
 class filter_inference:
     r"""
@@ -62,6 +62,7 @@ class filter_inference:
         self.tmin = tmin
         self.tmax = tmax
         self.fun = fun
+        self.n_res = None
         self.W = None
         self.mu_state = None
         self.wgt_state = None
@@ -69,8 +70,9 @@ class filter_inference:
         self.mu_obs = None
         self.wgt_obs = None
         self.var_obs = None
+        self.gamma = None
         self.funpad = None
-        self.obs_fun = None
+        self.x_fun = None
 
     def logprior(self, x, mean, sd):
         r"Calculate the loglikelihood of the lognormal distribution."
@@ -108,7 +110,7 @@ class filter_inference:
         phi = phi[:phi_ind]
         theta = jnp.exp(phi)
         xx0 = self.funpad(xx0, 0, theta)
-        lp = f_jit(self.fun, xx0, theta, self.tmin, self.tmax, self.W, 
+        lp = f_jit(self.fun, xx0, theta, self.tmin, self.tmax, self.n_res, self.W, 
                    self.wgt_state, self.mu_state, self.var_state,
                    self.wgt_obs, self.mu_obs, self.var_obs, Y_t)
         lp += self.logprior(phi, phi_mean, phi_sd)
@@ -121,9 +123,9 @@ class filter_inference:
         phi = phi[:phi_ind]
         theta = jnp.exp(phi)
         xx0 = self.funpad(xx0, 0, theta)
-        lp = ng_jit(self.fun, xx0, theta, self.tmin, self.tmax, self.W, 
+        lp = ng_jit(self.fun, xx0, theta, self.tmin, self.tmax, self.n_res, self.W, 
                     self.wgt_state, self.mu_state, self.var_state,
-                    self.wgt_obs, self.mu_obs, self.var_obs, Y_t, self.obs_fun)
+                    self.wgt_obs, Y_t, self.gamma, self.obs_fun, self.x_fun)
         lp += self.logprior(phi, phi_mean, phi_sd)
         return -lp
 

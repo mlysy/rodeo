@@ -34,6 +34,6 @@ class fitzinf(inference):
     def simulate(self, x0, theta, gamma, tseq):
         r"Get the observations assuming a normal distribution."
         X_t = odeint(self.ode_fun, x0, tseq, args=(theta,))
-        e_t = np.random.default_rng(0).normal(loc=0.0, scale=1, size=X_t.shape)
+        e_t = np.random.default_rng(100).normal(loc=0.0, scale=1, size=X_t.shape)
         Y_t = X_t + gamma*e_t
         return Y_t, X_t

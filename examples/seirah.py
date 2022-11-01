@@ -82,8 +82,8 @@ def seirah_example(load_calcs=False):
     inf.funpad = seirahpad
     tseq = np.linspace(tmin, tmax, int(tmax-tmin + 1))
     Y_t, X_t = inf.simulate(x0, theta_true, tseq)
-    Y_t = Y_t[1:]
-    X_t = X_t[1:]
+    # Y_t = Y_t[1:]
+    # X_t = X_t[1:]
 
     # Plot observations and true value
     # plot_tseq = np.linspace(1, tmax, int((tmax-1))+1)
@@ -118,14 +118,14 @@ def seirah_example(load_calcs=False):
             phi_sample = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_sample = np.exp(phi_sample)
             theta_kalman[i] = theta_sample
-        # np.save('saves/seirah_theta_kalman.npy', theta_kalman)
+        np.save('saves/seirah_theta_kalman.npy', theta_kalman)
         
         # Parameter inference using diffrax
         phi_hat, phi_var = inf.phi_fit(Y_t, xx0, dtlst[0], obs_t, phi_mean, phi_sd, inf.diffrax_nlpost,
                                        phi_init = phi_init)
         theta_diffrax = inf.phi_sample(phi_hat, phi_var, n_samples)
         theta_diffrax = np.exp(theta_diffrax)
-        # np.save('saves/seirah_theta_diffrax.npy', theta_diffrax)
+        np.save('saves/seirah_theta_diffrax.npy', theta_diffrax)
 
     plt.rcParams.update({'font.size': 20})
     var_names = ["b", "r", r"$\alpha$", "$D_e$", "$D_I$", "$D_q$", "$E(0)}$", "$I(0)}$"]

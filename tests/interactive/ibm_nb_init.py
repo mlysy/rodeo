@@ -65,6 +65,7 @@ def ibm_init(dt, n_order, sigma):
             "var_state":var_state}
     return init
 
+
 def indep_init(init, n_order):
     """
     Computes the necessary parameters for the Kalman filter and smoother.
