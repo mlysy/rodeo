@@ -13,7 +13,7 @@ key = jax.random.PRNGKey(0)
 n_meas = 3
 n_obs = 2
 n_state = 4
-n_tot = 3
+n_tot = 40
 
 key, *subkeys = jax.random.split(key, 14)
 # states
@@ -21,7 +21,7 @@ b = jax.random.normal(subkeys[0], (n_tot, n_state))
 V = jax.random.normal(subkeys[1], (n_tot, n_state, n_state))
 V = jax.vmap(lambda vs: vs.dot(vs.T))(V)
 C = jax.vmap(lambda vs: jnp.linalg.cholesky(vs))(V)
-A = jax.random.normal(subkeys[2], (n_tot-1, n_state, n_state))
+A = 0.01*jax.random.normal(subkeys[2], (n_tot-1, n_state, n_state))
 # obs
 _mu_obs = jax.random.normal(subkeys[3], (n_obs,))
 mu_obs = jnp.repeat(_mu_obs[jnp.newaxis], n_tot, 0)
@@ -65,7 +65,7 @@ b = jax.random.normal(subkeys[0], ((n_tot-1)*n_res+1, n_state))
 V = jax.random.normal(subkeys[1], ((n_tot-1)*n_res+1, n_state, n_state))
 V = jax.vmap(lambda vs: vs.dot(vs.T))(V)
 C = jax.vmap(lambda vs: jnp.linalg.cholesky(vs))(V)
-A = jax.random.normal(subkeys[2], ((n_tot-1)*n_res, n_state, n_state))
+A = 0.01*jax.random.normal(subkeys[2], ((n_tot-1)*n_res, n_state, n_state))
 # obs
 _mu_obs = jax.random.normal(subkeys[3], (n_obs,))
 mu_obs = jnp.repeat(_mu_obs[jnp.newaxis], (n_tot-1)*n_res+1, 0)
@@ -76,8 +76,7 @@ _wgt_obs = jax.random.normal(subkeys[5], (n_obs, n_state))
 wgt_obs = jnp.repeat(_wgt_obs[jnp.newaxis], (n_tot-1)*n_res+1, 0)
 y_obs = jax.random.normal(subkeys[6], (n_tot, n_obs))
 y_out = jnp.ones(((n_tot-1)*n_res+1, n_obs))*jnp.nan
-for i in range(n_tot):
-    y_out = y_out.at[i*n_res].set(y_obs[i])
+y_out = y_out.at[::n_res].set(y_obs)
 
 # fenrir
 logdens = reverse(

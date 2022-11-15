@@ -10,6 +10,7 @@ import jax.scipy as jsp
 
 from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
 from rodeo.ode_solve import *
+from euler_solve import euler
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -106,8 +107,7 @@ class inference:
         phi = phi[:phi_ind]
         theta = jnp.exp(phi)
         xx0 = self.funpad(xx0, 0, theta)
-        self.key, subkey = jax.random.split(self.key)
-        X_t = mv_jit(subkey, self.fun, xx0, theta, self.tmin, self.tmax, self.n_eval, self.W, **self.kinit)[0]
+        X_t = mv_jit(self.key, self.fun, xx0, theta, self.tmin, self.tmax, self.n_eval, self.W, **self.kinit)[0]
         X_t = X_t[:, :, 0]
         lp = self.loglike(Y_t, X_t, step_size, obs_size, theta, *args)
         lp += self.logprior(phi, phi_mean, phi_sd)
@@ -133,7 +133,7 @@ class inference:
         solver = Dopri5()
         tseq = jnp.linspace(self.tmin, self.tmax, int((self.tmax-self.tmin)/step_size)+1)
         saveat = SaveAt(ts=tseq)
-        stepsize_controller = PIDController(rtol=1e-10, atol=1e-10)
+        stepsize_controller = PIDController(rtol=1e-5, atol=1e-5)
         X_t = diffeqsolve(term, solver, args = theta, t0=self.tmin, t1=self.tmax, dt0=step_size, y0=jnp.array(xx0), saveat=saveat,
                           stepsize_controller=stepsize_controller).ys
         lp = self.loglike(Y_t, X_t, step_size, obs_size, theta, *args)

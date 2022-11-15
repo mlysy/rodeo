@@ -1,14 +1,14 @@
 from math import ceil
-from functools import partial
 import numpy as np
 import scipy as sp
 import scipy.stats
 import jax
-from jax import random, jacfwd, jacrev, grad, lax
+from jax import jacfwd, jacrev, grad
 import jax.numpy as jnp
 import jax.scipy as jsp
-from double_filter import *
 from fenrir_filter import *
+from jax.config import config
+config.update("jax_enable_x64", True)
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -19,7 +19,6 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # jit double filter and fenrir
-df_jit = jax.jit(double_ode_filter, static_argnums=(1, 14, 15))
 f_jit = jax.jit(fenrir_filter, static_argnums=(0, 5))
 ng_jit = jax.jit(fenrir_filterng, static_argnums=(0, 5, 13, 14))
 
@@ -88,22 +87,7 @@ class filter_inference:
             else:
                 xx0.append(x0[i])
         return jnp.array(xx0)
-
-    def double_filter_nlpost(self, phi, Y_t, x0, phi_mean, phi_sd, double, varzero):
-        r"Compute the negative loglikihood of :math:`Y_t` using the double filter algorithm."
-        phi_ind = len(phi_mean)
-        xx0 = self.x0_initialize(phi, x0, phi_ind)
-        phi = phi[:phi_ind]
-        theta = jnp.exp(phi)
-        xx0 = self.funpad(xx0, 0, theta)
-        self.key, subkey = jax.random.split(self.key)
-        lp = df_jit(subkey, self.fun, xx0, theta, self.tmin, self.tmax, self.W, 
-                    self.wgt_state, self.mu_state, self.var_state,
-                    self.wgt_obs, self.mu_obs, self.var_obs, Y_t, double, varzero)
-        lp += self.logprior(phi, phi_mean, phi_sd)
-        return -lp
-
-    def fenrir_nlpost(self, phi, Y_t, x0, phi_mean, phi_sd, double, varzero):
+    def fenrir_nlpost(self, phi, Y_t, x0, phi_mean, phi_sd):
         r"Compute the negative loglikihood of :math:`Y_t` using the fenrir algorithm."
         phi_ind = len(phi_mean)
         xx0 = self.x0_initialize(phi, x0, phi_ind)
@@ -113,10 +97,15 @@ class filter_inference:
         lp = f_jit(self.fun, xx0, theta, self.tmin, self.tmax, self.n_res, self.W, 
                    self.wgt_state, self.mu_state, self.var_state,
                    self.wgt_obs, self.mu_obs, self.var_obs, Y_t)
+        # obs_res = len(self.mu_state)//len(self.mu_obs)
+        # X_t = scan_out['state_filt'][0][::self.n_res, ::obs_res]
+        
+        # lp = self.logprior(Y_t, X_t, 0.2)
+        # lp = xx['logdens'][0]
         lp += self.logprior(phi, phi_mean, phi_sd)
         return -lp
 
-    def fenrir_nlpostng(self, phi, Y_t, x0, phi_mean, phi_sd, double, varzero):
+    def fenrir_nlpostng(self, phi, Y_t, x0, phi_mean, phi_sd):
         r"Compute the negative loglikihood of :math:`Y_t` using the non-gaussian algorithm."
         phi_ind = len(phi_mean)
         xx0 = self.x0_initialize(phi, x0, phi_ind)
@@ -129,7 +118,7 @@ class filter_inference:
         lp += self.logprior(phi, phi_mean, phi_sd)
         return -lp
 
-    def phi_fit(self, Y_t, x0, phi_mean, phi_sd, phi_init, obj_fun, method="Newton-CG", double=True, varzero=True):
+    def phi_fit(self, Y_t, x0, phi_mean, phi_sd, phi_init, obj_fun, method="Newton-CG"):
         r"""Compute the optimized :math:`\log{\theta}` and its variance given 
             :math:`Y_t`."""
         
@@ -137,16 +126,15 @@ class filter_inference:
         gradf = grad(obj_fun)
         hes = jacfwd(jacrev(obj_fun))
         opt_res = sp.optimize.minimize(obj_fun, phi_init,
-                                       args=(Y_t, x0, phi_mean, phi_sd, double, varzero),
+                                       args=(Y_t, x0, phi_mean, phi_sd),
                                        method=method,
                                        jac=gradf)
         phi_hat = opt_res.x
-        phi_fisher = hes(phi_hat, Y_t, x0, phi_mean, phi_sd, double, varzero)
-        # phi_cho, low = jsp.linalg.cho_factor(phi_fisher)
-        # phi_var = jsp.linalg.cho_solve((phi_cho, low), jnp.eye(n_phi))
-        phi_var = jsp.linalg.inv(phi_fisher)
-        return phi_hat, phi_var, phi_fisher
-
+        phi_fisher = hes(phi_hat, Y_t, x0, phi_mean, phi_sd)
+        phi_cho, low = jsp.linalg.cho_factor(phi_fisher)
+        phi_var = jsp.linalg.cho_solve((phi_cho, low), jnp.eye(n_phi))
+        # phi_var = jsp.linalg.inv(phi_fisher)
+        return phi_hat, phi_var
         
     def phi_sample(self, phi_hat, phi_var, n_samples):
         r"""Simulate :math:`\theta` given the :math:`\log{\hat{\theta}}` 

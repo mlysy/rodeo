@@ -2,10 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
+from jax.config import config
 
 from inference.fitzinf import fitzinf as inference
 from rodeo.ibm_init import ibm_init
 from rodeo.ode_solve import *
+config.update("jax_enable_x64", True)
 
 def fitz(X_t, t, theta):
     "Fitz ODE written for jax"
@@ -66,15 +68,15 @@ def fitz_example(load_calcs=False):
     inf.funpad = fitzpad
     tseq = np.linspace(tmin, tmax, 41)
     Y_t, X_t = inf.simulate(x0, theta_true, gamma, tseq)
-
+    np.save('saves/fitz_Y_t.npy', Y_t)
     plt.rcParams.update({'font.size': 20})
     fig, axs = plt.subplots(1, 2, figsize=(20, 5))
     axs[0].plot(tseq, X_t[:,0], label = 'X_t')
     axs[0].scatter(tseq, Y_t[:,0], label = 'Y_t', color='orange')
-    axs[0].set_title("$V^{(0)}_t$")
+    axs[0].set_title("$V(t)$")
     axs[1].plot(tseq, X_t[:,1], label = 'X_t')
     axs[1].scatter(tseq, Y_t[:,1], label = 'Y_t', color='orange')
-    axs[1].set_title("$R^{(0)}_t$")
+    axs[1].set_title("$R(t)$")
     axs[1].legend(loc='upper left', bbox_to_anchor=[1, 1])
     fig.savefig('figures/fitzsim.pdf')
     

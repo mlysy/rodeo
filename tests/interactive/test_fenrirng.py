@@ -44,7 +44,7 @@ n_deriv_prior = 3 # number of derivatives in IBM prior
 # it is assumed that the solution is sought on the interval [tmin, tmax].
 tmin = 0.
 tmax = 40.
-n_eval = 400
+n_eval = 4000
 n_res = int(n_eval/tmax)
 
 # The rest of the parameters can be tuned according to ODE
@@ -114,12 +114,12 @@ m_rodeo = rodeo_jit(key=key, fun=fitz,
         wgt_meas=W_block, **ode_init)[0][::n_res, :, 0]
 
 l_rodeo = jnp.sum(jsp.stats.multivariate_normal.logpdf(Y_t, m_rodeo, gamma**2))
+l_rodeo2 = jnp.sum(jsp.stats.norm.logpdf(Y_t, loc=m_rodeo, scale=gamma))
 l_fen = df_jit(fitz_ode, x0_state, theta, tmin, tmax, n_res, W,
                 ode_initnb["wgt_state"], ode_initnb["mu_state"], ode_initnb["var_state"],
                 wgt_obs, mu_obs, var_obs, Y_t)
 l_fenng = ng_jit(fitz_ode, x0_state, theta, tmin, tmax, n_res, W,
                  ode_initnb["wgt_state"], ode_initnb["mu_state"], ode_initnb["var_state"],
                  wgt_obs, Y_t, (mu_obs, var_obs), obs_fun, x_fun)
-
 print("Difference between rodeo and fenrir {}".format(l_rodeo - l_fen))
 print("Difference between fenrir and fenrirng {}".format(l_fen - l_fenng))
