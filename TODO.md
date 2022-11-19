@@ -8,13 +8,13 @@ Needed for JSS submission.
 
 - [x] Put a note in the `README` that the previous version of this package is at `github.com/mlysy/rodeo-legacy`.  
 
-- [ ] Use the `src` package layout.  Same as **pfjax**.  Might need to wrangle with `setup.cfg` and `pyproject.toml`.
+- [x] Use the `src` package layout.  Same as **pfjax**.  Might need to wrangle with `setup.cfg` and `pyproject.toml`.
 
 - [ ] Change `ibm_init.py` to `ibm.py`.  Also, please add some module-level documentation for this (i.e., what is the IBM model, how it's a CAR, it's analytic formulas, etc).
 
-- [ ] More generally, please think carefully about the names of things.  Should it be `ode_solve.py`, or maybe just `ode.py`?  Users could then call things with e.g., `rodeo.ode.solve_mv()`.  Or should it be `rodeo.ode_solve_mv()`?
+- [x] More generally, please think carefully about the names of things.  Should it be `ode_solve.py`, or maybe just `ode.py`?  Users could then call things with e.g., `rodeo.ode.solve_mv()`.  Or should it be `rodeo.ode_solve_mv()`?
 
-- [ ] Check that all dependencies are necessary, e.g., `operator`.
+- [x] Check that all dependencies are necessary, e.g., `operator`.
 
 ## Minor Items
 

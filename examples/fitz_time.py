@@ -62,7 +62,7 @@ n_obs = 2  # Total measures
 n_deriv_prior = 3
 
 # it is assumed that the solution is sought on the interval [tmin, tmax].
-n_eval = 800
+n_eval = 400
 tmin = 0.
 tmax = 40.
 theta = np.array([0.2, 0.2, 3])
