@@ -41,7 +41,7 @@ class seirahinf(inference):
         return jnp.array([x1, x2, x3, x4, x5, x6])
 
     def loglike(self, Y_t, X_t, step_size, obs_size, theta):
-        data_tseq = np.linspace(self.tmin+1, self.tmax, int((self.tmax-self.tmin)/obs_size))
+        data_tseq = np.linspace(self.tmin, self.tmax, int((self.tmax-self.tmin)/obs_size)+1)
         ode_tseq = np.linspace(self.tmin, self.tmax, int((self.tmax-self.tmin)/step_size)+1)
         X_t = self.thinning(ode_tseq, data_tseq, X_t)
         X_in = self.covid_obs(X_t, theta)

@@ -2,10 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
+from jax.config import config
 
 from inference.fitzinf import fitzinf as inference
 from rodeo.ibm_init import ibm_init
 from rodeo.ode_solve import *
+config.update("jax_enable_x64", True)
 
 def fitz(X_t, t, theta):
     "Fitz ODE written for jax"
@@ -66,15 +68,15 @@ def fitz_example(load_calcs=False):
     inf.funpad = fitzpad
     tseq = np.linspace(tmin, tmax, 41)
     Y_t, X_t = inf.simulate(x0, theta_true, gamma, tseq)
-
+    np.save('saves/fitz_Y_t.npy', Y_t)
     plt.rcParams.update({'font.size': 20})
     fig, axs = plt.subplots(1, 2, figsize=(20, 5))
     axs[0].plot(tseq, X_t[:,0], label = 'X_t')
     axs[0].scatter(tseq, Y_t[:,0], label = 'Y_t', color='orange')
-    axs[0].set_title("$V^{(0)}_t$")
+    axs[0].set_title("$V(t)$")
     axs[1].plot(tseq, X_t[:,1], label = 'X_t')
     axs[1].scatter(tseq, Y_t[:,1], label = 'Y_t', color='orange')
-    axs[1].set_title("$R^{(0)}_t$")
+    axs[1].set_title("$R(t)$")
     axs[1].legend(loc='upper left', bbox_to_anchor=[1, 1])
     fig.savefig('figures/fitzsim.pdf')
     
@@ -96,7 +98,7 @@ def fitz_example(load_calcs=False):
             theta_euler[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_euler[i, :, :n_theta] = np.exp(theta_euler[i, :, :n_theta])
             
-        #np.save('saves/fitz_theta_euler.npy', theta_euler)
+        np.save('saves/fitz_theta_euler.npy', theta_euler)
         
         # Parameter inference using Kalman solver
         theta_kalman = np.zeros((len(dtlst), n_samples, n_theta+n_obs))
@@ -110,14 +112,14 @@ def fitz_example(load_calcs=False):
                                            gamma, phi_init = phi_init)
             theta_kalman[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_kalman[i, :, :n_theta] = np.exp(theta_kalman[i, :, :n_theta])
-        #np.save('saves/fitz_theta_kalman.npy', theta_kalman)
+        np.save('saves/fitz_theta_kalman.npy', theta_kalman)
 
         # Parameter inference using diffrax
         phi_hat, phi_var = inf.phi_fit(Y_t, np.array([None, None]), obs_t, obs_t, phi_mean, phi_sd, inf.diffrax_nlpost,
                                       gamma, phi_init = phi_init)
         theta_diffrax = inf.phi_sample(phi_hat, phi_var, n_samples)
         theta_diffrax[:, :n_theta] = np.exp(theta_diffrax[:, :n_theta])
-        #np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
+        np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
         
     # Produces the graph in Figure 3
     plt.rcParams.update({'font.size': 20})
