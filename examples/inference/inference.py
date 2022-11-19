@@ -107,8 +107,7 @@ class inference:
         phi = phi[:phi_ind]
         theta = jnp.exp(phi)
         xx0 = self.funpad(xx0, 0, theta)
-        self.key, subkey = jax.random.split(self.key)
-        X_t = mv_jit(subkey, self.fun, xx0, theta, self.tmin, self.tmax, self.n_eval, self.W, **self.kinit)[0]
+        X_t = mv_jit(self.key, self.fun, xx0, theta, self.tmin, self.tmax, self.n_eval, self.W, **self.kinit)[0]
         X_t = X_t[:, :, 0]
         lp = self.loglike(Y_t, X_t, step_size, obs_size, theta, *args)
         lp += self.logprior(phi, phi_mean, phi_sd)
