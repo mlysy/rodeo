@@ -1,7 +1,28 @@
+r"""
+Computes the initial parameters for the process prior using the p-1 times integrated Brownian motion (IBM)
+
+.. math::
+
+    x^{(p-1)}(t) = \sigma B(t).
+
+Note that the IBM process is a particularly simple continuous autoregressive process of the form
+
+.. math::
+
+    x^{(p-1)}(t) + \alpha_1 x^{(p-2)}(t) + \ldots + \alpha_{p-1} x(t) = \sigma B(t),
+
+where :math:`\alpha_1 = \ldots = \alpha_{p-1} = 0`. It has the analytical formulas for the parameters
+
+.. math::
+
+    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-1)!}, \qquad R_{ij} = \frac{(\Delta t)^{2p+1-i-j}}{(2p+1-i-j)(p-i)!(p-j)!}.
+
+"""
+
+
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-
 
 def _factorial(x):
     """
