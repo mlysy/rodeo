@@ -22,7 +22,6 @@ This module optimizes the calculations when :math:`Q`, :math:`R`, and :math:`W`,
 """
 
 # import numpy as np
-from operator import ne
 import jax
 import jax.numpy as jnp
 from rodeo.kalmantv import *

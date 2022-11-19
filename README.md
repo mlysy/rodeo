@@ -10,14 +10,14 @@
 
 **rodeo** implements the probabilistic solver of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259). This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid. **rodeo** is built on **jax** which allows for just-in-time compilation and auto-differentiation. The API of **jax** is almost equivalent to that of **numpy**.
 
-Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo).
+Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
 
 ## Installation
 
 Download the repo from GitHub and then install with the `setup.cfg` script:
 ```bash
-git clone https://github.com/mlysy/rodeo-jax.git
-cd rodeo-jax
+git clone https://github.com/mlysy/rodeo.git
+cd rodeo
 pip install .
 ```
 

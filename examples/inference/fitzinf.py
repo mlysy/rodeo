@@ -3,7 +3,7 @@ from .inference import inference
 import numpy as np
 import jax
 
-from rodeo.ode_solve import *
+from rodeo.ode import *
 from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
 
 class fitzinf(inference):

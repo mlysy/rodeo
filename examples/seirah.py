@@ -5,8 +5,8 @@ from jax.config import config
 import matplotlib.pyplot as plt
 
 from inference.seirahinf import seirahinf as inference
-from rodeo.ibm_init import ibm_init
-from rodeo.ode_solve import *
+from rodeo.ibm import ibm_init
+from rodeo.ode import *
 config.update("jax_enable_x64", True)
 
 def seirah(X_t, t, theta):

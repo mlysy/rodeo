@@ -5,8 +5,8 @@ import jax.scipy as jsp
 import jax.random as random
 import rodeo.kalmantv as ktv
 import utils
-from jax.config import config
-config.update("jax_enable_x64", True)
+# from jax.config import config
+# config.update("jax_enable_x64", True)
 
 class TestKalmanTVJit(unittest.TestCase):
     """

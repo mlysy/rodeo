@@ -21,13 +21,9 @@ This module optimizes the calculations when :math:`Q`, :math:`R`, and :math:`W`,
 
 """
 
-# import numpy as np
-from operator import ne
 import jax
 import jax.numpy as jnp
 from rodeo.kalmantv import *
-# from jax.config import config
-# config.update("jax_enable_x64", True)
 
 
 def interrogate_rodeo(key, fun, t, theta,
