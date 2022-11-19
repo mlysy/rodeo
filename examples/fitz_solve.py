@@ -45,8 +45,7 @@ def fitzsolve_example():
 
     # 4.  Instantiate the ODE solver object.
 
-    n_eval = 1200  # number of evaluations; n_eval = N from the paper.
-    n_res = n_eval//40
+    n_eval = 600  # number of evaluations; n_eval = N from the paper.
     dt = (tmax-tmin)/n_eval  # step size; dt = Delta t from the paper.
 
     # generate the Kalman parameters corresponding to the prior
@@ -69,19 +68,19 @@ def fitzsolve_example():
                         **prior)
 
     # Compute exact solution
-    tseq = np.linspace(0, 40, 41)
+    tseq = np.linspace(tmin, tmax, n_eval+1)
     ode0 = np.array([-1., 1.])
     exact = odeint(fitz0, ode0, tseq, args=(theta,))
 
     # Plot them
-    plt.rcParams.update({'font.size': 40})
+    plt.rcParams.update({'font.size': 20})
     fig, axs = plt.subplots(1, 2, figsize=(20, 5))
-    axs[0].plot(tseq, mut[::n_res, 0, 0], label = 'rodeo')
+    axs[0].plot(tseq, mut[:, 0, 0], label = 'rodeo')
     axs[0].plot(tseq, exact[:, 0], label = 'True')
     axs[0].set_title("$V(t)$")
     
-    axs[1].plot(tseq, mut[::n_res, 1, 0], label = 'rodeo')
+    axs[1].plot(tseq, mut[:, 1, 0], label = 'rodeo')
     axs[1].plot(tseq, exact[:, 1], label = 'True')
     axs[1].set_title("$R(t)$")
     axs[1].legend(loc='upper left', bbox_to_anchor=[1, 1])
-    fig.savefig('figures/fitzsolve.pdf')
+    # fig.savefig('figures/fitzsolve.pdf')
