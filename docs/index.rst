@@ -76,8 +76,8 @@ To initialize, we simply set :math:`\boldsymbol{x(0)} = (\boldsymbol{x}_0, 0)`. 
     import matplotlib.pyplot as plt
     from scipy.integrate import odeint
 
-    from rodeo.ibm_init import ibm_init
-    from rodeo.ode_solve import *
+    from rodeo.ibm import ibm_init
+    from rodeo.ode import *
     from jax.config import config
     config.update("jax_enable_x64", True)
 
@@ -156,7 +156,7 @@ Functions Documentation
 .. toctree::
    :maxdepth: 1
 
-   ./ode_solve
+   ./ode
    ./kalmantv
    ./ibm
    ./gauss_markov
