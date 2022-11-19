@@ -1,4 +1,4 @@
 ODE Solver
 ==========
-.. automodule:: rodeo.ode_solve
+.. automodule:: rodeo.ode
     :members:  

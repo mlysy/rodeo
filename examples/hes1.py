@@ -5,8 +5,8 @@ import jax.numpy as jnp
 from jax.config import config
 
 from inference.hes1inf import hes1inf as inference
-from rodeo.ibm_init import ibm_init
-from rodeo.ode_solve import *
+from rodeo.ibm import ibm_init
+from rodeo.ode import *
 config.update("jax_enable_x64", True)
 
 def hes1(X_t, t, theta):

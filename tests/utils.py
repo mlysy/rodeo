@@ -1,10 +1,9 @@
-import unittest
 import numpy as np
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import jax.random as random
-from rodeo.ibm_init import ibm_init
+from rodeo.ibm import ibm_init
 import rodeo.gauss_markov as gm
 from rodeo.utils import mvncond
 
@@ -125,8 +124,8 @@ def kalman_setup(self):
     key = random.PRNGKey(0)
     key, *subkey = random.split(key, 3)
     self.n_meas = random.randint(subkey[0], (1,), 1, 4)[0] 
-    self.n_state = self.n_meas + random.randint(subkey[1], (1,), 1, 5)[0]
-    self.n_tot = 2
+    self.n_state = int(self.n_meas + random.randint(subkey[1], (1,), 1, 5)[0])
+    self.n_tot = 3
     #self.n_meas = 3
     #self.n_state = 4
     

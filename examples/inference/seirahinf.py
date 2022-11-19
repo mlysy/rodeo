@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 
-from rodeo.ode_solve import *
+from rodeo.ode import *
 
 class seirahinf(inference):
     r"Inference using the France Covid data from Prague et al."

@@ -5,7 +5,7 @@ import jax
 from jax.config import config
 config.update("jax_enable_x64", True)
 
-from rodeo.ode_solve import *
+from rodeo.ode import *
 
 class hes1inf(inference):
     r"Inference for the Hes1 model"

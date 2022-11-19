@@ -3,10 +3,10 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import jax.random as random
-from rodeo.ode_solve import *
+from rodeo.ode import *
 import utils
-from jax.config import config
-config.update("jax_enable_x64", True)
+# from jax.config import config
+# config.update("jax_enable_x64", True)
     
 class TestrodeoJit(unittest.TestCase):
     """

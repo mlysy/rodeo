@@ -6,13 +6,13 @@ from scipy.integrate import odeint
 from numba import njit
 from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
 
-from rodeo.ibm_init import ibm_init
-from rodeo.ode_solve import *
+from rodeo.ibm import ibm_init
+from rodeo.ode import *
 
-from ibm_nb_init import ibm_init as ibm_init_nb
-from ibm_nb_init import indep_init
-import ode_nb_solve as rodeonb
-from euler_solve import euler
+from ibm_nb import ibm_init as ibm_init_nb
+from ibm_nb import indep_init
+import ode_nb as rodeonb
+from euler import euler
 
 # ode function used by jax
 def ode_fun_jax(X_t, t, theta):

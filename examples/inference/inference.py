@@ -9,8 +9,8 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 
 from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
-from rodeo.ode_solve import *
-from euler_solve import euler
+from rodeo.ode import *
+from euler import euler
 
 import seaborn as sns
 import matplotlib.pyplot as plt

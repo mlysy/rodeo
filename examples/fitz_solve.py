@@ -6,8 +6,8 @@ import jax.numpy as jnp
 from jax.config import config
 config.update("jax_enable_x64", True)
 
-from rodeo.ibm_init import ibm_init
-from rodeo.ode_solve import *
+from rodeo.ibm import ibm_init
+from rodeo.ode import *
 
 def fitz(X_t, t, theta):
     "Fitz ODE written for jax"
