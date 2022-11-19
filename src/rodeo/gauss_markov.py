@@ -51,7 +51,7 @@ def gauss_markov_mv(A, b, C):
             if n <= m:
                 AA = AA.at[n, m].set(jnp.eye(n_dim))
             else:
-                AA = AA.at[n, m].set(AA[n-1, m].dot(A[n-1]))
+                AA = AA.at[n, m].set(A[n-1].dot(AA[n-1, m]))
     # Now we can calculate L and u
     L = jnp.zeros((n_tot, n_dim, n_tot, n_dim))
     for m in range(n_tot):
@@ -116,10 +116,29 @@ def kalman2gm(wgt_state, mu_state, var_state, wgt_meas, mu_meas, var_meas):
                  [wgt_meas[i].dot(wgt_state[i]), zero_mm]]
             ))
         # cholesky term
-        chol_state = jnp.linalg.cholesky(var_state[i])
-        chol_meas = jnp.linalg.cholesky(var_meas[i])
+        chol_state = _semi_chol(var_state[i])
+        chol_meas = _semi_chol(var_meas[i])
         chol_gm = chol_gm.at[i].set(jnp.block(
             [[chol_state, zero_sm],
              [wgt_meas[i].dot(chol_state), chol_meas]]
         ))
     return wgt_gm[1:], mu_gm, chol_gm
+
+def _semi_chol(X):
+    r"""
+    Take cholesky for positive semi-definite matrices.
+    Args:
+        X (ndarray(n_dim, n_dim)): Variance matrix.
+    
+    Returns:
+        (ndarray(n_dim, n_dim)): Cholesky decomposition of X.
+        
+    """
+    ind = jnp.any(X, axis=1)
+    jind = jnp.nonzero(ind)[0]
+    nonzero_X = X[ind,]
+    n_row = nonzero_X.shape[0]
+    nonzero_X = nonzero_X[:n_row, :n_row]
+    chol_X = jnp.zeros((len(ind), len(ind)))
+    chol_X = chol_X.at[jnp.ix_(jind, jind)].set(jnp.linalg.cholesky(nonzero_X))
+    return chol_X
