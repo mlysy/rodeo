@@ -5,7 +5,7 @@ import jax.scipy as jsp
 import jax.random as random
 from rodeo.ode import *
 import ode_block_solve_for as bfor
-# import utils
+import utils
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 
