@@ -151,7 +151,7 @@ Hes1
 ----
 .. image:: figures/hes1figure.png
 
-Functions Documentation
+API Documentation
 =======================
 .. toctree::
    :maxdepth: 1
@@ -161,3 +161,10 @@ Functions Documentation
    ./ibm
    ./gauss_markov
    ./utils
+
+Examples
+========
+.. toctree::
+   :maxdepth: 1
+
+   ./examples

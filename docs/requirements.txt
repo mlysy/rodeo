@@ -1,4 +1,8 @@
-jax
-jaxlib
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+myst_nb
 sphinx_rtd_theme
-recommonmark
+jupytext
