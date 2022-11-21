@@ -12,41 +12,6 @@ kernelspec:
   name: python3
 ---
 
-$$%
-\newcommand{\BB}{{\boldsymbol B}}%
-\newcommand{\cc}{{\boldsymbol c}}%
-\let\dd\relax%
-\newcommand{\dd}{{\boldsymbol d}}%
-\newcommand{\DD}{{\boldsymbol D}}%
-\newcommand{\Id}{{\boldsymbol I}}%
-\newcommand{\HH}{{\boldsymbol H}}%
-\newcommand{\RR}{{\boldsymbol R}}%
-\newcommand{\TT}{{\boldsymbol T}}%
-\newcommand{\VV}{{\boldsymbol V}}%
-\newcommand{\WW}{{\boldsymbol W}}%
-\newcommand{\ww}{{\boldsymbol w}}%
-\newcommand{\XX}{{\boldsymbol X}}%
-\renewcommand{\aa}{{\boldsymbol a}}%
-\newcommand{\vv}{{\boldsymbol v}}%
-\newcommand{\xx}{{\boldsymbol x}}%
-\newcommand{\yy}{{\boldsymbol y}}%
-% Math Symbols
-\newcommand{\rrh}{{\boldsymbol \rho}}%
-\newcommand{\mmu}{{\boldsymbol \mu}}%
-\newcommand{\ssi}{{\boldsymbol \sigma}}%
-\newcommand{\SSi}{{\boldsymbol \Sigma}}%
-\newcommand{\eps}{{\boldsymbol \epsilon}}%
-\newcommand{\GGa}{{\boldsymbol \Gamma}}%
-\newcommand{\bz}{{\boldsymbol 0}}%
-\DeclareMathOperator{\ibm}{IBM}%
-\DeclareMathOperator{\car}{CAR}%
-\newcommand{\N}{\mathcal N}%
-\newcommand{\iid}{\stackrel{iid}{\sim}}%
-\newcommand{\ud}{\, \mathrm{d}}%
-\newcommand{\tmin}{t_{\mathrm{min}}}%
-\newcommand{\tmax}{t_{\mathrm{max}}}%
-\newcommand{\carp}{\mathrm{CAR}(p)}
-$$
 # rodeo: pRobabilistic ODE sOlver
 
 *Mohan Wu, Martin Lysy*
@@ -76,13 +41,11 @@ where $\xx(t) = \big(x^{(0)}(t), x^{(1)}(t), ..., x^{(q)}(t)\big)$ consists of $
 
 To illustrate the set-up, let's consider the following ODE example (**FitzHugh-Nagumo** model) where $q=1$ for both variables:
 
-\begin{equation}
-  \begin{aligned}
-    \frac{dV}{dt} &= c(V - \frac{V^3}{3} + R), \\
-    \frac{dR}{dt} &= -\frac{(V - a - bR)}{c}, \\
-    \xx_0 &= (V(0), R(0)) = (-1,1).
-  \end{aligned}
-\end{equation}
+\begin{align*}
+\frac{dV}{dt} &= c(V - \frac{V^3}{3} + R), \\
+\frac{dR}{dt} &= -\frac{(V - a - bR)}{c}, \\
+\xx_0 &= (V(0), R(0)) = (-1,1).
+\end{align*}
 
 where the solution $x(t)$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$.  
 

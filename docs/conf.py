@@ -15,6 +15,7 @@
 # import os
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
+import re
 from rodeo import __version__, __author__
 
 # -- Project information -----------------------------------------------------
@@ -137,3 +138,23 @@ myst_enable_extensions = [
 myst_title_to_header = True
 
 myst_heading_anchors = 3
+
+# convert latexdefs.tex to mathjax format
+mathjax3_config = {'tex': {'macros': {}}}
+with open('notebooks/latexdefs.tex', 'r') as f:
+    for line in f:
+        # newcommand macros
+        macros = re.findall(
+            r'\\(newcommand){\\(.*?)}(\[(\d)\])?{(.+)}', line)
+        for macro in macros:
+            if len(macro[2]) == 0:
+                mathjax3_config['tex']['macros'][macro[1]] = '{'+macro[4]+'}'
+            else:
+                mathjax3_config['tex']['macros'][macro[1]] = [
+                    '{'+macro[4]+'}', int(macro[3])
+                ]
+        # DeclarMathOperator macros
+        macros = re.findall(r'\\(DeclareMathOperator\*?){\\(.*?)}{(.+)}', line)
+        for macro in macros:
+            mathjax3_config['tex']['macros'][macro[1]] = \
+                '{\\operatorname{'+macro[2]+'}}'
