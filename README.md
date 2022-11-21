@@ -43,7 +43,7 @@ This will create the documentation in `docs/build`.
 
 ## Usage
 
-Please see the detailed example in the tutorial [introduction](examples/tutorial.ipynb).
+Please see the detailed example in the tutorial [introduction](docs/notebooks/tutorial.md).
 
 ## Results
 
