@@ -70,7 +70,7 @@ master_doc = 'index'
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = [
-    'notebooks/internal'
+    'examples/notebooks',
 ]
 
 # The name of the Pygments (syntax highlighting) style to use.
@@ -141,7 +141,7 @@ myst_heading_anchors = 3
 
 # convert latexdefs.tex to mathjax format
 mathjax3_config = {'tex': {'macros': {}}}
-with open('notebooks/latexdefs.tex', 'r') as f:
+with open('examples/latexdefs.tex', 'r') as f:
     for line in f:
         # newcommand macros
         macros = re.findall(
