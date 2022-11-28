@@ -21,7 +21,7 @@ If they are in the form of a Gaussian state-space model:
 
     y_n = d_n + W_n x_n + V_n^{1/2} \eta_n
 
-then convert it to the form of a Gaussian Markov process.
+then first use `kalman2gm` to convert it to the form of a Gaussian Markov process.
 
 """
 import jax

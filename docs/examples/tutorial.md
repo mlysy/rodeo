@@ -1,6 +1,6 @@
 ---
 jupytext:
-  formats: ipynb,md:myst
+  formats: notebooks//ipynb,md:myst
   text_representation:
     extension: .md
     format_name: myst
@@ -12,11 +12,7 @@ kernelspec:
   name: python3
 ---
 
-# rodeo: pRobabilistic ODE sOlver
-
-*Mohan Wu, Martin Lysy*
-
----
+# Introduction to RODEO: pRobabilistic ODE sOlver
 
 +++
 
@@ -34,7 +30,18 @@ where $\xx(t) = \big(x^{(0)}(t), x^{(1)}(t), ..., x^{(q)}(t)\big)$ consists of $
 
 **rodeo** implements the probabilistic solver of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259).  This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid.
 
-+++
+```{code-cell} ipython3
+import jax
+import jax.numpy as jnp
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import odeint
+
+from rodeo.ibm import ibm_init
+from rodeo.ode import *
+from jax.config import config
+config.update("jax_enable_x64", True)
+```
 
 ## Walkthrough
 
@@ -56,20 +63,7 @@ To approximate the solution with the probabilistic solver, the Gaussian process 
 \end{equation*}
 
 Here $\xx(t)  = (x^{(0)}(t), ..., x^{(p-1)}(t))$ consists of $x(t)$ and its first $p-1$ derivatives.
-The $\ibm$ model specifies that each of $\xx(t)  = (x^{(0)}(t), ..., x^{(p-1)}(t))$ is continuous, but $x^{(p)}(t)$ is not. Therefore, we need to pick $p > q$. It's usually a good idea to have $p$ a bit larger than $q$, especially when we think that the true solution $x(t)$ is smooth. However, increasing $p$ also increases the computational burden, and doesn't necessarily have to be large for the solver to work.  For this example, we will use $p=3$. To initialize, we simply set $\xx(0) = (\xx_0, 0)$. The Python code to implement all this is as follows. 
-
-```{code-cell} ipython3
-import jax
-import jax.numpy as jnp
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.integrate import odeint
-
-from rodeo.ibm import ibm_init
-from rodeo.ode import *
-from jax.config import config
-config.update("jax_enable_x64", True)
-```
+The $\ibm$ model specifies that each of $\xx(t)  = (x^{(0)}(t), ..., x^{(p-1)}(t))$ is continuous, but $x^{(p)}(t)$ is not. Therefore, we need to pick $p > q$. It's usually a good idea to have $p$ a bit larger than $q$, especially when we think that the true solution $x(t)$ is smooth. However, increasing $p$ also increases the computational burden, and doesn't necessarily have to be large for the solver to work.  For this example, we will use $p=3$. To initialize, we simply set $\xx(0) = (\xx_0, 0)$. The Python code to implement all this is as follows. In this example, there are two variates so $\xx(t)$ is stacked creating a matrix with dimensions $2 x p$. In a similar fashion, $\WW$ needs to be stacked to create a 3d array of dimension $2 x 1 x p$ where $2$ is from the number of variables and $1$ is from the size of the output of $f$ for each variable.
 
 ```{code-cell} ipython3
 def ode_fun_jax(X_t, t, theta):
@@ -81,9 +75,9 @@ def ode_fun_jax(X_t, t, theta):
 
 
 # problem setup and intialization
-n_deriv = 1  # Total state
+n_deriv = 1  # Total state; q
 n_obs = 2  # Total observations
-n_deriv_prior = 3
+n_deriv_prior = 3 # p
 
 # it is assumed that the solution is sought on the interval [tmin, tmax].
 n_eval = 800
@@ -111,8 +105,8 @@ ode_init = ibm_init(dt, n_order, sigma)
 
 # Jit solver
 key = jax.random.PRNGKey(0)
-mv_jit = jax.jit(solve_sim, static_argnums=(1, 6))
-xt = mv_jit(key=key, fun=ode_fun_jax,
+sim_jit = jax.jit(solve_sim, static_argnums=(1, 6))
+xt = sim_jit(key=key, fun=ode_fun_jax,
         x0=x0_block, theta=theta,
         tmin=tmin, tmax=tmax, n_eval=n_eval,
         wgt_meas=W_block, **ode_init)
@@ -137,7 +131,7 @@ exact = odeint(ode_fun, ode0, tseq, args=(theta,))
 _, axs = plt.subplots(2, 1, figsize=(20, 7))
 ylabel = ['V', 'R']
 for i in range(2):
-    axs[i].plot(tseq, xt[:, i, 0], label="Kalman")
+    axs[i].plot(tseq, xt[:, i, 0], label="rodeo")
     axs[i].set_ylabel(ylabel[i])
     axs[i].plot(tseq, exact[:, i], label='Exact')
     axs[i].legend(loc='upper left')

@@ -155,16 +155,18 @@ API Documentation
 =======================
 .. toctree::
    :maxdepth: 1
+   :caption: API Documentation
 
-   ./ode
-   ./kalmantv
-   ./ibm
-   ./gauss_markov
-   ./utils
+   ode
+   kalmantv
+   ibm
+   gauss_markov
+   utils
 
 Examples
 ========
 .. toctree::
    :maxdepth: 1
+   :caption: Examples
 
-   ./examples
+   examples
