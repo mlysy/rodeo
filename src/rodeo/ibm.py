@@ -82,18 +82,18 @@ def ibm_init(dt, n_order, sigma):
 
     Returns:
         (dict):
-        - **wgt_state** (ndarray(n_block, p, p)) Transition matrix defining the solution prior; :math:`Q`.
-        - **mu_state** (ndarray(n_block, p)): Transition offsets defining the solution prior; denoted by :math:`c`.
+        - **trans_state** (ndarray(n_block, p, p)) Transition matrix defining the solution prior; :math:`Q`.
+        - **mean_state** (ndarray(n_block, p)): Transition offsets defining the solution prior; denoted by :math:`c`.
         - **var_state** (ndarray(n_block, p, p)) Variance matrix defining the solution prior; :math:`R`.
 
     """
     n_block = len(n_order)
     p = max(n_order)
-    mu_state = jnp.zeros((n_block, p))
+    mean_state = jnp.zeros((n_block, p))
 
-    wgt_state, var_state = jax.vmap(lambda b:
+    trans_state, var_state = jax.vmap(lambda b:
         ibm_state(dt, p-1, sigma[b]))(jnp.arange(n_block))
     
-    init = {"wgt_state": wgt_state,  "mu_state": mu_state,
+    init = {"trans_state": trans_state,  "mean_state": mean_state,
             "var_state": var_state}
     return init

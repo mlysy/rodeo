@@ -70,59 +70,59 @@ def gauss_markov_mv(A, b, C):
     return u, V
 
 
-def kalman2gm(wgt_state, mu_state, var_state, wgt_meas, mu_meas, var_meas):
+def kalman2gm(trans_state, mean_state, var_state, trans_meas, mean_meas, var_meas):
     r"""
     Converts the parameters of the Gaussian state-space model to the parameters of the Gaussian Markov model.
 
     Args:
-        wgt_state (ndarray(n_steps, n_state, n_state)): Transition matricesin the state model; denoted by :math:`Q_1, \ldots, Q_N`.
-        mu_state (ndarray(n_steps+1, n_state)): Offsets in the state model; denoted by :math:`c_0, \ldots, c_N`.
+        trans_state (ndarray(n_steps, n_state, n_state)): Transition matricesin the state model; denoted by :math:`Q_1, \ldots, Q_N`.
+        mean_state (ndarray(n_steps+1, n_state)): Offsets in the state model; denoted by :math:`c_0, \ldots, c_N`.
         var_state (ndarray(n_steps+1, n_state, n_state)): Variance matrices in the state model; denoted by :math:`R_0, \ldots, R_N`.
-        wgt_meas (ndarray(n_steps, n_meas, n_state)): Transition matrices in the measurement model; denoted by :math:`W_0, \ldots, W_N`.
-        mu_meas (ndarray(n_steps+1, n_meas)): Offsets in the measurement model; denoted by :math:`d_0, \ldots, d_N`.
+        trans_meas (ndarray(n_steps, n_meas, n_state)): Transition matrices in the measurement model; denoted by :math:`W_0, \ldots, W_N`.
+        mean_meas (ndarray(n_steps+1, n_meas)): Offsets in the measurement model; denoted by :math:`d_0, \ldots, d_N`.
         var_meas (ndarray(n_steps+1, n_meas, n_meas)): Variance matrices in the measurement model; denoted by :math:`V_0, \ldots, V_N`.
 
     Returns:
         (tuple):
-        - **wgt_gm** (ndarray(n_steps, n_dim, n_dim)): Transition matrices in the Gaussian Markov model, where `n_dim = n_state + n_meas`; denoted by :math:`A_1, \ldots, A_N`.
-        - **mu_gm** (ndarray(n_steps+1, n_dim)): Offsets in the Gaussian Markov model; denoted by :math:`b_0, \ldots, b_N`.
+        - **trans_gm** (ndarray(n_steps, n_dim, n_dim)): Transition matrices in the Gaussian Markov model, where `n_dim = n_state + n_meas`; denoted by :math:`A_1, \ldots, A_N`.
+        - **mean_gm** (ndarray(n_steps+1, n_dim)): Offsets in the Gaussian Markov model; denoted by :math:`b_0, \ldots, b_N`.
         - **chol_gm** (ndarray(n_steps+1, n_dim, n_dim)): Cholesky factors of the variance matrices in the Gaussian Markov model; denoted by :math:`C_0, \ldots, C_N`.
 
     """
     # dimensions
-    n_tot, n_meas, n_state = wgt_meas.shape  # n_tot = n_steps + 1
+    n_tot, n_meas, n_state = trans_meas.shape  # n_tot = n_steps + 1
     n_dim = n_state + n_meas
-    # increase dimension of wgt_state to simplify indexing
-    wgt_state = jnp.concatenate([jnp.zeros((n_state, n_state))[None],
-                                wgt_state])
+    # increase dimension of trans_state to simplify indexing
+    trans_state = jnp.concatenate([jnp.zeros((n_state, n_state))[None],
+                                trans_state])
     # useful zero matrices
     zero_sm = jnp.zeros((n_state, n_meas))
     zero_mm = jnp.zeros((n_meas, n_meas))
     # initialize outputs
-    mu_gm = jnp.zeros((n_tot, n_dim))
+    mean_gm = jnp.zeros((n_tot, n_dim))
     chol_gm = jnp.zeros((n_tot, n_dim, n_dim))
-    # increase dimension of wgt_gm to simplify indexing
-    wgt_gm = jnp.zeros((n_tot, n_dim, n_dim))
+    # increase dimension of trans_gm to simplify indexing
+    trans_gm = jnp.zeros((n_tot, n_dim, n_dim))
     for i in range(n_tot):
         # mean term
-        mu_gm = mu_gm.at[i].set(jnp.concatenate(
-            [mu_state[i],
-             mu_meas[i] + wgt_meas[i].dot(mu_state[i])]
+        mean_gm = mean_gm.at[i].set(jnp.concatenate(
+            [mean_state[i],
+             mean_meas[i] + trans_meas[i].dot(mean_state[i])]
         ))
         # weight term
         if i > 0:
-            wgt_gm = wgt_gm.at[i].set(jnp.block(
-                [[wgt_state[i], zero_sm],
-                 [wgt_meas[i].dot(wgt_state[i]), zero_mm]]
+            trans_gm = trans_gm.at[i].set(jnp.block(
+                [[trans_state[i], zero_sm],
+                 [trans_meas[i].dot(trans_state[i]), zero_mm]]
             ))
         # cholesky term
         chol_state = _semi_chol(var_state[i])
         chol_meas = _semi_chol(var_meas[i])
         chol_gm = chol_gm.at[i].set(jnp.block(
             [[chol_state, zero_sm],
-             [wgt_meas[i].dot(chol_state), chol_meas]]
+             [trans_meas[i].dot(chol_state), chol_meas]]
         ))
-    return wgt_gm[1:], mu_gm, chol_gm
+    return trans_gm[1:], mean_gm, chol_gm
 
 def _semi_chol(X):
     r"""

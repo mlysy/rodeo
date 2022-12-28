@@ -33,7 +33,7 @@ def kalman_theta(m, y, mu, Sigma):
 
     Returns:
         (tuple):
-        **mu_cond** (ndarray(n_x, n_state)): E[x_m | y_0:n].
+        **mean_cond** (ndarray(n_x, n_state)): E[x_m | y_0:n].
         **var_cond** (ndarray(n_x, n_state, n_x, n_state)): var(x_m | y_0:n).
         **Note:** In both cases if `n_x == 1` the corresponding dimension is squeezed.
     """
@@ -71,9 +71,9 @@ def fitz_setup(self):
     self.tmin = 0.
     self.tmax = 10.
     h = .05
-    self.n_eval = int((self.tmax-self.tmin)/h)
+    self.n_steps = int((self.tmax-self.tmin)/h) + 1
     self.t = jnp.array(.25)  # time
-    self.tseq = np.linspace(self.tmin, self.tmax, self.n_eval+1)
+    self.tseq = np.linspace(self.tmin, self.tmax, self.n_steps)
 
     # The rest of the parameters can be tuned according to ODE
     # For this problem, we will use
@@ -131,27 +131,27 @@ def kalman_setup(self):
     #self.n_state = 4
     
     self.key, *subkeys = random.split(key, 10)
-    self.mu_state = random.normal(subkeys[0], (self.n_tot, self.n_state))
+    self.mean_state = random.normal(subkeys[0], (self.n_tot, self.n_state))
     self.var_state = random.normal(subkeys[1], (self.n_tot, self.n_state, self.n_state))
     self.var_state = jax.vmap(lambda vs: vs.dot(vs.T))(self.var_state)
-    self.wgt_state = 0.01*random.normal(subkeys[2], (self.n_tot-1, self.n_state, self.n_state))
-    # wgt_state = jnp.zeros((n_tot-1, self.n_state, self.n_state))
-    self.mu_meas = random.normal(subkeys[3], (self.n_tot, self.n_meas,))
+    self.trans_state = 0.01*random.normal(subkeys[2], (self.n_tot-1, self.n_state, self.n_state))
+    # trans_state = jnp.zeros((n_tot-1, self.n_state, self.n_state))
+    self.mean_meas = random.normal(subkeys[3], (self.n_tot, self.n_meas,))
     self.var_meas = random.normal(subkeys[4], (self.n_tot, self.n_meas, self.n_meas))
     self.var_meas = jax.vmap(lambda vs: vs.dot(vs.T))(self.var_meas)
-    self.wgt_meas = random.normal(subkeys[5], (self.n_tot, self.n_meas, self.n_state))
-    # wgt_meas = jnp.zeros((n_tot, n_meas, self.n_state))
+    self.trans_meas = random.normal(subkeys[5], (self.n_tot, self.n_meas, self.n_state))
+    # trans_meas = jnp.zeros((n_tot, n_meas, self.n_state))
     self.x_meas = random.normal(subkeys[6], (self.n_tot, self.n_meas))
     self.x_state_next = random.normal(subkeys[7], (self.n_state,))
     self.z_state = random.normal(subkeys[8], (self.n_state,))
 
     A_gm, b_gm, C_gm = gm.kalman2gm(
-        wgt_state=self.wgt_state,
-        mu_state=self.mu_state,
+        trans_state=self.trans_state,
+        mean_state=self.mean_state,
         var_state=self.var_state,
-        wgt_meas=self.wgt_meas,
-        mu_meas=self.mu_meas,
+        trans_meas=self.trans_meas,
+        mean_meas=self.mean_meas,
         var_meas=self.var_meas
     )
 
-    self.mu_gm, self.var_gm = gm.gauss_markov_mv(A=A_gm, b=b_gm, C=C_gm)
+    self.mean_gm, self.var_gm = gm.gauss_markov_mv(A=A_gm, b=b_gm, C=C_gm)

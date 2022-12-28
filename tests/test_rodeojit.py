@@ -20,10 +20,10 @@ class TestrodeoJit(unittest.TestCase):
         x_meas1, var_meas1 = interrogate_rodeo(
             key=self.key,
             fun=self.fitz_jax,
+            W=self.W_block,
             t=self.t,
             theta=self.theta,
-            wgt_meas=self.W_block,
-            mu_state_pred=self.x0_block,
+            mean_state_pred=self.x0_block,
             var_state_pred=self.var_block
         )
         # with jit
@@ -31,10 +31,10 @@ class TestrodeoJit(unittest.TestCase):
         x_meas2, var_meas2 = rodeo_jit(
             key=self.key,
             fun=self.fitz_jax,
+            W=self.W_block,
             t=self.t,
             theta=self.theta,
-            wgt_meas=self.W_block,
-            mu_state_pred=self.x0_block,
+            mean_state_pred=self.x0_block,
             var_state_pred=self.var_block
         )
         # objective function for gradient
@@ -42,9 +42,8 @@ class TestrodeoJit(unittest.TestCase):
             return jnp.mean(
                 interrogate_rodeo(
                     key=self.key, fun=self.fitz_jax,
-                    t=self.t, theta=theta,
-                    wgt_meas=self.W_block,
-                    mu_state_pred=self.x0_block,
+                    W=self.W_block, t=self.t, theta=theta,
+                    mean_state_pred=self.x0_block,
                     var_state_pred=self.var_block)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)
@@ -59,10 +58,10 @@ class TestrodeoJit(unittest.TestCase):
         x_meas1, var_meas1 = interrogate_chkrebtii(
             key=self.key,
             fun=self.fitz_jax,
+            W=self.W_block,
             t=self.t,
             theta=self.theta,
-            wgt_meas=self.W_block,
-            mu_state_pred=self.x0_block,
+            mean_state_pred=self.x0_block,
             var_state_pred=self.var_block
         )
         # with jit
@@ -70,10 +69,10 @@ class TestrodeoJit(unittest.TestCase):
         x_meas2, var_meas2 = rodeo_jit(
             key=self.key,
             fun=self.fitz_jax,
+            W=self.W_block,
             t=self.t,
             theta=self.theta,
-            wgt_meas=self.W_block,
-            mu_state_pred=self.x0_block,
+            mean_state_pred=self.x0_block,
             var_state_pred=self.var_block
         )
         # objective function for gradient
@@ -81,9 +80,8 @@ class TestrodeoJit(unittest.TestCase):
             return jnp.mean(
                 interrogate_chkrebtii(
                     key=self.key, fun=self.fitz_jax,
-                    t=self.t, theta=theta,
-                    wgt_meas=self.W_block,
-                    mu_state_pred=self.x0_block,
+                    W=self.W_block, t=self.t, theta=theta,
+                    mean_state_pred=self.x0_block,
                     var_state_pred=self.var_block)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)
@@ -98,10 +96,10 @@ class TestrodeoJit(unittest.TestCase):
         x_meas1, var_meas1 = interrogate_schober(
             key=self.key,
             fun=self.fitz_jax,
+            W=self.W_block,
             t=self.t,
             theta=self.theta,
-            wgt_meas=self.W_block,
-            mu_state_pred=self.x0_block,
+            mean_state_pred=self.x0_block,
             var_state_pred=self.var_block
         )
         # with jit
@@ -109,10 +107,10 @@ class TestrodeoJit(unittest.TestCase):
         x_meas2, var_meas2 = rodeo_jit(
             key=self.key,
             fun=self.fitz_jax,
+            W=self.W_block,
             t=self.t,
             theta=self.theta,
-            wgt_meas=self.W_block,
-            mu_state_pred=self.x0_block,
+            mean_state_pred=self.x0_block,
             var_state_pred=self.var_block
         )
         # objective function for gradient
@@ -121,8 +119,8 @@ class TestrodeoJit(unittest.TestCase):
                 interrogate_schober(
                     key=self.key, fun=self.fitz_jax,
                     t=self.t, theta=theta,
-                    wgt_meas=self.W_block,
-                    mu_state_pred=self.x0_block,
+                    W=self.W_block,
+                    mean_state_pred=self.x0_block,
                     var_state_pred=self.var_block)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)
@@ -135,22 +133,22 @@ class TestrodeoJit(unittest.TestCase):
     def test_mv(self):
         # without jit
         mu1, var1 = solve_mv(key=self.key, fun=self.fitz_jax,
-                             x0=self.x0_block, theta=self.theta,
-                             tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                             wgt_meas=self.W_block, **self.ode_init)
+                             W=self.W_block, x0=self.x0_block, theta=self.theta,
+                             tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                             **self.ode_init)
         # with jit
-        mv_jit = jax.jit(solve_mv, static_argnums=(1, 6))
+        mv_jit = jax.jit(solve_mv, static_argnums=(1, 7))
         mu2, var2 = mv_jit(key=self.key, fun=self.fitz_jax,
-                           x0=self.x0_block, theta=self.theta,
-                           tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                           wgt_meas=self.W_block, **self.ode_init)
+                           W=self.W_block, x0=self.x0_block, theta=self.theta,
+                           tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                           **self.ode_init)
         # objective function for gradient
         def obj_fun(theta):
             return jnp.mean(
                 solve_mv(key=self.key, fun=self.fitz_jax,
-                         x0=self.x0_block, theta=theta,
-                         tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                         wgt_meas=self.W_block, **self.ode_init)[0])
+                         W=self.W_block, x0=self.x0_block, theta=theta,
+                         tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                         **self.ode_init)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)
         # grad with jit
@@ -162,22 +160,22 @@ class TestrodeoJit(unittest.TestCase):
     def test_sim(self):
         # without jit
         sim1 = solve_sim(key=self.key, fun=self.fitz_jax,
-                         x0=self.x0_block, theta=self.theta,
-                         tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                         wgt_meas=self.W_block, **self.ode_init)
+                         W=self.W_block, x0=self.x0_block, theta=self.theta,
+                         tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                         **self.ode_init)
         # with jit
-        sim_jit = jax.jit(solve_sim, static_argnums=(1, 6))
+        sim_jit = jax.jit(solve_sim, static_argnums=(1, 7))
         sim2 = sim_jit(key=self.key, fun=self.fitz_jax,
-                       x0=self.x0_block, theta=self.theta,
-                       tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                       wgt_meas=self.W_block, **self.ode_init)
+                       W=self.W_block, x0=self.x0_block, theta=self.theta,
+                       tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                       **self.ode_init)
         # objective function for gradient
         def obj_fun(theta):
             return jnp.mean(
                 solve_sim(key=self.key, fun=self.fitz_jax,
-                          x0=self.x0_block, theta=theta,
-                          tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                          wgt_meas=self.W_block, **self.ode_init)[0])
+                          W=self.W_block, x0=self.x0_block, theta=theta,
+                          tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                          **self.ode_init)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)
         # grad with jit
@@ -189,23 +187,23 @@ class TestrodeoJit(unittest.TestCase):
         # without jit
         sim1, mu1, var1 = \
             solve(key=self.key, fun=self.fitz_jax,
-                  x0=self.x0_block, theta=self.theta,
-                  tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                  wgt_meas=self.W_block, **self.ode_init)
+                  W=self.W_block, x0=self.x0_block, theta=self.theta,
+                  tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                  **self.ode_init)
         # with jit
-        solve_jit = jax.jit(solve, static_argnums=(1, 6))
+        solve_jit = jax.jit(solve, static_argnums=(1, 7))
         sim2, mu2, var2 = \
             solve_jit(key=self.key, fun=self.fitz_jax,
-                      x0=self.x0_block, theta=self.theta,
-                      tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                      wgt_meas=self.W_block, **self.ode_init)
+                      W=self.W_block, x0=self.x0_block, theta=self.theta,
+                      tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                      **self.ode_init)
         # objective function for gradient
         def obj_fun(theta):
             return jnp.mean(
                 solve(key=self.key, fun=self.fitz_jax,
-                      x0=self.x0_block, theta=theta,
-                      tmin=self.tmin, tmax=self.tmax, n_eval=self.n_eval,
-                      wgt_meas=self.W_block, **self.ode_init)[0])
+                      W=self.W_block, x0=self.x0_block, theta=theta,
+                      tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
+                      **self.ode_init)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)
         # grad with jit
