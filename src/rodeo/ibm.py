@@ -70,14 +70,14 @@ def ibm_state(dt, q, sigma):
     return A, Q
 
 
-def ibm_init(dt, n_order, sigma):
+def ibm_init(dt, n_deriv, sigma):
     """
     Calculates the initial parameters necessary for the Kalman solver with the p-1 times
     integrated Brownian Motion.
 
     Args:
         dt (float): The step size between simulation points.
-        n_order (ndarray(n_block)): Dimension of the prior.
+        n_deriv (ndarray(n_block)): Dimension of the prior.
         sigma (ndarray(n_block)): Parameter in variance matrix.
 
     Returns:
@@ -87,8 +87,8 @@ def ibm_init(dt, n_order, sigma):
         - **var_state** (ndarray(n_block, p, p)) Variance matrix defining the solution prior; :math:`R`.
 
     """
-    n_block = len(n_order)
-    p = max(n_order)
+    n_block = len(n_deriv)
+    p = max(n_deriv)
     mean_state = jnp.zeros((n_block, p))
 
     trans_state, var_state = jax.vmap(lambda b:

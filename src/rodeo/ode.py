@@ -116,17 +116,14 @@ def _solve_filter(key, fun,  W,  x0, theta,
 
     Returns:
         (tuple):
-        - **mean_state_pred** (ndarray(n_steps, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **var_state_pred** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **mean_state_filt** (ndarray(n_steps, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
-        - **var_state_filt** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        - **mean_state_pred** (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        - **var_state_pred** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        - **mean_state_filt** (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        - **var_state_filt** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
 
     """
     # Dimensions of block, state and measure variables
     n_block, n_bmeas, n_bstate = W.shape
-
-    # evaluations required
-    n_eval = n_steps - 1
 
     # arguments for kalman_filter and kalman_smooth
     mean_meas = jnp.zeros((n_block, n_bmeas))
@@ -153,7 +150,7 @@ def _solve_filter(key, fun,  W,  x0, theta,
             key=subkey,
             fun=fun,
             W=W,
-            t=tmin + (tmax-tmin)*(t+1)/n_eval,
+            t=tmin + (tmax-tmin)*(t+1)/n_steps,
             theta=theta,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
@@ -185,7 +182,7 @@ def _solve_filter(key, fun,  W,  x0, theta,
         "key": key
     }
     # scan itself
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, jnp.arange(n_eval))
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, jnp.arange(n_steps))
     # append initial values to front
     scan_out["state_filt"] = (
         jnp.concatenate([mean_state_init[None], scan_out["state_filt"][0]]),
@@ -217,13 +214,12 @@ def solve_sim(key, fun, W, x0, theta,
         interrogate (function): Function defining the interrogation method.
 
     Returns:
-        (ndarray(n_steps, n_blocks, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
+        (ndarray(n_steps+1, n_blocks, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
 
     """
     n_block, n_bstate = mean_state.shape
-    n_eval = n_steps - 1
-    key, *subkeys = jax.random.split(key, num=n_eval*n_block+1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_eval, n_block, 2))
+    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
+    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
 
     # forward pass
     filt_out = _solve_filter(
@@ -264,16 +260,16 @@ def solve_sim(key, fun, W, x0, theta,
     # initialize
     scan_init = jax.vmap(lambda b:
                          jax.random.multivariate_normal(
-                             subkeys[n_eval-1, b], 
-                             mean_state_filt[n_eval, b],
-                             var_state_filt[n_eval, b]))(jnp.arange(n_block))
+                             subkeys[n_steps-1, b], 
+                             mean_state_filt[n_steps, b],
+                             var_state_filt[n_steps, b]))(jnp.arange(n_block))
     # scan arguments
     scan_kwargs = {
-        'mean_state_filt': mean_state_filt[1:n_eval],
-        'var_state_filt': var_state_filt[1:n_eval],
-        'mean_state_pred': mean_state_pred[2:n_eval+1],
-        'var_state_pred': var_state_pred[2:n_eval+1],
-        'key': subkeys[:n_eval-1]
+        'mean_state_filt': mean_state_filt[1:n_steps],
+        'var_state_filt': var_state_filt[1:n_steps],
+        'mean_state_pred': mean_state_pred[2:n_steps+1],
+        'var_state_pred': var_state_pred[2:n_steps+1],
+        'key': subkeys[:n_steps-1]
     }
     # Note: initial value x0 is assumed to be known, so we don't
     # sample it.  In fact, doing so would probably fail due to cholesky
@@ -310,12 +306,11 @@ def solve_mv(key, fun, W, x0, theta,
 
     Returns:
         (tuple):
-        - **mean_state_smooth** (ndarray(n_steps, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
-        - **var_state_smooth** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
+        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
     n_block, n_bstate = mean_state.shape
-    n_eval = n_steps - 1
     # forward pass
     filt_out = _solve_filter(
         key=key,
@@ -353,15 +348,15 @@ def solve_mv(key, fun, W, x0, theta,
         return state_curr, state_curr
     # initialize
     scan_init = {
-        "mean": mean_state_filt[n_eval],
-        "var": var_state_filt[n_eval]
+        "mean": mean_state_filt[n_steps],
+        "var": var_state_filt[n_steps]
     }
     # scan arguments
     scan_kwargs = {
-        'mean_state_filt': mean_state_filt[1:n_eval],
-        'var_state_filt': var_state_filt[1:n_eval],
-        'mean_state_pred': mean_state_pred[2:n_steps],
-        'var_state_pred': var_state_pred[2:n_steps]
+        'mean_state_filt': mean_state_filt[1:n_steps],
+        'var_state_filt': var_state_filt[1:n_steps],
+        'mean_state_pred': mean_state_pred[2:n_steps+1],
+        'var_state_pred': var_state_pred[2:n_steps+1]
     }
     # Note: initial value x0 is assumed to be known, so no need to smooth it
     _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
@@ -400,15 +395,14 @@ def solve(key, fun, W, x0, theta,
 
     Returns:
         (tuple):
-        - **x_state_smooth** (ndarray(n_steps, n_block, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
-        - **mean_state_smooth** (ndarray(n_steps, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
-        - **var_state_smooth** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
+        - **x_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
+        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
     n_block, n_bstate = mean_state.shape
-    n_eval = n_steps - 1
-    key, *subkeys = jax.random.split(key, num=n_eval * n_block + 1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_eval, n_block, 2))
+    key, *subkeys = jax.random.split(key, num=n_steps * n_block + 1)
+    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
 
     # forward pass
     filt_out = _solve_filter(
@@ -460,23 +454,23 @@ def solve(key, fun, W, x0, theta,
 
     x_init = jax.vmap(lambda b:
                       jax.random.multivariate_normal(
-                          subkeys[n_eval-1, b],
-                          mean_state_filt[n_eval, b],
-                          var_state_filt[n_eval, b]))(jnp.arange(n_block))
+                          subkeys[n_steps-1, b],
+                          mean_state_filt[n_steps, b],
+                          var_state_filt[n_steps, b]))(jnp.arange(n_block))
     scan_init = {
         "x": x_init,
-        "mean": mean_state_filt[n_eval],
-        "var": var_state_filt[n_eval]
+        "mean": mean_state_filt[n_steps],
+        "var": var_state_filt[n_steps]
     }
     # scan arguments
     # Slice these arrays so they are aligned.
     # More precisely, for time step t, want filt[t], pred[t+1], z_state[t-1]
     scan_kwargs = {
-        'mean_state_filt': mean_state_filt[1:n_eval],
-        'var_state_filt': var_state_filt[1:n_eval],
-        'mean_state_pred': mean_state_pred[2:n_steps],
-        'var_state_pred': var_state_pred[2:n_steps],
-        'key': subkeys[:n_eval-1]
+        'mean_state_filt': mean_state_filt[1:n_steps],
+        'var_state_filt': var_state_filt[1:n_steps],
+        'mean_state_pred': mean_state_pred[2:n_steps+1],
+        'var_state_pred': var_state_pred[2:n_steps+1],
+        'key': subkeys[:n_steps-1]
     }
     # Note: initial value x0 is assumed to be known, so no need to smooth it
     _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,

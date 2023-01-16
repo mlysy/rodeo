@@ -1,31 +1,25 @@
-from math import ceil
-from functools import partial
 import numpy as np
-import scipy as sp
-import scipy.stats
 import jax
-from jax import random, jacfwd, jacrev, grad, lax
+from jaxopt import ScipyMinimize
+from jax import jacfwd, jacrev
 import jax.numpy as jnp
 import jax.scipy as jsp
 
-from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
 from rodeo.ode import *
 from euler import euler
 
-import seaborn as sns
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.lines as mlines
-
 import warnings
+from jax.config import config
 warnings.filterwarnings('ignore')
+config.update("jax_enable_x64", True)
 
-mv_jit = jax.jit(solve_mv, static_argnums=(1, 6))
+from diffrax import diffeqsolve, Dopri5, ODETerm, PIDController
+
+# mv_jit = jax.jit(solve_mv, static_argnums=(1, 7))
 
 class inference:
     r"""
-    Perform parameter inference for the model via mode/quadrature using Euler's 
-    approximation and the KalmanODE solver. 
+    Perform parameter inference for the model via mode/quadrature using the rodeo solver. 
 
     Args:
         key (PRNGKey): PRNG key.
@@ -40,7 +34,7 @@ class inference:
         theta_true (ndarray(n_theta)): True value of :math:`\theta` in the ODE function.
         gamma (float): Noise parameter to simulate the observations.
         phi (ndarray(n_theta)): Log of observed :math:`\theta`.
-        Y_t (ndarray(n_steps, n_state)): Simulated observations.
+        y_obs (ndarray(n_steps, n_state)): Simulated observations :math:`Y_t`.
         step_size (float): Distance between discretisation points.
         phi_mean (ndarray(n_theta)): Mean of :math:`\phi`.
         phi_sd (ndarray(n_theta)): Standard deviation of :math:`\phi`.
@@ -53,110 +47,93 @@ class inference:
         n_samples (int): Number of samples of :math:`\theta` to simulate.
         theta_euler (ndarray(n_samples, n_theta)): Simulated n_samples of 
             :math:`\theta` using Euler's approximation.
-        theta_kalman (ndarray(n_samples, n_theta)): Simulated n_samples of 
-            :math:`\theta` using KalmanODE solver.
+        theta_rodeo (ndarray(n_samples, n_theta) ): Simulated n_samples of 
+            :math:`\theta` using rodeo solver.
     """
-    def __init__(self, key, tmin, tmax, fun, n_eval=None, W=None, kinit=None):
+    def __init__(self, key, fun, W, tmin, tmax, phi_mean, phi_sd, mask, y_obs=None):
         self.key = key
-        self.tmin = tmin
-        self.tmax = tmax
-        self.n_eval = n_eval
         self.fun = fun
         self.W = W
-        self.kinit = kinit
-        self.funpad = None
-
+        self.tmin = tmin
+        self.tmax = tmax
+        self.y_obs = y_obs
+        # initial x0 using mask
+        self.mask = mask
+        # prior on parameters
+        self.phi_mean = phi_mean
+        self.phi_sd = phi_sd
+        # initialized after determining number of steps
+        self.n_steps = None
+        self.n_res = None
+        self.prior_pars = None
+        # diffrax
+        self.term = ODETerm(self.rax_fun)
+        self.solver = Dopri5()
+        self.saveat = None
+        self.diff_dt0 = None
+        self.stepsize_controller = PIDController(rtol=1e-5, atol=1e-5)
+        
     def logprior(self, x, mean, sd):
-        r"Calculate the loglikelihood of the lognormal distribution."
+        r"Calculate the loglikelihood of the normal distribution."
         return jnp.sum(jsp.stats.norm.logpdf(x=x, loc=mean, scale=sd))
 
-    def thinning(self, ode_tseq, data_tseq, X):
-        r"Thin a highly discretized ODE solution to match the observed data."
-        data_i = 0
-        ode_i = 0
-        diff = 1000
-        ind = np.zeros(len(data_tseq), dtype=int)
-        while data_i < len(data_tseq) and ode_i < len(ode_tseq):
-            if data_tseq[data_i] > ode_tseq[ode_i]:
-                diff = min(diff, abs(data_tseq[data_i] - ode_tseq[ode_i]))
-                ode_i+=1
-            else:
-                if diff > abs(data_tseq[data_i] - ode_tseq[ode_i]):
-                    ind[data_i] = ode_i
-                else:
-                    ind[data_i] = ode_i-1
-                data_i+=1
-                diff = 1000
-        return X[ind,:]
-    
-    def x0_initialize(self, phi, x0, phi_len):
+    def x0_initialize(self, phi, x0):
+        r"Initialize x0 for none missing initial values"
         j = 0
-        xx0 = []
-        for i in range(len(x0)):
-            if x0[i] is None:
-                xx0.append(phi[phi_len+j])
-                j+=1
-            else:
-                xx0.append(x0[i])
-        return jnp.array(xx0)
-
-    def kalman_nlpost(self, phi, Y_t, x0, step_size, obs_size, phi_mean, phi_sd, *args):
+        for ind in self.mask:
+            x0 = x0.at[ind,0].set(phi[j])
+            j+=1
+        return x0
+    
+    def kalman_nlpost(self, phi, x0):
         r"Compute the negative loglikihood of :math:`Y_t` using the KalmanODE."
-        phi_ind = len(phi_mean)
-        xx0 = self.x0_initialize(phi, x0, phi_ind)
-        phi = phi[:phi_ind]
-        theta = jnp.exp(phi)
-        xx0 = self.funpad(xx0, 0, theta)
-        X_t = mv_jit(self.key, self.fun, xx0, theta, self.tmin, self.tmax, self.n_eval, self.W, **self.kinit)[0]
-        X_t = X_t[:, :, 0]
-        lp = self.loglike(Y_t, X_t, step_size, obs_size, theta, *args)
-        lp += self.logprior(phi, phi_mean, phi_sd)
+        n_phi = len(self.phi_mean)
+        x0 = self.x0_initialize(phi[self.n_theta:], x0)
+        # print(x0)
+        theta = jnp.exp(phi[:self.n_theta])
+        v0 = self.fun(x0, 0, theta)
+        X_0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
+        X_t = solve_mv(self.key, self.fun, self.W, X_0, theta, self.tmin, self.tmax, self.n_steps, **self.prior_pars)[0]
+        X_t = X_t[::self.n_res, :, 0]
+        lp = self.loglike(self.y_obs, X_t, theta)
+        lp += self.logprior(phi[:n_phi], self.phi_mean, self.phi_sd)
         return -lp
     
-    def euler_nlpost(self, phi, Y_t, x0, step_size, obs_size, phi_mean, phi_sd, *args):
+    def euler_nlpost(self, phi, x0):
         r"Compute the negative loglikihood of :math:`Y_t` using the Euler method."
-        phi_ind = len(phi_mean)
-        xx0 = self.x0_initialize(phi, x0, phi_ind)
-        phi = phi[:phi_ind]
-        theta = jnp.exp(phi)
-        X_t = euler(self.ode_fun, xx0, theta, self.tmin, self.tmax, self.n_eval)
-        lp = self.loglike(Y_t, X_t, step_size, obs_size, theta, *args)
-        lp += self.logprior(phi, phi_mean, phi_sd)
+        n_phi = len(self.phi_mean)
+        x0 = self.x0_initialize(phi[self.n_theta:], x0)
+        x0 = x0.flatten()
+        theta = jnp.exp(phi[:self.n_theta])
+        X_t = euler(self.ode_fun, x0, theta, self.tmin, self.tmax, self.n_steps)
+        X_t = X_t[::self.n_res]
+        lp = self.loglike(self.y_obs, X_t, theta)
+        lp += self.logprior(phi[:n_phi], self.phi_mean, self.phi_sd)
         return -lp
     
-    def diffrax_nlpost(self, phi, Y_t, x0, step_size, obs_size, phi_mean, phi_sd, *args):
-        phi_ind = len(phi_mean)
-        xx0 = self.x0_initialize(phi, x0, phi_ind)
-        phi = phi[:phi_ind]
-        theta = jnp.exp(phi)
-        term = ODETerm(self.rax_fun)
-        solver = Dopri5()
-        tseq = jnp.linspace(self.tmin, self.tmax, int((self.tmax-self.tmin)/step_size)+1)
-        saveat = SaveAt(ts=tseq)
-        stepsize_controller = PIDController(rtol=1e-5, atol=1e-5)
-        X_t = diffeqsolve(term, solver, args = theta, t0=self.tmin, t1=self.tmax, dt0=step_size, y0=jnp.array(xx0), saveat=saveat,
-                          stepsize_controller=stepsize_controller).ys
-        lp = self.loglike(Y_t, X_t, step_size, obs_size, theta, *args)
-        lp += self.logprior(phi, phi_mean, phi_sd)
+    def diffrax_nlpost(self, phi, x0):
+        r"Compute the negative loglikihood of :math:`Y_t` using a deterministic solver."
+        n_phi = len(self.phi_mean)
+        x0 = self.x0_initialize(phi[self.n_theta:], x0)
+        x0 = x0.flatten()
+        theta = jnp.exp(phi[:self.n_theta])
+        X_t = diffeqsolve(self.term, self.solver, args = theta, t0=self.tmin, t1=self.tmax, dt0 = self.diff_dt0, 
+                          y0=jnp.array(x0), saveat=self.saveat, stepsize_controller=self.stepsize_controller).ys
+        lp = self.loglike(self.y_obs, X_t, theta)
+        lp += self.logprior(phi[:n_phi], self.phi_mean, self.phi_sd)
         return -lp
 
-    def phi_fit(self, Y_t, x0, step_size, obs_size, phi_mean, phi_sd, obj_fun, *args, phi_init=None, method="Newton-CG"):
+    def phi_fit(self, phi_init, x0, obj_fun):
         r"""Compute the optimized :math:`\log{\theta}` and its variance given 
             :math:`Y_t`."""
-        if phi_init is None:
-            n_theta = len(phi_mean)
-            n_x0 = len([i for i in x0 if i is None])
-            phi_init = np.zeros(n_theta + n_x0)
         
         n_phi = len(phi_init)
-        gradf = grad(obj_fun)
+        # obj_fun = jax.jit(obj_fun)
         hes = jacfwd(jacrev(obj_fun))
-        opt_res = sp.optimize.minimize(obj_fun, phi_init,
-                                       args=(Y_t, x0, step_size, obs_size, phi_mean, phi_sd, *args),
-                                       method=method,
-                                       jac=gradf)
-        phi_hat = opt_res.x
-        phi_fisher = hes(phi_hat, Y_t, x0, step_size, obs_size, phi_mean, phi_sd, *args)
+        solver = ScipyMinimize(method="Newton-CG", fun = obj_fun)
+        opt_res = solver.run(phi_init, x0)
+        phi_hat = opt_res.params
+        phi_fisher = hes(phi_hat, x0)
         phi_cho, low = jsp.linalg.cho_factor(phi_fisher)
         phi_var = jsp.linalg.cho_solve((phi_cho, low), jnp.eye(n_phi))
         return phi_hat, phi_var
@@ -167,86 +144,4 @@ class inference:
         phi = np.random.default_rng(12345).multivariate_normal(phi_hat, phi_var, n_samples)
         return phi
     
-    def theta_plot(self, theta_euler, theta_kalman, theta_diffrax, theta_true, step_sizes, var_names, clip=None, rows=1):
-        r"""Plot the distribution of :math:`\theta` using the Kalman solver 
-            and the Euler approximation."""
-        n_hlst, _, n_theta = theta_euler.shape
-        ncol = ceil(n_theta/rows) +1
-        nrow = 2
-        fig = plt.figure(figsize=(20, 10*rows))
-        patches = [None]*(n_hlst+2)
-        if clip is None:
-            clip = [None]*ncol*rows 
-        carry = 0
-        for t in range(1,n_theta+1):
-            row = (t-1)//(ncol-1)
-            if t%(ncol)==0:
-                carry +=1
-            
-            axs1 = fig.add_subplot(rows*nrow, ncol, t+row*(ncol)+carry)
-            axs2 = fig.add_subplot(rows*nrow, ncol, t+(row+1)*(ncol)+carry)
-            axs2.get_shared_x_axes().join(axs2, axs1)
-            axs1.set_title(var_names[t-1])
-            if (t+carry)%ncol==1:
-                axs1.set_ylabel('Euler')
-                axs2.set_ylabel('rodeo')
-            
-            for axs in [axs1, axs2]:
-                axs.axvline(x=theta_true[t-1], linewidth=1, color='r', linestyle='dashed')
-                axs.set_yticks([])
-
-            for h in range(n_hlst):
-                if t==1:
-                    patches[h] = mpatches.Patch(color='C{}'.format(h), label='$\\Delta$ t ={}'.format(step_sizes[h]))
-                sns.kdeplot(theta_euler[h, :, t-1], ax=axs1, clip=clip[t-1])
-                sns.kdeplot(theta_kalman[h, :, t-1], ax=axs2, clip=clip[t-1])
-            
-
-            sns.kdeplot(theta_diffrax[:, t-1], ax=axs1, color='black', clip=clip[t-1])
-            sns.kdeplot(theta_diffrax[:, t-1], ax=axs2, color='black', clip=clip[t-1])
-            if t==n_theta:
-                patches[-2] = mpatches.Patch(color='black', label="True Posterior")
-                patches[-1] = mlines.Line2D([], [], color='r', linestyle='dashed', linewidth=1, label='True $\\theta$')
-                
-        fig.legend(handles=patches, framealpha=0.5, loc=7)
-        
-        fig.tight_layout()
-        plt.show()
-        return fig
-
-    def theta_plotsingle(self, theta, theta_diffrax, theta_true, step_sizes, var_names, clip=None, rows=1):
-        r"""Plot the distribution of :math:`\theta` using the Kalman solver 
-            and the Euler approximation."""
-        n_hlst, _, n_theta = theta.shape
-        ncol = ceil(n_theta/rows) +1
-        fig = plt.figure(figsize=(20, 5*rows))
-        patches = [None]*(n_hlst+2)
-        if clip is None:
-            clip = [None]*ncol*rows 
-        carry = 0
-        for t in range(1,n_theta+1):
-            row = (t-1)//(ncol-1)
-            if t%(ncol)==0:
-                carry +=1
-            
-            axs = fig.add_subplot(rows, ncol, t+carry)
-            axs.set_title(var_names[t-1])
-            axs.axvline(x=theta_true[t-1], linewidth=1, color='r', linestyle='dashed')
-            axs.set_yticks([])
-
-            for h in range(n_hlst):
-                if t==1:
-                    patches[h] = mpatches.Patch(color='C{}'.format(h), label='$\\Delta$ t ={}'.format(step_sizes[h]))
-                sns.kdeplot(theta[h, :, t-1], ax=axs, clip=clip[t-1])
-            
-            sns.kdeplot(theta_diffrax[:, t-1], ax=axs, color='black', clip=clip[t-1])
-            
-            if t==n_theta:
-                patches[-2] = mpatches.Patch(color='black', label="True Posterior")
-                patches[-1] = mlines.Line2D([], [], color='r', linestyle='dashed', linewidth=1, label='True $\\Theta$')
-                
-        fig.legend(handles=patches, framealpha=0.5, loc=7)
-        
-        fig.tight_layout()
-        plt.show()
-        return fig
+    
