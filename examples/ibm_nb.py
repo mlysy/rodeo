@@ -32,69 +32,69 @@ def ibm_state(dt, q, sigma):
             Q[i, j] = sigma**2*num/denom
     return A, Q
 
-def ibm_init(dt, n_order, sigma):
+def ibm_init(dt, n_deriv, sigma):
     """
     Calculates the initial parameters necessary for the Kalman solver with the q-times
     integrated Brownian Motion.
 
     Args:
         dt (float): The step size between simulation points.
-        n_order (list(int)): Dimension of the prior.
+        n_deriv (list(int)): Dimension of the prior.
         sigma (list(float)): Parameter in variance matrix.
         
     Returns:
         (dict):
-        - **wgt_state** (ndarray(n_block, p, p)) Transition matrix defining the solution prior; :math:`Q_n`.
-        - **mu_state** (ndarray(n_block, p)): Transition_offsets defining the solution prior; denoted by :math:`c_n`.
+        - **trans_state** (ndarray(n_block, p, p)) Transition matrix defining the solution prior; :math:`Q_n`.
+        - **mean_state** (ndarray(n_block, p)): Transition_offsets defining the solution prior; denoted by :math:`c_n`.
         - **var_state** (ndarray(n_block, p, p)) Variance matrix defining the solution prior; :math:`R_n`.
 
     """
-    n_block = len(n_order)
-    p = max(n_order)
-    mu_state = np.zeros((n_block, p))
-    wgt_state = [None]*n_block
+    n_block = len(n_deriv)
+    p = max(n_deriv)
+    mean_state = np.zeros((n_block, p))
+    trans_state = [None]*n_block
     var_state = [None]*n_block
     for i in range(n_block):
-        wgt_state[i], var_state[i] = ibm_state(dt, n_order[i]-1, sigma[i])
+        trans_state[i], var_state[i] = ibm_state(dt, n_deriv[i]-1, sigma[i])
     
     #if n_var == 1:
-    #    wgt_state = wgt_state[0]
+    #    trans_state = trans_state[0]
     #    var_state = var_state[0]
     
-    init = {"wgt_state":wgt_state,  "mu_state":mu_state,
+    init = {"trans_state":trans_state,  "mean_state":mean_state,
             "var_state":var_state}
     return init
 
 
-def indep_init(init, n_order):
+def indep_init(init, n_deriv):
     """
     Computes the necessary parameters for the Kalman filter and smoother.
 
     Args:
         init (list(n_var)): Computed initial parameters for each variable.
-        n_order (list(int)): Number of derivatives for each variable in Kalman solver.
+        n_deriv (list(int)): Number of derivatives for each variable in Kalman solver.
     
     Returns:
         (tuple):
         - **kinit** (dict): Dictionary holding the computed initial parameters for the
           Kalman solver.
     """
-    mu_state_i = init['mu_state']
-    wgt_state_i = init['wgt_state']
+    mean_state_i = init['mean_state']
+    trans_state_i = init['trans_state']
     var_state_i = init['var_state']
 
     n_var = len(var_state_i)
-    p = sum(n_order)
-    mu_state = np.zeros((p,), order='F')
-    wgt_state = np.zeros((p, p), order='F')
+    p = sum(n_deriv)
+    mean_state = np.zeros((p,), order='F')
+    trans_state = np.zeros((p, p), order='F')
     var_state = np.zeros((p, p), order='F')
     ind = 0
     for i in range(n_var):
-        mu_state[ind:ind+n_order[i]] = mu_state_i[i]
-        wgt_state[ind:ind+n_order[i], ind:ind+n_order[i]] = wgt_state_i[i]
-        var_state[ind:ind+n_order[i], ind:ind+n_order[i]] = var_state_i[i]
-        ind += n_order[i]
-    kinit = {"wgt_state":wgt_state, "mu_state":mu_state,
+        mean_state[ind:ind+n_deriv[i]] = mean_state_i[i]
+        trans_state[ind:ind+n_deriv[i], ind:ind+n_deriv[i]] = trans_state_i[i]
+        var_state[ind:ind+n_deriv[i], ind:ind+n_deriv[i]] = var_state_i[i]
+        ind += n_deriv[i]
+    kinit = {"trans_state":trans_state, "mean_state":mean_state,
             "var_state":var_state}
     
     return kinit

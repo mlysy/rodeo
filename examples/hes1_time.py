@@ -1,9 +1,11 @@
 from timeit import default_timer as timer
+import warnings
 import numpy as np
 import jax
 import jax.numpy as jnp
 from scipy.integrate import odeint
 from numba import njit
+warnings.filterwarnings('ignore')
 from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
 
 from rodeo.ibm import ibm_init
@@ -12,7 +14,6 @@ from rodeo.ode import *
 from ibm_nb import ibm_init as ibm_init_nb
 from ibm_nb import indep_init
 import ode_nb as rodeonb
-from euler import euler
 
 def ode_fun_jax(X_t, t, theta):
     "FitzHugh-Nagumo ODE."
@@ -55,8 +56,8 @@ def _logpost(y_meas, Xt, gamma):
 def logpost_rodeo(theta, y_meas, gamma):
     Xt = solve_sim(key=key, fun=ode_fun_jax,
                     x0=x0_block, theta=theta,
-                    tmin=tmin, tmax=tmax, n_eval=n_eval,
-                    wgt_meas=W_block, **ode_init)
+                    tmin=tmin, tmax=tmax, n_steps=n_steps,
+                    W=W_block, **ode_init)
     return _logpost(y_meas, Xt[:,:,0], gamma)
 
 def logpost_diffrax(theta, y_meas, gamma):
@@ -70,7 +71,7 @@ n_obs = 3  # Total measures
 n_deriv_prior = 3
 
 # it is assumed that the solution is sought on the interval [tmin, tmax].
-n_eval = 120
+n_steps = 120
 tmin = 0.
 tmax = 240.
 theta = np.array([0.022, 0.3, 0.031, 0.028, 0.5, 20, 0.3])
@@ -97,7 +98,7 @@ pad_dim = n_deriv_prior - n_deriv - 1
 x0_block = jnp.pad(X0, [(0, 0), (0, pad_dim)])
 
 # Get parameters needed to run the solver
-dt = (tmax-tmin)/n_eval
+dt = (tmax-tmin)/n_steps
 n_order = jnp.array([n_deriv_prior]*n_obs)
 ode_init = ibm_init(dt, n_order, sigma)
 
@@ -117,18 +118,18 @@ ode_initnb = dict((k, jnp.array(v)) for k, v in kinit.items())
 
 # Jit solver
 key = jax.random.PRNGKey(0)
-sim_jit = jax.jit(solve_sim, static_argnums=(1, 6))
+sim_jit = jax.jit(solve_sim, static_argnums=(1, 7))
 sim_jit(key=key, fun=ode_fun_jax,
         x0=x0_block, theta=thetaj,
-        tmin=tmin, tmax=tmax, n_eval=n_eval,
-        wgt_meas=W_block, **ode_init)
+        tmin=tmin, tmax=tmax, n_steps=n_steps,
+        W=W_block, **ode_init)
 
 # Jit non block solver
-sim_jit2 = jax.jit(rodeonb.solve_sim, static_argnums=(1, 6))
+sim_jit2 = jax.jit(rodeonb.solve_sim, static_argnums=(1, 7))
 sim_jit2(key=key, fun=ode_fun_jax2,
          x0=x0_state, theta=thetaj,
-         tmin=tmin, tmax=tmax, n_eval=n_eval,
-         wgt_meas=W, **ode_initnb) 
+         tmin=tmin, tmax=tmax, n_steps=n_steps,
+         W=W, **ode_initnb) 
 
 # Timings
 n_loops = 100
@@ -138,8 +139,8 @@ start = timer()
 for i in range(n_loops):
     _ = sim_jit(key=key, fun=ode_fun_jax,
                 x0=x0_block, theta=thetaj,
-                tmin=tmin, tmax=tmax, n_eval=n_eval,
-                wgt_meas=W_block, **ode_init)
+                tmin=tmin, tmax=tmax, n_steps=n_steps,
+                W=W_block, **ode_init)
 end = timer()
 time_jax = (end - start)/n_loops
 
@@ -148,13 +149,13 @@ start = timer()
 for i in range(n_loops):
     _ = sim_jit2(key=key, fun=ode_fun_jax2,
                  x0=x0_state, theta=thetaj,
-                 tmin=tmin, tmax=tmax, n_eval=n_eval,
-                 wgt_meas=W, **ode_initnb)
+                 tmin=tmin, tmax=tmax, n_steps=n_steps,
+                 W=W, **ode_initnb)
 end = timer()
 time_jaxnb = (end - start)/n_loops
 
 # diffrax
-tseq = np.linspace(tmin, tmax, n_eval+1)
+tseq = np.linspace(tmin, tmax, n_steps+1)
 term = ODETerm(ode_fun_rax)
 solver = Dopri5()
 saveat = SaveAt(ts=tseq)
@@ -169,7 +170,7 @@ end = timer()
 time_rax = (end - start)/n_loops
 
 # # odeint
-tseq = np.linspace(tmin, tmax, n_eval+1)
+tseq = np.linspace(tmin, tmax, n_steps+1)
 y_meas = odeint(ode_fun, ode0, tseq, args=(theta,))
 start = timer()
 for i in range(n_loops):

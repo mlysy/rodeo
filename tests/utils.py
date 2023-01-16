@@ -71,9 +71,9 @@ def fitz_setup(self):
     self.tmin = 0.
     self.tmax = 10.
     h = .05
-    self.n_steps = int((self.tmax-self.tmin)/h) + 1
+    self.n_steps = int((self.tmax-self.tmin)/h)
     self.t = jnp.array(.25)  # time
-    self.tseq = np.linspace(self.tmin, self.tmax, self.n_steps)
+    self.tseq = np.linspace(self.tmin, self.tmax, self.n_steps+1)
 
     # The rest of the parameters can be tuned according to ODE
     # For this problem, we will use
