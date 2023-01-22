@@ -93,29 +93,28 @@ def _solve_filter(key, fun, W, x0, theta,
 
     Returns:
         (tuple):
-        - **mean_state_pred** (ndarray(n_steps, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **var_state_pred** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **mean_state_filt** (ndarray(n_steps, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
-        - **var_state_filt** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        - **mean_state_pred** (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        - **var_state_pred** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        - **mean_state_filt** (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        - **var_state_filt** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
 
     """
     # Dimensions of block, state and measure variables
     n_block, n_bmeas, n_bstate = W.shape
-    n_eval = n_steps - 1
     #n_state = len(mean_state)
 
     # arguments for kalman_filter and kalman_smooth
     mean_meas = jnp.zeros((n_block, n_bmeas))
-    mean_state_filt = np.zeros((n_steps, n_block, n_bstate))
-    mean_state_pred = np.zeros((n_steps, n_block, n_bstate))
-    var_state_filt = np.zeros((n_steps, n_block, n_bstate, n_bstate))
-    var_state_pred = np.zeros((n_steps, n_block, n_bstate, n_bstate))
+    mean_state_filt = np.zeros((n_steps+1, n_block, n_bstate))
+    mean_state_pred = np.zeros((n_steps+1, n_block, n_bstate))
+    var_state_filt = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
+    var_state_pred = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
 
     # initialize
     mean_state_filt[0] = x0
     mean_state_pred[0] = x0
 
-    for t in range(n_eval):
+    for t in range(n_steps):
         key, subkey = jax.random.split(key)
         for b in range(n_block):
             mean_state_pred[t+1, b], var_state_pred[t+1, b] = \
@@ -131,7 +130,7 @@ def _solve_filter(key, fun, W, x0, theta,
             key=subkey,
             fun=fun,
             W=W,
-            t=tmin + (tmax-tmin)*(t+1)/n_eval,
+            t=tmin + (tmax-tmin)*(t+1)/n_steps,
             theta=theta,
             mean_state_pred=mean_state_pred[t+1],
             var_state_pred=var_state_pred[t+1]
@@ -176,10 +175,9 @@ def solve_sim(key, fun, W, x0, theta,
 
     """
     n_block, n_bstate = mean_state.shape
-    n_eval = n_steps - 1
-    key, *subkeys = jax.random.split(key, num=n_eval*n_block+1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_eval, n_block, 2))
-    x_state_smooth = np.zeros((n_steps, n_block, n_bstate))
+    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
+    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
+    x_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
     x_state_smooth[0] = x0
 
     # forward pass
@@ -194,20 +192,20 @@ def solve_sim(key, fun, W, x0, theta,
         )
 
     # for b in range(n_block):
-    #     x_state_smooth[n_eval, b] = \
+    #     x_state_smooth[n_steps, b] = \
     #         _state_sim(
-    #             mean_state_filt[n_eval, b],
-    #             var_state_filt[n_eval, b],
-    #             z_state[n_eval-1, b])
+    #             mean_state_filt[n_steps, b],
+    #             var_state_filt[n_steps, b],
+    #             z_state[n_steps-1, b])
 
     for b in range(n_block):
-        x_state_smooth[n_eval, b] = \
+        x_state_smooth[n_steps, b] = \
             jax.random.multivariate_normal(
-                subkeys[n_eval-1, b],
-                mean_state_filt[n_eval, b],
-                var_state_filt[n_eval, b])
+                subkeys[n_steps-1, b],
+                mean_state_filt[n_steps, b],
+                var_state_filt[n_steps, b])
 
-    for t in range(n_eval-1, 0, -1):
+    for t in range(n_steps-1, 0, -1):
         for b in range(n_block):
             mean_state_sim, var_state_sim = smooth_sim(
                     x_state_next=x_state_smooth[t+1, b],
@@ -245,15 +243,14 @@ def solve_mv(key, fun, W, x0, theta,
 
     Returns:
         (tuple):
-        - **mean_state_smooth** (ndarray(n_steps, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
-        - **var_state_smooth** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
+        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
     n_block, n_bstate = mean_state.shape
-    n_eval = n_steps - 1
-    mean_state_smooth = np.zeros((n_steps, n_block, n_bstate))
+    mean_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
     mean_state_smooth[0] = x0
-    var_state_smooth = np.zeros((n_steps, n_block, n_bstate, n_bstate))
+    var_state_smooth = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
 
     # forward pass
     mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = \
@@ -269,7 +266,7 @@ def solve_mv(key, fun, W, x0, theta,
     mean_state_smooth[-1] = mean_state_filt[-1]
     var_state_smooth[-1] = var_state_filt[-1]
     # backward pass
-    for t in range(n_eval-1, 0, -1):
+    for t in range(n_steps-1, 0, -1):
         for b in range(n_block):
             mean_state_smooth[t, b], var_state_smooth[t, b] = \
                 smooth_mv(
@@ -315,16 +312,15 @@ def solve(key, fun, W, x0, theta,
 
     """
     n_block, n_bstate = mean_state.shape
-    n_eval = n_steps - 1
     #key, subkey = jax.random.split(key)
-    #z_state = jax.random.normal(subkey, (n_eval, n_block, n_bstate))
-    key, *subkeys = jax.random.split(key, num=n_eval*n_block+1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_eval, n_block, 2))
-    x_state_smooth = np.zeros((n_steps, n_block, n_bstate))
+    #z_state = jax.random.normal(subkey, (n_steps, n_block, n_bstate))
+    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
+    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
+    x_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
     x_state_smooth[0] = x0
-    mean_state_smooth = np.zeros((n_steps, n_block, n_bstate))
+    mean_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
     mean_state_smooth[0] = x0
-    var_state_smooth = np.zeros((n_steps, n_block, n_bstate, n_bstate))
+    var_state_smooth = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
 
     # forward pass
     mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = \
@@ -341,21 +337,21 @@ def solve(key, fun, W, x0, theta,
     var_state_smooth[-1] = var_state_filt[-1]
 
     # for b in range(n_block):
-    #     x_state_smooth[n_eval, b] = \
+    #     x_state_smooth[n_steps, b] = \
     #         _state_sim(
-    #             mean_state_filt[n_eval, b],
-    #             var_state_filt[n_eval, b],
-    #             z_state[n_eval-1, b])
+    #             mean_state_filt[n_steps, b],
+    #             var_state_filt[n_steps, b],
+    #             z_state[n_steps-1, b])
 
     for b in range(n_block):
-        x_state_smooth[n_eval, b] = \
+        x_state_smooth[n_steps, b] = \
             jax.random.multivariate_normal(
-                subkeys[n_eval-1, b],
-                mean_state_filt[n_eval, b],
-                var_state_filt[n_eval, b])
+                subkeys[n_steps-1, b],
+                mean_state_filt[n_steps, b],
+                var_state_filt[n_steps, b])
 
     # backward pass
-    for t in range(n_eval-1, 0, -1):
+    for t in range(n_steps-1, 0, -1):
         for b in range(n_block):
             mean_state_sim, var_state_sim, mean_state_smooth[t, b], var_state_smooth[t, b] = \
                 smooth(

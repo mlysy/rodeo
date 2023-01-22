@@ -58,9 +58,8 @@ def logpost_diffrax(theta, y_meas, gamma):
     return _logpost(y_meas, Xt, gamma)
 
 # problem setup and intialization
-n_deriv = 1  # Total state
+n_deriv = 3  # Total state
 n_obs = 2  # Total measures
-n_deriv_prior = 3
 
 # it is assumed that the solution is sought on the interval [tmin, tmax].
 n_steps = 600
@@ -75,7 +74,7 @@ sigma = .5
 sigma = jnp.array([sigma]*n_obs)
 
 # Initial W for jax block
-W_mat = np.zeros((n_obs, 1, n_deriv_prior))
+W_mat = np.zeros((n_obs, 1, n_deriv))
 W_mat[:, :, 1] = 1
 W_block = jnp.array(W_mat)
 
@@ -87,13 +86,13 @@ x0_block = jnp.array([[-1., 1., 0.], [1., 1/3, 0.]])
 
 # Get parameters needed to run the solver
 dt = (tmax-tmin)/n_steps
-n_order = jnp.array([n_deriv_prior]*n_obs)
+n_order = jnp.array([n_deriv]*n_obs)
 ode_init = ibm_init(dt, n_order, sigma)
 
 # Initial W for jax non block
 W = np.zeros((n_obs, jnp.sum(n_order)))
 W[0, 1] = 1
-W[1, n_deriv_prior+1] = 1
+W[1, n_deriv+1] = 1
 W = jnp.array(W)
 
 # Initial x0 for non block
