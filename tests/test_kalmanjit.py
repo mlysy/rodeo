@@ -64,7 +64,7 @@ class TestKalmanTVJit(unittest.TestCase):
         def obj_fun(mean_state_pred, var_state_pred,
                     x_meas, mean_meas, trans_meas, var_meas):
             return jnp.mean(
-                ktv.update(mean_state_pred, var_state_pred,
+                ktv.update(mean_state_pred, var_state_pred, self.trans_meas[0],
                            x_meas, mean_meas, trans_meas, var_meas)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(

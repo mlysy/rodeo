@@ -17,7 +17,7 @@ class TestrodeoJit(unittest.TestCase):
 
     def test_interrogate_rodeo(self):
         # without jit
-        x_meas1, var_meas1 = interrogate_rodeo(
+        trans_meas1, mean_meas1, var_meas1 = interrogate_rodeo(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -28,7 +28,7 @@ class TestrodeoJit(unittest.TestCase):
         )
         # with jit
         rodeo_jit = jax.jit(interrogate_rodeo, static_argnums=(1,))
-        x_meas2, var_meas2 = rodeo_jit(
+        trans_meas2, mean_meas2, var_meas2 = rodeo_jit(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -49,13 +49,14 @@ class TestrodeoJit(unittest.TestCase):
         grad1 = jax.grad(obj_fun)(self.theta)
         # grad with jit
         grad2 = jax.jit(jax.grad(obj_fun))(self.theta)
-        self.assertAlmostEqual(utils.rel_err(x_meas1, x_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(trans_meas1, trans_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(mean_meas1, mean_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var_meas1, var_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(grad1, grad2), 0.0)
 
     def test_interrogate_chkrebtii(self):
         # without jit
-        x_meas1, var_meas1 = interrogate_chkrebtii(
+        trans_meas1, mean_meas1, var_meas1 = interrogate_chkrebtii(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -66,7 +67,7 @@ class TestrodeoJit(unittest.TestCase):
         )
         # with jit
         rodeo_jit = jax.jit(interrogate_chkrebtii, static_argnums=(1,))
-        x_meas2, var_meas2 = rodeo_jit(
+        trans_meas2, mean_meas2, var_meas2 = rodeo_jit(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -87,13 +88,14 @@ class TestrodeoJit(unittest.TestCase):
         grad1 = jax.grad(obj_fun)(self.theta)
         # grad with jit
         grad2 = jax.jit(jax.grad(obj_fun))(self.theta)
-        self.assertAlmostEqual(utils.rel_err(x_meas1, x_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(trans_meas1, trans_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(mean_meas1, mean_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var_meas1, var_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(grad1, grad2), 0.0)
 
     def test_interrogate_schober(self):
         # without jit
-        x_meas1, var_meas1 = interrogate_schober(
+        trans_meas1, mean_meas1, var_meas1 = interrogate_schober(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -104,7 +106,7 @@ class TestrodeoJit(unittest.TestCase):
         )
         # with jit
         rodeo_jit = jax.jit(interrogate_schober, static_argnums=(1,))
-        x_meas2, var_meas2 = rodeo_jit(
+        trans_meas2, mean_meas2, var_meas2 = rodeo_jit(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -126,7 +128,8 @@ class TestrodeoJit(unittest.TestCase):
         grad1 = jax.grad(obj_fun)(self.theta)
         # grad with jit
         grad2 = jax.jit(jax.grad(obj_fun))(self.theta)
-        self.assertAlmostEqual(utils.rel_err(x_meas1, x_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(trans_meas1, trans_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(mean_meas1, mean_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var_meas1, var_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(grad1, grad2), 0.0)
 
