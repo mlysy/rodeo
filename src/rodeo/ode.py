@@ -42,7 +42,8 @@ def interrogate_rodeo(key, fun, W, t, theta,
 
     Returns:
         (tuple):
-        - **x_meas** (ndarray(n_block, n_bmeas)): Interrogation variable.
+        - **trans_meas** (ndarray(n_block, n_bmeas, n_bstate)): Interrogation transition matrix.
+        - **mean_meas** (ndarray(n_block, n_bmeas)): Interrogation offset.
         - **var_meas** (ndarray(n_block, n_bmeas, n_bmeas)): Interrogation variance.
 
     """
@@ -51,8 +52,8 @@ def interrogate_rodeo(key, fun, W, t, theta,
                         jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
         W, var_state_pred
     )
-    x_meas = fun(mean_state_pred, t, theta)
-    return x_meas, var_meas
+    mean_meas = -fun(mean_state_pred, t, theta)
+    return W, mean_meas, var_meas
 
 
 def interrogate_chkrebtii(key, fun, W, t, theta,
@@ -76,8 +77,8 @@ def interrogate_chkrebtii(key, fun, W, t, theta,
                            mean_state_pred[b],
                            var_state_pred[b]
                        ))(jnp.arange(n_block))
-    x_meas = fun(x_state, t, theta)
-    return x_meas, var_meas
+    mean_meas = -fun(x_state, t, theta)
+    return W, mean_meas, var_meas
 
 def interrogate_schober(key, fun, W, t, theta,
                         mean_state_pred, var_state_pred):
@@ -89,8 +90,28 @@ def interrogate_schober(key, fun, W, t, theta,
     """
     n_block, n_bmeas, _ = W.shape
     var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
-    x_meas = fun(mean_state_pred, t, theta)
-    return x_meas, var_meas
+    mean_meas = -fun(mean_state_pred, t, theta)
+    return W, mean_meas, var_meas
+
+def interrogate_tronarp(key, fun, W, t, theta,
+                        mean_state_pred, var_state_pred):
+    r"""
+    First order interrogate method of Tronarp et al (2019); DOI: https://doi.org/10.1007/s11222-019-09900-1.
+    Assumes one block (because off-diagonals are not necessarily 0).
+    Same arguments and returns as :func:`~ode_block_solve.interrogate_rodeo`.
+
+    """
+    n_block, n_bmeas, n_bstate = W.shape
+    p = int(n_bstate/n_bmeas)
+    mean_meas = -fun(mean_state_pred, t, theta)
+    jac = jax.jacfwd(fun)(mean_state_pred, t, theta)[:, :, 0]
+    trans_meas = W - jac
+    # var_meas = jax.vmap(lambda wm, vsp:
+    #                     jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
+    #     trans_meas, var_state_pred
+    # )
+    var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
+    return trans_meas, mean_meas, var_meas
 
 
 def _solve_filter(key, fun,  W,  x0, theta,
@@ -126,7 +147,7 @@ def _solve_filter(key, fun,  W,  x0, theta,
     n_block, n_bmeas, n_bstate = W.shape
 
     # arguments for kalman_filter and kalman_smooth
-    mean_meas = jnp.zeros((n_block, n_bmeas))
+    x_meas = jnp.zeros((n_block, n_bmeas))
     mean_state_init = x0
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
@@ -146,7 +167,7 @@ def _solve_filter(key, fun,  W,  x0, theta,
             )
         )(jnp.arange(n_block))
         # model interrogation
-        x_meas, var_meas = interrogate(
+        trans_meas, mean_meas, var_meas = interrogate(
             key=subkey,
             fun=fun,
             W=W,
@@ -160,9 +181,10 @@ def _solve_filter(key, fun,  W,  x0, theta,
             update(
                 mean_state_pred=mean_state_pred[b],
                 var_state_pred=var_state_pred[b],
+                W=W[b],
                 x_meas=x_meas[b],
                 mean_meas=mean_meas[b],
-                trans_meas=W[b],
+                trans_meas=trans_meas[b],
                 var_meas=var_meas[b]
             )
         )(jnp.arange(n_block))

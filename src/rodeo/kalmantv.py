@@ -72,6 +72,7 @@ def predict(mean_state_past, var_state_past,
 
 def update(mean_state_pred,
            var_state_pred,
+           W,
            x_meas,
            mean_meas,
            trans_meas,
@@ -86,7 +87,8 @@ def update(mean_state_pred,
         var_state_pred (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\Sigma_{n|n-1}`.
         x_meas (ndarray(n_meas)): Interrogated measure vector from `x_state`; :math:`y_n`.
         mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d`.
-        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W`.
+        W (ndarray(n_meas, n_state)): Matrix for getting the derivative; denoted by :math:`W`.
+        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W+B`.
         var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
 
     Returns:
@@ -95,7 +97,7 @@ def update(mean_state_pred,
         - **var_state_filt** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
 
     """
-    mean_meas_pred = trans_meas.dot(mean_state_pred) + mean_meas
+    mean_meas_pred = W.dot(mean_state_pred) + mean_meas
     var_meas_state_pred = trans_meas.dot(var_state_pred)
     var_meas_meas_pred = jnp.linalg.multi_dot(
         [trans_meas, var_state_pred, trans_meas.T]) + var_meas
@@ -151,6 +153,7 @@ def filter(mean_state_past,
     mean_state_filt, var_state_filt = update(
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
+        W=trans_meas,
         x_meas=x_meas,
         mean_meas=mean_meas,
         trans_meas=trans_meas,
@@ -350,3 +353,41 @@ def smooth_cond(mean_state_filt,
     mean_state_cond = mean_state_filt - trans_state_cond.dot(mean_state_pred)
     var_state_cond = var_state_filt - trans_state_cond.dot(var_state_temp.T)
     return trans_state_cond, mean_state_cond, var_state_cond
+
+def update2(mean_state_pred,
+           var_state_pred,
+           W,
+           x_meas,
+           mean_meas,
+           trans_meas,
+           var_meas):
+    r"""
+    Perform one update step of the Kalman filter.
+
+    Calculates :math:`\theta_{n|n}` from :math:`\theta_{n|n-1}`.
+
+    Args:
+        mean_state_pred (ndarray(n_state)): Mean estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\mu_{n|n-1}`.
+        var_state_pred (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\Sigma_{n|n-1}`.
+        x_meas (ndarray(n_meas)): Interrogated measure vector from `x_state`; :math:`y_n`.
+        mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d`.
+        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W`.
+        var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
+
+    Returns:
+        (tuple):
+        - **mean_state_filt** (ndarray(n_state)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
+        - **var_state_filt** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
+
+    """
+    mean_meas_pred = W.dot(mean_state_pred) + mean_meas
+    var_meas_state_pred = trans_meas.dot(var_state_pred)
+    var_meas_meas_pred = jnp.linalg.multi_dot(
+        [trans_meas, var_state_pred, trans_meas.T]) + var_meas
+    var_state_meas_pred = var_state_pred.dot(trans_meas.T)
+    var_state_temp = _solveV(var_meas_meas_pred, var_state_meas_pred.T).T
+    mean_state_filt = mean_state_pred + \
+        var_state_temp.dot(x_meas - mean_meas_pred)
+    var_state_filt = var_state_pred - \
+        var_state_temp.dot(var_meas_state_pred)
+    return mean_state_filt, var_state_filt

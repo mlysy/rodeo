@@ -4,6 +4,7 @@ import numpy as np
 from scipy.integrate import odeint
 from .inference import inference
 from diffrax import SaveAt
+from rodeo.ode import *
 
 class hes1_inference(inference):
     r"Inference for the Hes1 model"
@@ -42,7 +43,9 @@ class hes1_inference(inference):
     def simulate(self, x0, theta):
         r"Get the observations assuming a normal distribution."
         tseq = jnp.linspace(self.tmin, self.tmax, 33)
-        sol = odeint(self.ode_fun, x0, tseq, args=(theta,))
+        # sol = odeint(self.ode_fun, x0, tseq, args=(theta,))
+        X_t = solve_mv(self.key, self.fun, self.W, x0, theta, self.tmin, self.tmax, self.n_steps, **self.prior_pars)[0]
+        sol = X_t[::self.n_res, :, 0]
         X_t = self.hes1_obs(sol)
         e_t = np.random.default_rng(0).normal(loc=0.0, scale=1, size=X_t.shape)
         Y_t = X_t + self.noise_sigma*e_t

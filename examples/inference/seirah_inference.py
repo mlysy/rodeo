@@ -5,6 +5,7 @@ import numpy as np
 from scipy.integrate import odeint
 from .inference import inference
 from diffrax import SaveAt
+from rodeo.ode import *
 
 class seirah_inference(inference):
     r"Inference using the France Covid data from Prague et al."
@@ -75,7 +76,9 @@ class seirah_inference(inference):
 
         """
         tseq = jnp.linspace(self.tmin, self.tmax, 61)
-        X_t = odeint(self.ode_fun, x0, tseq, args=(theta,))
+        # X_t = odeint(self.ode_fun, x0, tseq, args=(theta,))
+        X_t = solve_mv(self.key, self.fun, self.W, x0, theta, self.tmin, self.tmax, self.n_steps, **self.prior_pars)[0]
+        X_t = X_t[::self.n_res, :, 0]
         X_in = self.covid_obs(X_t, theta)
         Y_in = np.random.default_rng(111).poisson(X_in)
         self.y_obs = Y_in

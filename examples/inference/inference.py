@@ -7,6 +7,7 @@ import jax.scipy as jsp
 
 from rodeo.ode import *
 from euler import euler
+from fenrir import fenrir
 
 import warnings
 from jax.config import config
@@ -89,7 +90,7 @@ class inference:
         r"Compute the negative loglikihood of :math:`Y_t` using the KalmanODE."
         n_phi = len(self.phi_mean)
         x0 = self.x0_initialize(phi[self.n_theta:], x0)
-        # print(x0)
+        # def ode_fun(X_t, t, theta=None): return self.fun(X_t, t, theta) 
         theta = jnp.exp(phi[:self.n_theta])
         v0 = self.fun(x0, 0, theta)
         X_0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
@@ -120,6 +121,18 @@ class inference:
         X_t = diffeqsolve(self.term, self.solver, args = theta, t0=self.tmin, t1=self.tmax, dt0 = self.diff_dt0, 
                           y0=jnp.array(x0), saveat=self.saveat, stepsize_controller=self.stepsize_controller).ys
         lp = self.loglike(self.y_obs, X_t, theta)
+        lp += self.logprior(phi[:n_phi], self.phi_mean, self.phi_sd)
+        return -lp
+
+    def fenrir_nlpost(self, phi, x0):
+        n_phi = len(self.phi_mean)
+        x0 = self.x0_initialize(phi[self.n_theta:], x0)
+        theta = jnp.exp(phi[:self.n_theta])
+        v0 = self.fun(x0, 0, theta)
+        X_0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
+        lp = fenrir(self.fun, self.W, X_0, theta, self.tmin, self.tmax, self.n_res,
+                    self.prior_pars['trans_state'], self.prior_pars['mean_state'], self.prior_pars['var_state'],
+                    self.trans_obs, self.mean_obs, self.var_obs, self.y_obs)
         lp += self.logprior(phi[:n_phi], self.phi_mean, self.phi_sd)
         return -lp
 
