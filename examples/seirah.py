@@ -49,6 +49,9 @@ def seirah_example(load_calcs=False):
     phi_sd = jnp.log(10)*jnp.ones(n_phi) 
     n_theta = len(theta_true)
     
+    x0 = jnp.array([[63884630.], [15492.], [21752.], [0.], [618013.], [13388.]])
+    v0 = seirah(x0, 0, theta_true)
+    X0 = jnp.concatenate([x0, v0, jnp.zeros((6,1))], axis=1)
     dt_obs = 1.0  # Time between observations
 
     # Number of samples to draw from posterior
@@ -60,7 +63,10 @@ def seirah_example(load_calcs=False):
     n_theta = len(theta_true)
 
     inf = seirah_inference(key, seirah, W, tmin, tmax, phi_mean, phi_sd, mask, n_theta)
-    Y_t, X_t = inf.simulate(ode0, theta_true)
+    inf.n_res = 100
+    inf.prior_pars = ibm_init(1/inf.n_res, n_deriv, sigma)
+    inf.n_steps = int((tmax-tmin)*inf.n_res)
+    Y_t, X_t = inf.simulate(X0, theta_true)
     
     # Initial value, x0, for the IVP
     x0 = jnp.array([[63884630.], [-1.], [-1.], [0.], [618013.], [13388.]]) # -1 for missing values

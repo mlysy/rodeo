@@ -33,7 +33,7 @@ def hes1_example(load_calcs=False):
 
     # Initial x0 for odeint
     ode0 = np.log(np.array([1.439, 2.037, 17.904]))
-
+    
     # ODE LHS matrix
     W_mat = np.zeros((n_vars, 1, 3))
     W_mat[:, :, 1] = 1
@@ -46,6 +46,10 @@ def hes1_example(load_calcs=False):
     phi_sd = jnp.log(10)*jnp.ones(n_phi) 
     n_theta = len(theta_true)
     
+    x0 = jnp.log(jnp.array([[1.439], [2.037], [17.904]]))
+    v0 = hes1(x0, 0, theta_true)
+    X0 = jnp.concatenate([x0, v0, jnp.zeros((3,1))], axis=1)
+
     noise_sigma = 0.15  # Standard deviation in noise model
     dt_obs = 7.5  # Time between observations
 
@@ -58,7 +62,11 @@ def hes1_example(load_calcs=False):
     n_theta = len(theta_true)
 
     inf = hes1_inference(key, hes1, W, tmin, tmax, phi_mean, phi_sd, mask, noise_sigma, n_theta)
-    Y_t, X_t = inf.simulate(ode0, theta_true)
+    inf.n_res = 50
+    dt = dt_obs/inf.n_res
+    inf.prior_pars = ibm_init(dt, n_deriv, sigma)
+    inf.n_steps = int((tmax-tmin)/dt)
+    Y_t, X_t = inf.simulate(X0, theta_true)
     # perform inference for various step_sizes
     n_res_list = np.array([4, 5, 6, 10])
     dt_list = dt_obs/n_res_list

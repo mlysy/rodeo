@@ -50,7 +50,10 @@ def fitz_example(load_calcs=False):
     ode0 = x0[:, 0]
     
     inf = fitz_inference(key, fitz, W, tmin, tmax, phi_mean, phi_sd, mask, noise_sigma, n_theta)
-    Y_t, X_t = inf.simulate(ode0, theta_true)
+    inf.n_res = 100
+    inf.prior_pars = ibm_init(1/inf.n_res, n_deriv, sigma)
+    inf.n_steps = int((tmax-tmin)*inf.n_res)
+    Y_t, X_t = inf.simulate(x0, theta_true)
     # np.save('saves/fitz_Y_t.npy', Y_t)
     plt.rcParams.update({'font.size': 20})
     fig, axs = plt.subplots(1, 2, figsize=(20, 5))
@@ -69,7 +72,22 @@ def fitz_example(load_calcs=False):
         theta_euler = np.load('saves/fitz_theta_euler.npy')
         theta_kalman = np.load('saves/fitz_theta_kalman.npy')
         theta_diffrax = np.load('saves/fitz_theta_diffrax.npy')
+        theta_fenrir = np.load('saves/fitz_theta_fenrir.npy')
     else:
+        # Parameter inference using fenrir solver
+        theta_fenrir = np.zeros((len(n_res_list), n_samples, n_phi))
+        for i in range(len(n_res_list)):
+            print(n_res_list[i])
+            prior_pars = ibm_init(1/n_res_list[i], n_deriv, sigma)
+            n_steps = int((tmax-tmin)*n_res_list[i])
+            inf.n_steps = n_steps
+            inf.n_res = n_res_list[i]
+            inf.prior_pars = prior_pars
+            phi_hat, phi_var = inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.fenrir_nlpost)
+            theta_fenrir[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
+            theta_fenrir[i, :, :n_theta] = np.exp(theta_fenrir[i, :, :n_theta])
+        np.save('saves/fitz_theta_fenrir.npy', theta_fenrir)
+
         # Parameter inference using Euler's approximation
         theta_euler = np.zeros((len(n_res_list), n_samples, n_phi))
         for i in range(len(n_res_list)):
@@ -80,7 +98,7 @@ def fitz_example(load_calcs=False):
             theta_euler[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_euler[i, :, :n_theta] = np.exp(theta_euler[i, :, :n_theta])
             
-        # np.save('saves/fitz_theta_euler.npy', theta_euler)
+        np.save('saves/fitz_theta_euler.npy', theta_euler)
         
         # Parameter inference using Kalman solver
         theta_kalman = np.zeros((len(n_res_list), n_samples, n_phi))
@@ -93,23 +111,23 @@ def fitz_example(load_calcs=False):
             phi_hat, phi_var = inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.kalman_nlpost)
             theta_kalman[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_kalman[i, :, :n_theta] = np.exp(theta_kalman[i, :, :n_theta])
-        # np.save('saves/fitz_theta_kalman.npy', theta_kalman)
-
+        np.save('saves/fitz_theta_kalman.npy', theta_kalman)
+        
         # Parameter inference using diffrax
         inf.diff_dt0 = dt_obs
         phi_hat, phi_var =  inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.diffrax_nlpost)
         theta_diffrax = inf.phi_sample(phi_hat, phi_var, n_samples)
         theta_diffrax[:, :n_theta] = np.exp(theta_diffrax[:, :n_theta])
-        # np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
+        np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
         
     # Produces the graph in Figure 3
     plt.rcParams.update({'font.size': 20})
     var_names = ['a', 'b', 'c', r"$V(0)$", r"$R(0)$"]
     param_true = np.append(theta_true, np.array([-1, 1]))
-    figure = theta_plot(theta_euler, theta_kalman, theta_diffrax, param_true, 1/n_res_list, var_names, clip=[None, (0, 0.5), None, None, None], rows=1)
+    figure = theta_plot(theta_euler, theta_kalman, theta_fenrir, theta_diffrax, param_true, 1/n_res_list, var_names, clip=[None, (0, 0.5), None, None, None], rows=1)
     figure.savefig('figures/fitzfigure.pdf')
     plt.show()
-    return
+    return 
 
 if __name__ == '__main__':
     fitz_example(False)

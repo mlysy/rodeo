@@ -53,12 +53,12 @@ class TestKalmanTVJit(unittest.TestCase):
         var_state_pred = var_state_pred.dot(var_state_pred.T)
         # without jit
         mean_state_filt1, var_state_filt1 = \
-             ktv.update(mean_state_pred, var_state_pred,
+             ktv.update(mean_state_pred, var_state_pred, self.trans_meas[0],
                         self.x_meas[0], self.mean_meas[0], self.trans_meas[0], self.var_meas[0])
         # with jit
         update_jit = jax.jit(ktv.update)
         mean_state_filt2, var_state_filt2 = \
-            update_jit(mean_state_pred, var_state_pred,
+            update_jit(mean_state_pred, var_state_pred, self.trans_meas[0],
                        self.x_meas[0], self.mean_meas[0], self.trans_meas[0], self.var_meas[0])
         # objective function for gradient
         def obj_fun(mean_state_pred, var_state_pred,
