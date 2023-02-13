@@ -1,50 +1,42 @@
 r"""
+This module implements the Fenrir algorithm for computing the approximate marginal likelihood of :math:`p(\theta \mid y_{0:N})`.
+
 The forward pass model is
 
 .. math::
 
-x_0 = v
+    x_0 = v
 
-x_n = Q x_{n-1} + R^{1/2} \epsilon_n
+    X_n = Q X_{n-1} + R^{1/2} \epsilon_n
 
-z_n = W x_n - f(x_n, t_n) + V_n^{1/2} \eta_n.
+    z_n = W X_n - f(X_n, t_n) + V_n^{1/2} \eta_n.
 
 The reverse pass model is
 
 .. math::
 
-x_N \sim N(b_N^S, V_N^S)
+    X_N \sim N(b_N, C_N)
 
-x_n = A_n^S x_{n+1} + b_n^S + (V_n^S)^{1/2} \eta_n
+    X_n = A_n X_{n+1} + b_n + C_n^{1/2} \eta_n
 
-y_n = C x_n + Omega^{1/2} \epsilon_n.
+    y_n = D X_n + Omega^{1/2} \epsilon_n.
 
 """
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from rodeo.kalmantv import *
-
-def kalman_zero(fun, W, t, theta,
-                mean_state_pred, var_state_pred):
-    
-    n_block = mean_state_pred.shape[0]
-    var_meas = jax.vmap(lambda wm, vsp:
-                        jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
-        W, var_state_pred
-    )
-    # var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
-    mean_meas = -fun(mean_state_pred, t, theta)
-    return W, mean_meas, var_meas
+from rodeo.ode import interrogate_rodeo
 
 # use interrogations first then observations
-def forward(fun, W, x0, theta,
+def forward(key, fun, W, x0, theta,
             tmin, tmax, n_steps,
             trans_state, mean_state, var_state):
     r"""
     Forward pass of the Fenrir algorithm.
 
     Args:
+        key (PRNGKey): PRNG key.
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
         W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         x0 (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
@@ -87,7 +79,8 @@ def forward(fun, W, x0, theta,
             )
         )(jnp.arange(n_block))
         # compute meas parameters
-        trans_meas, mean_meas, var_meas = kalman_zero(
+        trans_meas, mean_meas, var_meas = interrogate_rodeo(
+            key=key,
             fun=fun,
             W=W,
             t=tmin + (tmax-tmin)*(t+1)/n_steps,
@@ -179,8 +172,6 @@ def backward_param(mean_state_filt, var_state_filt,
         return trans_state_cond, mean_state_cond, var_state_cond
 
     # scan arguments
-    # Slice these arrays so they are aligned.
-    # More precisely, for time step t, want filt[t], pred[t+1]
     scan_kwargs = {
         'mean_state_filt': mean_state_filt[:n_tot-1],
         'var_state_filt': var_state_filt[:n_tot-1],
@@ -205,10 +196,10 @@ def backward(trans_state, mean_state, var_state,
         mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
         trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
         var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
-        y_obs (ndarray(n_steps, n_block, n_bmeas)): Observed data; :math:`y_n`.
+        y_obs (ndarray(n_steps, n_block, n_bmeas)): Observed data; :math:`y_{0:N}`.
 
     Returns:
-        logdens : The logdensity of p(Y_{0:N}).
+        (float) : The logdensity of :math:`p(\theta \mid y_{0:N})`.
 
     """
     # Add point to beginning of state variable for simpler loop
@@ -302,31 +293,32 @@ def backward(trans_state, mean_state, var_state,
     scan_out, _ = jax.lax.scan(scan_fun, scan_init, back_args, reverse=True)
     return scan_out["logdens"]
     
-def fenrir(fun, W, x0, theta, tmin, tmax, n_res,
-            trans_state, mean_state, var_state,
-            trans_obs, mean_obs, var_obs, y_obs):
+def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
+           trans_state, mean_state, var_state,
+           trans_obs, mean_obs, var_obs, y_obs):
     
     r"""
-    Fenrir algorithm.
+    Fenrir algorithm to compute the approximate marginal likelihood of :math:`p(\theta \mid y_{0:N})`.
 
     Args:
+        key (PRNGKey): PRNG key.
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         x0 (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
+        n_res (int): Resolution number determining how to thin solution process to match observations.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
         trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
         var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
-        y_obs (ndarray(n_steps, n_meas)): Observed data; :math:`y_n`.
-
+        y_obs (ndarray(n_steps, n_meas)): Observed data; :math:`y_{0:N}`.
 
     Returns:
-        logdens : The logdensity of p(y_{0:N}).
+        (float) : The logdensity of :math:`p(\theta \mid y_{0:N})`.
 
     """
     n_obs, n_dim_obs = y_obs.shape
@@ -336,7 +328,7 @@ def fenrir(fun, W, x0, theta, tmin, tmax, n_res,
     y_obs = jnp.expand_dims(y_obs, -1)
     # forward pass
     filt_out = forward(
-        fun=fun, W=W, x0=x0, theta=theta,
+        key=key, fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, n_steps=n_steps,
         trans_state=trans_state,
         mean_state=mean_state, var_state=var_state
@@ -359,10 +351,5 @@ def fenrir(fun, W, x0, theta, tmin, tmax, n_res,
         var_state=var_state_cond, trans_obs=trans_obs,
         mean_obs=mean_obs, var_obs=var_obs, y_obs=y_obs
     )
-    # state_par = reverse(
-    #     trans_state=trans_state_cond, mean_state=mean_state_cond, 
-    #     var_state=var_state_cond, trans_obs=trans_obs,
-    #     mean_obs=mean_obs, var_obs=var_obs, y_obs=y_obs
-    # )
-    # mean_state_smooth, var_state_smooth = smooth(trans_state_cond, state_par)
+
     return logdens

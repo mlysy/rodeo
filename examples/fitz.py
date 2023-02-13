@@ -86,7 +86,7 @@ def fitz_example(load_calcs=False):
             phi_hat, phi_var = inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.fenrir_nlpost)
             theta_fenrir[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_fenrir[i, :, :n_theta] = np.exp(theta_fenrir[i, :, :n_theta])
-        np.save('saves/fitz_theta_fenrir.npy', theta_fenrir)
+        # np.save('saves/fitz_theta_fenrir.npy', theta_fenrir)
 
         # Parameter inference using Euler's approximation
         theta_euler = np.zeros((len(n_res_list), n_samples, n_phi))
@@ -98,7 +98,7 @@ def fitz_example(load_calcs=False):
             theta_euler[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_euler[i, :, :n_theta] = np.exp(theta_euler[i, :, :n_theta])
             
-        np.save('saves/fitz_theta_euler.npy', theta_euler)
+        # np.save('saves/fitz_theta_euler.npy', theta_euler)
         
         # Parameter inference using Kalman solver
         theta_kalman = np.zeros((len(n_res_list), n_samples, n_phi))
@@ -111,20 +111,21 @@ def fitz_example(load_calcs=False):
             phi_hat, phi_var = inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.kalman_nlpost)
             theta_kalman[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_kalman[i, :, :n_theta] = np.exp(theta_kalman[i, :, :n_theta])
-        np.save('saves/fitz_theta_kalman.npy', theta_kalman)
+        # np.save('saves/fitz_theta_kalman.npy', theta_kalman)
         
         # Parameter inference using diffrax
         inf.diff_dt0 = dt_obs
         phi_hat, phi_var =  inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.diffrax_nlpost)
         theta_diffrax = inf.phi_sample(phi_hat, phi_var, n_samples)
         theta_diffrax[:, :n_theta] = np.exp(theta_diffrax[:, :n_theta])
-        np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
-        
+        # np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
+    
+    theta_mcmc= np.load('saves/fitz_theta_mcmc.npy')
     # Produces the graph in Figure 3
     plt.rcParams.update({'font.size': 20})
     var_names = ['a', 'b', 'c', r"$V(0)$", r"$R(0)$"]
     param_true = np.append(theta_true, np.array([-1, 1]))
-    figure = theta_plot(theta_euler, theta_kalman, theta_fenrir, theta_diffrax, param_true, 1/n_res_list, var_names, clip=[None, (0, 0.5), None, None, None], rows=1)
+    figure = theta_plot(theta_euler, theta_kalman, theta_fenrir, theta_mcmc, theta_diffrax, param_true, 1/n_res_list, var_names, clip=[None, (0, 0.5), None, None, None], rows=1)
     figure.savefig('figures/fitzfigure.pdf')
     plt.show()
     return 

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
 
-def theta_plot(theta_euler, theta_kalman, theta_fenrir, theta_diffrax, theta_true, step_sizes, var_names, clip=None, rows=1):
+def theta_plot(theta_euler, theta_kalman, theta_fenrir, theta_mcmc, theta_diffrax, theta_true, step_sizes, var_names, clip=None, rows=1):
     r"""Plot the distribution of :math:`\theta` using the Kalman solver 
         and the Euler approximation."""
     n_hlst, _, n_theta = theta_euler.shape
@@ -26,6 +26,9 @@ def theta_plot(theta_euler, theta_kalman, theta_fenrir, theta_diffrax, theta_tru
     if theta_fenrir is not None:
         plot_theta.append('fenrir')
         theta.append(theta_fenrir)
+    if theta_mcmc is not None:
+        plot_theta.append('mcmc')
+        theta.append(theta_mcmc)
     nrow = len(plot_theta)
     fig = plt.figure(figsize=(20, 10*rows))
     patches = [None]*(n_hlst+2)
