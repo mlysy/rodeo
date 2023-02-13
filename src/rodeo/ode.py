@@ -3,7 +3,7 @@ Stochastic block solver for ODE initial value problems.
 
 The ODE-IVP to be solved is defined as
 
-.. math:: W X_t = F(X_t, t, \theta)
+.. math:: W X_t = f(X_t, t, \theta)
 
 on the time interval :math:`t \in [a, b]` with initial condition :math:`X_a = x_0`.  
 
@@ -13,7 +13,7 @@ The stochastic solver proceeds via Kalman filtering and smoothing of "interrogat
 
     X_n = c_n + Q_n x_{n-1} + R_n^{1/2} \epsilon_n
 
-    y_n = W_n X_n + V_n^{1/2} \eta_n.
+    z_n = W_n X_n - f(X_n, t, \theta) + V_n^{1/2} \eta_n.
 
 We assume that c_n = c, Q_n = Q, R_n = R, and W_n = W for all n.
 
@@ -33,7 +33,7 @@ def interrogate_rodeo(key, fun, W, t, theta,
 
     Args:
         key (PRNGKey): Jax PRNG key.
-        fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        fun (function): Higher order ODE function :math:`W X_t = f(X_t, t)` taking arguments :math:`X` and :math:`t`.
         W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior.
         t (float): Time point.
         theta (ndarray(n_theta)): ODE parameter.
@@ -61,7 +61,7 @@ def interrogate_chkrebtii(key, fun, W, t, theta,
     r"""
     Interrogate method of Chkrebtii et al (2016); DOI: 10.1214/16-BA1017.
 
-    Same arguments and returns as :func:`~ode_block_solve.interrogate_rodeo`.
+    Same arguments and returns as :func:`~ode.interrogate_rodeo`.
 
     """
     n_block, n_bstate = mean_state_pred.shape
@@ -85,7 +85,7 @@ def interrogate_schober(key, fun, W, t, theta,
     r"""
     Interrogate method of Schober et al (2019); DOI: https://doi.org/10.1007/s11222-017-9798-7.
 
-    Same arguments and returns as :func:`~ode_block_solve.interrogate_rodeo`.
+    Same arguments and returns as :func:`~ode.interrogate_rodeo`.
 
     """
     n_block, n_bmeas, _ = W.shape
@@ -98,7 +98,7 @@ def interrogate_tronarp(key, fun, W, t, theta,
     r"""
     First order interrogate method of Tronarp et al (2019); DOI: https://doi.org/10.1007/s11222-019-09900-1.
     Assumes one block (because off-diagonals are not necessarily 0).
-    Same arguments and returns as :func:`~ode_block_solve.interrogate_rodeo`.
+    Same arguments and returns as :func:`~ode.interrogate_rodeo`.
 
     """
     n_block, n_bmeas, n_bstate = W.shape

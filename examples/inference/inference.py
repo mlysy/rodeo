@@ -7,7 +7,7 @@ import jax.scipy as jsp
 
 from rodeo.ode import *
 from euler import euler
-from fenrir import fenrir
+from rodeo.fenrir import fenrir
 
 import warnings
 from jax.config import config
@@ -130,7 +130,7 @@ class inference:
         theta = jnp.exp(phi[:self.n_theta])
         v0 = self.fun(x0, 0, theta)
         X_0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
-        lp = fenrir(self.fun, self.W, X_0, theta, self.tmin, self.tmax, self.n_res,
+        lp = fenrir(self.key, self.fun, self.W, X_0, theta, self.tmin, self.tmax, self.n_res,
                     self.prior_pars['trans_state'], self.prior_pars['mean_state'], self.prior_pars['var_state'],
                     self.trans_obs, self.mean_obs, self.var_obs, self.y_obs)
         lp += self.logprior(phi[:n_phi], self.phi_mean, self.phi_sd)
