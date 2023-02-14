@@ -315,17 +315,16 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
         mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
         trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
         var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
-        y_obs (ndarray(n_steps, n_meas)): Observed data; :math:`y_{0:N}`.
+        y_obs (ndarray(n_steps, n_block, n_bmeas)): Observed data; :math:`y_{0:N}`.
 
     Returns:
         (float) : The logdensity of :math:`p(\theta \mid y_{0:N})`.
 
     """
-    n_obs, n_dim_obs = y_obs.shape
+    n_obs, n_block, n_bmeas = y_obs.shape
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_dim_obs))*jnp.nan
+    y_res = jnp.ones((n_steps+1, n_block, n_bmeas))*jnp.nan
     y_obs = y_res.at[::n_res].set(y_obs)
-    y_obs = jnp.expand_dims(y_obs, -1)
     # forward pass
     filt_out = forward(
         key=key, fun=fun, W=W, x0=x0, theta=theta,

@@ -97,14 +97,16 @@ def interrogate_tronarp(key, fun, W, t, theta,
                         mean_state_pred, var_state_pred):
     r"""
     First order interrogate method of Tronarp et al (2019); DOI: https://doi.org/10.1007/s11222-019-09900-1.
-    Assumes one block (because off-diagonals are not necessarily 0).
     Same arguments and returns as :func:`~ode.interrogate_rodeo`.
 
     """
     n_block, n_bmeas, n_bstate = W.shape
     p = int(n_bstate/n_bmeas)
     mean_meas = -fun(mean_state_pred, t, theta)
-    jac = jax.jacfwd(fun)(mean_state_pred, t, theta)[:, :, 0]
+    jac = jax.jacfwd(fun)(mean_state_pred, t, theta)
+    # need to get the diagonal of jac
+    jac = jax.vmap(lambda b:
+                   jac[b, :, b])(jnp.arange(n_block))
     trans_meas = W - jac
     # var_meas = jax.vmap(lambda wm, vsp:
     #                     jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
