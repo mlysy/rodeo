@@ -25,75 +25,8 @@ This module optimizes the calculations when :math:`Q`, :math:`R`, and :math:`W`,
 import jax
 import jax.numpy as jnp
 from rodeo.kalmantv import *
+from rodeo.ode import interrogate_chkrebtii, interrogate_rodeo, interrogate_schober
 # from rodeo.jax.utils import *
-
-
-def interrogate_rodeo(key, fun, W, t, theta,
-                      mean_state_pred, var_state_pred):
-    r"""
-    Rodeo interrogation method.
-
-    Args:
-        key (PRNGKey): Jax PRNG key.
-        fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
-        t (float): Time point.
-        theta (ndarray(n_theta)): ODE parameter.
-        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior.
-        mean_state_pred (ndarray(n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1]; denoted by :math:`\mu_{t|t-1}`.
-        var_state_pred (ndarray(n_block, n_bstate, n_bstate)): Covariance of estimate for state at time t given observations from times [a...t-1]; denoted by :math:`\Sigma_{t|t-1}`.
-
-    Returns:
-        (tuple):
-        - **x_meas** (ndarray(n_block, n_bmeas)): Interrogation variable.
-        - **var_meas** (ndarray(n_block, n_bmeas, n_bmeas)): Interrogation variance.
-
-    """
-    n_block = mean_state_pred.shape[0]
-    var_meas = jax.vmap(lambda wm, vsp:
-                        jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
-        W, var_state_pred
-    )
-    x_meas = fun(mean_state_pred, t, theta)
-    return x_meas, var_meas
-
-
-def interrogate_chkrebtii(key, fun, W, t, theta,
-                          mean_state_pred, var_state_pred):
-    r"""
-    Interrogate method of Chkrebtii et al (2016); DOI: 10.1214/16-BA1017.
-
-    Same arguments and returns as :func:`~ode_block_solve.interrogate_rodeo`.
-
-    """
-    n_block, n_bstate = mean_state_pred.shape
-    key, *subkeys = jax.random.split(key, num=n_block+1)
-    subkeys = jnp.array(subkeys)
-    var_meas = jax.vmap(lambda wm, vsp:
-                        jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
-        W, var_state_pred
-    )
-    x_state = jax.vmap(lambda b:
-                       jax.random.multivariate_normal(
-                           subkeys[b],
-                           mean_state_pred[b],
-                           var_state_pred[b]
-                       ))(jnp.arange(n_block))
-    x_meas = fun(x_state, t, theta)
-    return x_meas, var_meas
-
-def interrogate_schober(key, fun, W, t, theta,
-                        mean_state_pred, var_state_pred):
-    r"""
-    Interrogate method of Schober et al (2019); DOI: https://doi.org/10.1007/s11222-017-9798-7.
-
-    Same arguments and returns as :func:`~ode_block_solve.interrogate_rodeo`.
-
-    """
-    n_block, n_bmeas, _ = W.shape
-    var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
-    x_meas = fun(mean_state_pred, t, theta)
-    return x_meas, var_meas
-
 
 def _solve_filter(key, fun, W, x0, theta,
                   tmin, tmax, n_steps,
@@ -129,7 +62,7 @@ def _solve_filter(key, fun, W, x0, theta,
     #n_state = len(mean_state)
 
     # arguments for kalman_filter and kalman_smooth
-    mean_meas = jnp.zeros((n_block, n_bmeas))
+    x_meas = jnp.zeros((n_block, n_bmeas))
     mean_state_init = x0
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
@@ -149,12 +82,12 @@ def _solve_filter(key, fun, W, x0, theta,
             )
         )(jnp.arange(n_block))
         # model interrogation
-        x_meas, var_meas = interrogate(
+        trans_meas, mean_meas, var_meas = interrogate(
             key=subkey,
             fun=fun,
+            W=W,
             t=tmin + (tmax-tmin)*(t+1)/n_steps,
             theta=theta,
-            W=W,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
         )
@@ -164,6 +97,7 @@ def _solve_filter(key, fun, W, x0, theta,
             update(
                 mean_state_pred=mean_state_pred[b],
                 var_state_pred=var_state_pred[b],
+                W=W[b],
                 x_meas=x_meas[b],
                 mean_meas=mean_meas[b],
                 trans_meas=W[b],

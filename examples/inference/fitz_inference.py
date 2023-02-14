@@ -14,7 +14,7 @@ class fitz_inference(inference):
         self.noise_sigma = noise_sigma
         self.mean_obs = jnp.zeros((2, 1))
         self.trans_obs = jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]])
-        self.var_obs = noise_sigma**2*jnp.array([[1.],[1.]])
+        self.var_obs = noise_sigma**2*jnp.array([[[1.]],[[1.]]])
 
     def ode_fun(self, X_t, t, theta):
         "Fitz ODE written for odeint"
