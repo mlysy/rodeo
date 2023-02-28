@@ -300,6 +300,7 @@ def smooth(x_state_next,
 
 def forecast(mean_state_pred,
              var_state_pred,
+             W,
              mean_meas,
              trans_meas,
              var_meas):
@@ -318,7 +319,7 @@ def forecast(mean_state_pred,
         - **mean_fore** (ndarray(n_meas)): Mean estimate for measurement at n given observations from [0...n-1]
         - **var_fore** (ndarray(n_meas, n_meas)): Covariance of estimate for state at time n given observations from times[0...n-1]
     """
-    mean_fore = trans_meas.dot(mean_state_pred) + mean_meas
+    mean_fore = W.dot(mean_state_pred) + mean_meas
     var_fore = jnp.linalg.multi_dot(
         [trans_meas, var_state_pred, trans_meas.T]) + var_meas
     return mean_fore, var_fore

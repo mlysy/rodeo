@@ -240,6 +240,7 @@ def backward(trans_state, mean_state, var_state,
                 forecast(
                     mean_state_pred = mean_state_pred[b],
                     var_state_pred = var_state_pred[b],
+                    W = trans_obs[b],
                     mean_meas = mean_obs[b],
                     trans_meas = trans_obs[b],
                     var_meas = var_obs[b]
