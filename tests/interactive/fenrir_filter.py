@@ -24,21 +24,22 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from rodeo.kalmantv import *
+from rodeo.ode import interrogate_tronarp, interrogate_rodeo
 
-def zero_update(fun, t, W, theta,
-                mean_state_pred, var_state_pred):
+# def zero_update(fun, t, W, theta,
+#                 mean_state_pred, var_state_pred):
     
-    n_meas = W.shape[0]
-    mean_meas = -fun(mean_state_pred, t, theta)
-    trans_meas = W
-    # var_meas = jnp.zeros((n_meas, n_meas))
-    var_meas = jnp.linalg.multi_dot([W, var_state_pred, W.T])
-    return mean_meas, trans_meas, var_meas
+#     n_meas = W.shape[0]
+#     mean_meas = -fun(mean_state_pred, t, theta)
+#     trans_meas = W
+#     # var_meas = jnp.zeros((n_meas, n_meas))
+#     var_meas = jnp.linalg.multi_dot([W, var_state_pred, W.T])
+#     return mean_meas, trans_meas, var_meas
 
 # use interrogations first then observations
-def forward(fun, W, x0, theta,
+def forward(key, fun, W, x0, theta,
             tmin, tmax, n_steps,
-            trans_state, mean_state, var_state):
+            trans_state, mean_state, var_state, interrogate):
     r"""
     Forward pass of the Fenrir algorithm.
 
@@ -64,44 +65,49 @@ def forward(fun, W, x0, theta,
 
     """
     # Dimensions of block, state and measure variables
-    n_meas, n_state = W.shape
+    n_block, n_bmeas, n_bstate = W.shape
 
-    # arguments for forward
+    # arguments for kalman_filter and kalman_smooth
+    x_meas = jnp.zeros((n_block, n_bmeas))
     mean_state_init = x0
-    var_state_init = jnp.zeros((n_state, n_state))
-    z_meas = jnp.zeros(n_meas)
+    var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
     # lax.scan setup
     # scan function
     def scan_fun(carry, t):
         mean_state_filt, var_state_filt = carry["state_filt"]
-        
         # kalman predict
-        mean_state_pred, var_state_pred = predict(
-            mean_state_past=mean_state_filt,
-            var_state_past=var_state_filt,
-            mean_state=mean_state,
-            trans_state=trans_state,
-            var_state=var_state
-        )
+        mean_state_pred, var_state_pred = jax.vmap(lambda b:
+            predict(
+                mean_state_past=mean_state_filt[b],
+                var_state_past=var_state_filt[b],
+                mean_state=mean_state[b],
+                trans_state=trans_state[b],
+                var_state=var_state[b]
+            )
+        )(jnp.arange(n_block))
         # compute meas parameters
-        mean_meas, trans_meas, var_meas = zero_update(
-            fun = fun, 
-            t = t,
-            theta = theta,
-            W = W, 
-            mean_state_pred = mean_state_pred, 
-            var_state_pred = var_state_pred
+        trans_meas, mean_meas, var_meas = interrogate(
+            key=key,
+            fun=fun,
+            W=W,
+            t=tmin + (tmax-tmin)*(t+1)/n_steps,
+            theta=theta,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred
         )
         # kalman update
-        mean_state_next, var_state_next = update(
-            mean_state_pred=mean_state_pred,
-            var_state_pred=var_state_pred,
-            x_meas=z_meas,
-            mean_meas=mean_meas,
-            trans_meas=trans_meas,
-            var_meas=var_meas
-        )
+        mean_state_next, var_state_next = jax.vmap(lambda b:
+            update(
+                mean_state_pred=mean_state_pred[b],
+                var_state_pred=var_state_pred[b],
+                W=W[b],
+                x_meas=x_meas[b],
+                mean_meas=mean_meas[b],
+                trans_meas=trans_meas[b],
+                var_meas=var_meas[b]
+            )
+        )(jnp.arange(n_block))
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next)
@@ -116,9 +122,8 @@ def forward(fun, W, x0, theta,
     scan_init = {
         "state_filt": (mean_state_init, var_state_init),
     }
-    tseq = jnp.linspace(tmin, tmax, n_steps+1)
     # scan itself
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, tseq[1:])
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, jnp.arange(n_steps))
     # append initial values to front
     scan_out["state_filt"] = (
         jnp.concatenate([mean_state_init[None], scan_out["state_filt"][0]]),
@@ -151,7 +156,7 @@ def backward(mean_state_filt, var_state_filt,
 
     """
     # Terminal Point
-    n_tot = len(mean_state_filt)
+    n_tot, n_block, _ = mean_state_filt.shape
     mean_state_end = mean_state_filt[n_tot-1]
     var_state_end = var_state_filt[n_tot-1]
 
@@ -163,18 +168,18 @@ def backward(mean_state_filt, var_state_filt,
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
         
-        trans_state_cond, mean_state_cond, var_state_cond = smooth_cond(
-            mean_state_filt=mean_state_filt,
-            var_state_filt=var_state_filt,
-            mean_state_pred=mean_state_pred,
-            var_state_pred=var_state_pred,
-            trans_state=trans_state
-        )
+        trans_state_cond, mean_state_cond, var_state_cond = jax.vmap(lambda b:
+            smooth_cond(
+                mean_state_filt=mean_state_filt[b],
+                var_state_filt=var_state_filt[b],
+                mean_state_pred=mean_state_pred[b],
+                var_state_pred=var_state_pred[b],
+                trans_state=trans_state[b]
+            )
+        )(jnp.arange(n_block))
         return trans_state_cond, mean_state_cond, var_state_cond
 
     # scan arguments
-    # Slice these arrays so they are aligned.
-    # More precisely, for time step t, want filt[t], pred[t+1]
     scan_kwargs = {
         'mean_state_filt': mean_state_filt[:n_tot-1],
         'var_state_filt': var_state_filt[:n_tot-1],
@@ -206,68 +211,52 @@ def reverse(trans_state, mean_state, var_state,
 
     """
     # Add point to beginning of state variable for simpler loop
-    n_state = trans_state.shape[1]
+    n_tot, n_block, n_bstate = mean_state.shape
     trans_state_end = jnp.zeros(trans_state.shape[1:])
     trans_state = jnp.concatenate([trans_state, trans_state_end[None]])
 
     # reverse pass
     def scan_fun(carry, rev_args):
         mean_state_filt, var_state_filt = carry["state_filt"]
-        # logdens = carry["logdens"]
         trans_state = rev_args['trans_state']
         mean_state = rev_args['mean_state']
         var_state = rev_args['var_state']
         y_obs = rev_args['y_obs']
 
-        # kalman predict
-        mean_state_pred, var_state_pred = predict(
-            mean_state_past=mean_state_filt,
-            var_state_past=var_state_filt,
-            mean_state=mean_state,
-            trans_state=trans_state,
-            var_state=var_state
-        )
+       # kalman predict
+        mean_state_pred, var_state_pred = jax.vmap(lambda b:
+            predict(
+                mean_state_past=mean_state_filt[b],
+                var_state_past=var_state_filt[b],
+                mean_state=mean_state[b],
+                trans_state=trans_state[b],
+                var_state=var_state[b]
+            )
+        )(jnp.arange(n_block))
         # y_obs is None
         def _no_obs():
             mean_state_filt = mean_state_pred
             var_state_filt = var_state_pred
-            # logp = 0.0
-            # return mean_state_filt, var_state_filt, logp
             return mean_state_filt, var_state_filt
 
         # y_obs is not None
         def _obs():
-            # # kalman forecast
-            # mean_state_fore, var_state_fore = forecast(
-            #     mean_state_pred = mean_state_pred,
-            #     var_state_pred = var_state_pred,
-            #     mean_meas = mean_obs,
-            #     trans_meas = trans_obs,
-            #     var_meas = var_obs
-            # )
-            # # logdensity of forecast
-            # logp = jsp.stats.multivariate_normal.logpdf(y_obs, mean=mean_state_fore, cov=var_state_fore)
             # kalman update
-            mean_state_filt, var_state_filt = update(
-                mean_state_pred=mean_state_pred,
-                var_state_pred=var_state_pred,
-                x_meas=y_obs,
-                mean_meas = mean_obs,
-                trans_meas = trans_obs,
-                var_meas=var_obs
-            )
-            # return mean_state_filt, var_state_filt, logp
+            mean_state_filt, var_state_filt = jax.vmap(lambda b:
+                update(
+                    mean_state_pred=mean_state_pred[b],
+                    var_state_pred=var_state_pred[b],
+                    W = trans_obs[b],
+                    x_meas=y_obs[b],
+                    mean_meas = mean_obs[b],
+                    trans_meas = trans_obs[b],
+                    var_meas=var_obs[b]
+                )
+            )(jnp.arange(n_block))
             return mean_state_filt, var_state_filt
 
-        # mean_state_filt, var_state_filt, logp = jax.lax.cond(jnp.isnan(y_obs).any(), _no_obs, _obs)
-        # logdens += logp
         mean_state_filt, var_state_filt = jax.lax.cond(jnp.isnan(y_obs).any(), _no_obs, _obs)
 
-        # output
-        # carry = {
-        #     "state_filt": (mean_state_filt, var_state_filt),
-        #     "logdens" : logdens
-        # }
         carry = {
             "state_filt": (mean_state_filt, var_state_filt)
         }
@@ -283,7 +272,7 @@ def reverse(trans_state, mean_state, var_state,
     #     "logdens" : 0.0
     # }
     scan_init = {
-        "state_filt" : (jnp.zeros((n_state,)), jnp.zeros((n_state, n_state)))
+        "state_filt" : (jnp.zeros((n_block, n_bstate,)), jnp.zeros((n_block, n_bstate, n_bstate)))
     }
     rev_args = {
         "trans_state" : trans_state,
@@ -302,7 +291,7 @@ def smooth(trans_state, state_par):
     """
     mean_state_pred, var_state_pred = state_par["state_pred"]
     mean_state_filt, var_state_filt = state_par["state_filt"]
-    n_tot = len(mean_state_pred)
+    n_tot, n_block, n_bstate = mean_state_pred.shape
     # smooth pass
     # lax.scan setup
     def scan_fun(state_next, smooth_kwargs):
@@ -311,15 +300,17 @@ def smooth(trans_state, state_par):
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
         trans_state = smooth_kwargs['trans_state']
-        mean_state_curr, var_state_curr = smooth_mv(
-                mean_state_next=state_next["mean"],
-                var_state_next=state_next["var"],
-                trans_state=trans_state,
-                mean_state_filt=mean_state_filt,
-                var_state_filt=var_state_filt,
-                mean_state_pred=mean_state_pred,
-                var_state_pred=var_state_pred,
-        )
+        mean_state_curr, var_state_curr = jax.vmap(lambda b:
+            smooth_mv(
+                mean_state_next=state_next["mean"][b],
+                var_state_next=state_next["var"][b],
+                trans_state=trans_state[b],
+                mean_state_filt=mean_state_filt[b],
+                var_state_filt=var_state_filt[b],
+                mean_state_pred=mean_state_pred[b],
+                var_state_pred=var_state_pred[b],
+            )
+        )(jnp.arange(n_block))
         state_curr = {
             "mean": mean_state_curr,
             "var": var_state_curr
@@ -350,9 +341,9 @@ def smooth(trans_state, state_par):
     )
     return mean_state_smooth, var_state_smooth
 
-def fenrir_filter(fun, W, x0, theta, tmin, tmax, n_res,
+def fenrir_filter(key, fun, W, x0, theta, tmin, tmax, n_res,
                   trans_state, mean_state, var_state,
-                  trans_obs, mean_obs, var_obs, y_obs):
+                  trans_obs, mean_obs, var_obs, y_obs, interrogate=interrogate_rodeo):
     
     r"""
     Fenrir algorithm.
@@ -377,16 +368,17 @@ def fenrir_filter(fun, W, x0, theta, tmin, tmax, n_res,
         logdens : The logdensity of p(y_{0:N}).
 
     """
-    n_obs, n_dim_obs = y_obs.shape
+    n_obs, n_block, n_bmeas = y_obs.shape
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_dim_obs))*jnp.nan
+    y_res = jnp.ones((n_steps+1, n_block, n_bmeas))*jnp.nan
     y_obs = y_res.at[::n_res].set(y_obs)
     # forward pass
     filt_out = forward(
-        fun=fun, W=W, x0=x0, theta=theta,
+        key=key, fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, n_steps=n_steps,
         trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state
+        mean_state=mean_state, var_state=var_state,
+        interrogate=interrogate
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
