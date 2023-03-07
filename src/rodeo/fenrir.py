@@ -26,12 +26,13 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from rodeo.kalmantv import *
-from rodeo.ode import interrogate_rodeo
+from rodeo.ode import interrogate_rodeo, interrogate_tronarp
 
 # use interrogations first then observations
 def forward(key, fun, W, x0, theta,
             tmin, tmax, n_steps,
-            trans_state, mean_state, var_state):
+            trans_state, mean_state, var_state,
+            interrogate):
     r"""
     Forward pass of the Fenrir algorithm.
 
@@ -79,7 +80,7 @@ def forward(key, fun, W, x0, theta,
             )
         )(jnp.arange(n_block))
         # compute meas parameters
-        trans_meas, mean_meas, var_meas = interrogate_rodeo(
+        trans_meas, mean_meas, var_meas = interrogate(
             key=key,
             fun=fun,
             W=W,
@@ -296,7 +297,8 @@ def backward(trans_state, mean_state, var_state,
     
 def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
            trans_state, mean_state, var_state,
-           trans_obs, mean_obs, var_obs, y_obs):
+           trans_obs, mean_obs, var_obs, y_obs,
+           interrogate=interrogate_rodeo):
     
     r"""
     Fenrir algorithm to compute the approximate marginal likelihood of :math:`p(\theta \mid y_{0:N})`.
@@ -331,7 +333,8 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
         key=key, fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, n_steps=n_steps,
         trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state
+        mean_state=mean_state, var_state=var_state,
+        interrogate=interrogate
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
