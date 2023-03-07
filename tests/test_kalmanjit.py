@@ -303,10 +303,10 @@ class TestKalmanTVJit(unittest.TestCase):
             fore_jit(mean_state_pred, var_state_pred, self.trans_meas[0],
                      self.mean_meas[0], self.trans_meas[0], self.var_meas[0])
         # objective function for gradient
-        def obj_fun(mean_state_pred, var_state_pred,
+        def obj_fun(mean_state_pred, var_state_pred, W,
                     mean_meas, trans_meas, var_meas):
             return jnp.mean(
-                ktv.forecast(mean_state_pred, var_state_pred, trans_meas,
+                ktv.forecast(mean_state_pred, var_state_pred, W,
                              mean_meas, trans_meas, var_meas)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(
