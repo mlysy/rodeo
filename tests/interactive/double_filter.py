@@ -144,6 +144,7 @@ def _solve_filter(key, fun, W, x0, theta,
     # scan initial value
     scan_init = {
         "state_filt": (mean_state_init, var_state_init),
+        "key": key
     }
     # args for scan
     scan_args = {
