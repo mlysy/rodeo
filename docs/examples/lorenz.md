@@ -58,7 +58,7 @@ n_obs = 3  # Total observations
 n_deriv_prior = 3 # p
 
 # Time interval on which a solution is sought.
-n_eval = 5000
+n_steps = 5000
 tmin = 0.
 tmax = 20.
 theta = jnp.array([28, 10, 8/3])
@@ -77,20 +77,20 @@ W_block = jnp.array(W_mat)
 x0_block = jnp.array([[-12., 70., 550.], [-5., 125, -1321.], [38., -124/3, -15658/9]])
 
 # Get parameters needed to run the solver
-dt = (tmax-tmin)/n_eval  # step size
+dt = (tmax-tmin)/n_steps  # step size
 n_order = jnp.array([n_deriv_prior]*n_obs)
 ode_init = ibm_init(dt, n_order, sigma)
 
 # Jit solver
-draws = 100
-sim_jit = jax.jit(solve_sim, static_argnums=(1, 6, 11))
-results = np.zeros((draws, n_eval+1, n_obs))
+draws = 10
+sim_jit = jax.jit(solve_sim, static_argnums=(1, 7, 11))
+results = np.zeros((draws, n_steps+1, n_obs))
 for i in range(draws):
     key = jax.random.PRNGKey(i)
     xt = sim_jit(key=key, fun=ode_fun_jax,
             x0=x0_block, theta=theta,
-            tmin=tmin, tmax=tmax, n_eval=n_eval,
-            wgt_meas=W_block, **ode_init, interrogate=interrogate_chkrebtii)
+            tmin=tmin, tmax=tmax, n_steps=n_steps,
+            W=W_block, **ode_init, interrogate=interrogate_chkrebtii)
     results[i] = xt[:, :, 0]
     
 ```
@@ -110,8 +110,8 @@ def ode_fun(X_t, t, theta):
 ode0 = np.array([-12, -5, 38])
 
 # Get exact solutions for the Lorenz System
-tseq = np.linspace(tmin, tmax, n_eval+1)
-exact = odeint(ode_fun, ode0, tseq, args=(theta,))
+tseq = np.linspace(tmin, tmax, n_steps+1)
+exact = odeint(ode_fun, ode0, tseq, args=(theta,), rtol=1e-20)
 
 # Graph the results
 _, axs = plt.subplots(3, 1, figsize=(20, 7))

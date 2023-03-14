@@ -80,7 +80,7 @@ n_obs = 2  # Total observations
 n_deriv_prior = 3 # p
 
 # it is assumed that the solution is sought on the interval [tmin, tmax].
-n_eval = 800
+n_steps = 800
 tmin = 0.
 tmax = 40.
 theta = jnp.array([0.2, 0.2, 3])
@@ -99,17 +99,16 @@ W_block = jnp.array(W_mat)
 x0_block = jnp.array([[-1., 1., 0.], [1., 1/3, 0.]])
 
 # Get parameters needed to run the solver
-dt = (tmax-tmin)/n_eval
+dt = (tmax-tmin)/n_steps
 n_order = jnp.array([n_deriv_prior]*n_obs)
 ode_init = ibm_init(dt, n_order, sigma)
 
 # Jit solver
 key = jax.random.PRNGKey(0)
-sim_jit = jax.jit(solve_sim, static_argnums=(1, 6))
+sim_jit = jax.jit(solve_sim, static_argnums=(1, 7))
 xt = sim_jit(key=key, fun=ode_fun_jax,
-        x0=x0_block, theta=theta,
-        tmin=tmin, tmax=tmax, n_eval=n_eval,
-        wgt_meas=W_block, **ode_init)
+             W=W_block, x0=x0_block, theta=theta,
+             tmin=tmin, tmax=tmax, n_steps=n_steps, **ode_init)
 ```
 
 To compare the `rodeo` solution, we use the deterministic solution provided by `odeint`.
@@ -124,7 +123,7 @@ def ode_fun(X_t, t, theta):
 ode0 = np.array([-1., 1.])
 
 # Get odeint solution for Fitz-Hugh
-tseq = np.linspace(tmin, tmax, n_eval+1)
+tseq = np.linspace(tmin, tmax, n_steps+1)
 exact = odeint(ode_fun, ode0, tseq, args=(theta,))
 
 # Graph the results

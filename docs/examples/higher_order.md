@@ -54,7 +54,7 @@ n_obs = 1  # Total observations
 n_deriv_prior = 4 # p
 
 # Time interval on which a solution is sought.
-n_eval = 100
+n_steps = 100
 tmin = 0.
 tmax = 10.
 
@@ -70,17 +70,16 @@ W_block = jnp.array([[[0, 0, 1, 0]]])
 x0_block = jnp.array([[-1., 0., 1., 0.]])
 
 # Get parameters needed to run the solver
-dt = (tmax-tmin)/n_eval  # step size
+dt = (tmax-tmin)/n_steps  # step size
 n_order = jnp.array([n_deriv_prior]*n_obs)
 ode_init = ibm_init(dt, n_order, sigma)
 
 # Jit solver
 key = jax.random.PRNGKey(0)
-sim_jit = jax.jit(solve_sim, static_argnums=(1, 6))
+sim_jit = jax.jit(solve_sim, static_argnums=(1, 7))
 xt = sim_jit(key=key, fun=ode_fun,
-        x0=x0_block, theta=None,
-        tmin=tmin, tmax=tmax, n_eval=n_eval,
-        wgt_meas=W_block, **ode_init)
+             W=W_block, x0=x0_block, theta=None,
+             tmin=tmin, tmax=tmax, n_steps=n_steps, **ode_init)
 ```
 
 To see how well this approximation does against the exact solution, we can graph them together. First, we will define the functions of the exact solution for this example.
@@ -97,10 +96,10 @@ def ode_exact_x1(t):
 
 ```{code-cell} ipython3
 # Get exact solutions for x^{(0)}, x^{(1)}
-tseq = np.linspace(tmin, tmax, n_eval+1)
-exact_x = np.zeros(n_eval+1)
-exact_x1 = np.zeros(n_eval+1)
-for t in range(n_eval+1):
+tseq = np.linspace(tmin, tmax, n_steps+1)
+exact_x = np.zeros(n_steps+1)
+exact_x1 = np.zeros(n_steps+1)
+for t in range(n_steps+1):
     exact_x[t] = ode_exact_x(tseq[t])
     exact_x1[t] = ode_exact_x1(tseq[t])
 
