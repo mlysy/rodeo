@@ -160,6 +160,8 @@ API Documentation
    ode
    kalmantv
    ibm
+   fenrir
+   oc_mcmc
    gauss_markov
    utils
 

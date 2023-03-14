@@ -38,12 +38,28 @@ class oc_mcmc:
         self.y_obs = y_obs
 
     def prop_lpdf(self, theta, theta_prime, param):
-        r"""Computes the proposal log PDF of theta. The base assumes the proposal is N(theta; theta_prime, param).
+        r"""
+        Computes the proposal log PDF of theta. The base assumes the proposal is N(theta; theta_prime, param).
+        
+        Args:
+            theta (ndarray(n_theta)): Parameters for the inference problem.
+            theta_prime (ndarray(n_theta)): :math:`\theta'` used in Chkrebtii MCMC method.
+            param (ndarrary(n_par)): Parameters used in the proposal distribution.
+        
+        Return:
+            (float): Loglikelihood of :math:`\theta`.
         """
         return jnp.sum(jsp.stats.multivariate_normal.logpdf(x=theta, mean=theta_prime, cov=param))
     
     def prop_sample(self, key, theta, param):
-        r"Produce a draw of theta using proposal distribution. The base assumes the proposal is N(theta, param)"
+        r"""Produce a draw of theta using proposal distribution. The base assumes the proposal is N(theta, param)
+        Args:
+            theta (ndarray(n_theta)): Parameters for the inference problem.
+            param (ndarrary(n_par)): Parameters used in the proposal distribution.
+        
+        Return:
+            (ndarray(n_theta)): Sample of :math:`\theta`.
+        """
         return jax.random.multivariate_normal(key=key, mean=theta, cov=param)
 
     def logprior(self, theta):
@@ -55,13 +71,33 @@ class oc_mcmc:
         pass
 
     def solve(self, key, theta):
-        r"Solve the ODE given the theta and return the indices where the observations exist."
+        r"""
+        Solve the ODE given the theta and return the indices where the observations exist.
+        
+        Args:
+            theta (ndarray(n_theta)): Parameters for the inference problem.
+        
+        Return:
+            (ndarray(n_block, n_bstate, n_bmeas)): Solution for given :math:`\theta` using the Chkrebtii solver.
+        """
         X_t = solve_sim(key, self.fun, self.W, self.x0, theta, self.tmin, self.tmax, self.n_steps, **self.prior_pars, interrogate=interrogate_chkrebtii)
         X_t = X_t[::self.n_res, :, 0]
         return X_t
 
     def init(self, key, theta_init):
-        r"Compute the initial loglikelihood of theta_init and X_init."
+        r"""
+        Compute the initial loglikelihood of theta_init and X_init.
+        Args:
+            key (PRNGKey): PRNG key.
+            theta_init (ndarray(n_theta)): Initial parameters for the inference problem.
+        
+        Return:
+            (dict):
+            - **theta** (n_theta): Initial parameters for the inference problem.
+            - **X_t** (ndarray(n_block, n_bstate, n_bmeas)): Solution for given initial :math:`\theta` using the Chkrebtii solver.
+            - **ll** (float): Loglikelihood of the initial :math:`\theta`.
+        
+        """
         X_init = self.solve(key, theta_init)
         ll_init = self.loglik(X_init) + self.logprior(theta_init)
         return {
@@ -71,7 +107,19 @@ class oc_mcmc:
         }
 
     def step(self, key, state, param):
-        r"Compute one step of the MCMC algorithm given the current state."
+        r"""
+        Compute one step of the MCMC algorithm given the current state.
+
+        Args:
+            key (PRNGKey): PRNG key.
+            state (dict): Current state which constains the current parameter :math:`\theta`, ODE solution for :math:`\theta` and loglikelihood.
+            param (ndarrary(n_par)): Parameters used in the proposal distribution.
+        
+        Return:
+            (tuple):
+            - **state** (dict): Next state.
+            - **sample** (dict): A sample of :math:`\theta` using the MCMC algorithm.
+        """
         keys = jax.random.split(key, num=3)
         theta_prev = state['theta']
         X_prev = state['X_t']

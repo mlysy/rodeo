@@ -5,4 +5,4 @@ Examples
 
    examples/tutorial.md
    examples/higher_order.md
-   examples/lorenz63.md
+   examples/lorenz.md

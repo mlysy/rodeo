@@ -905,3 +905,194 @@ def fenrir_filterng(fun, x0, theta, tmin, tmax, n_res,
     logy_hat = smoothng(trans_state_cond, state_par)
     return logx + logy - logy_hat
 
+def logp_xyf(key, fun, W, x0, theta, tmin, tmax, n_res,
+                  trans_state, mean_state, var_state,
+                  trans_obs, mean_obs, var_obs, y_obs, interrogate):
+    
+    r"""
+    Fenrir algorithm.
+
+    Args:
+        fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        x0 (ndarray(n_state)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
+        theta (ndarray(n_theta)): Parameters in the ODE function.
+        tmin (float): First time point of the time interval to be evaluated; :math:`a`.
+        tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
+        W (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; :math:`W`.
+        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`Q`.
+        mean_state (ndarray(n_state)): Transition_offsets defining the solution prior; :math:`c`.
+        var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
+        mean_obs (ndarray(n_obs)): Transition offsets defining the noisy observations.
+        trans_obs (ndarray(n_obs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
+        var_obs (ndarray(n_obs, n_obs)): Variance matrix defining the noisy observations; :math:`Omega`.
+        y_obs (ndarray(n_steps, n_obs)): Observed data; :math:`y_n`.
+
+
+    Returns:
+        logdens : The logdensity of p(y_{0:N}).
+
+    """
+    n_obs, n_block, n_bmeas = y_obs.shape
+    n_bstate = trans_state.shape[1]
+    n_steps = (n_obs-1)*n_res
+    y_res = jnp.ones((n_steps+1, n_block, n_bmeas))*jnp.nan
+    y_obs = y_res.at[::n_res].set(y_obs)
+    # forward pass
+    filt_out = forward(
+        key=key, fun=fun, W=W, x0=x0, theta=theta,
+        tmin=tmin, tmax=tmax, n_steps=n_steps,
+        trans_state=trans_state,
+        mean_state=mean_state, var_state=var_state,
+        interrogate=interrogate
+    )
+    mean_state_pred, var_state_pred = filt_out["state_pred"]
+    mean_state_filt, var_state_filt = filt_out["state_filt"]
+
+    # backward pass
+    trans_state_cond, mean_state_cond, var_state_cond = backward(
+        mean_state_filt=mean_state_filt,
+        var_state_filt=var_state_filt,
+        mean_state_pred=mean_state_pred,
+        var_state_pred=var_state_pred,
+        trans_state=trans_state
+    )
+
+    n_state = trans_state.shape[1]
+    trans_state_end = jnp.zeros(trans_state_cond.shape[1:])
+    trans_state_cond = jnp.concatenate([trans_state_cond, trans_state_end[None]])
+    # reverse pass
+    def scan_fun(carry, rev_args):
+        mean_curr = carry["state_sim"]
+        logx, logy = carry["logdens"]
+        trans_state = rev_args['trans_state']
+        mean_state = rev_args['mean_state']
+        var_state = rev_args['var_state']
+        y_obs = rev_args['y_obs']
+
+        # unconditional mean
+        def vmap_fun(b):
+            mean_next = trans_state[b].dot(mean_curr[b]) + mean_state[b]
+            logxc = jsp.stats.multivariate_normal.logpdf(mean_next, mean_next, var_state[b])
+            return mean_next, logxc
+
+        mean_next, logxc = jax.vmap(vmap_fun)(jnp.arange(n_block))
+        logx += jnp.sum(logxc)
+        def _obs():
+            logyc = jnp.sum(jax.vmap(lambda b:
+                        jsp.stats.multivariate_normal.logpdf(y_obs[b], trans_obs[b].dot(mean_next[b]) + mean_obs[b], var_obs[b]))(jnp.arange(n_block)))
+            return logyc
+        def _nobs():
+            return 0.0
+        logyc = jax.lax.cond(jnp.isnan(y_obs).any(), _nobs, _obs)
+        logy += logyc
+        carry = {
+            'state_sim': mean_next,
+            'logdens': (logx, logy)
+        }
+        return carry, carry
+    
+    # start at N+1 assuming 0 mean and variance
+    scan_init = {
+        "state_sim" : jnp.zeros((n_block, n_bstate)),
+        "logdens": (0.0, 0.0)
+    }
+
+    rev_args = {
+        "trans_state" : trans_state_cond[1:],
+        "mean_state" : mean_state_cond[1:],
+        "var_state" : var_state_cond[1:],
+        "y_obs": y_obs[1:]
+    }
+
+    scan_out, stack_out = jax.lax.scan(scan_fun, scan_init, rev_args, reverse=True)
+    # logx = jnp.append(stack_out["logdens"][0], logx)
+    logx, logy = scan_out["logdens"]
+    logy0 = jnp.sum(jax.vmap(lambda b:
+                    jsp.stats.multivariate_normal.logpdf(y_obs[0][b], trans_obs[b].dot(x0[b]) + mean_obs[b], var_obs[b]))(jnp.arange(n_block)))
+    logy = logy + logy0
+    return logx + logy, stack_out['state_sim']
+
+def smoothf(trans_state, state_par, mean_uncond):
+    r"""
+    Computes the logdensity of p(\hat y_{0:N}) which is an approximantion to p(x_{0:N} | y_{0:N}).
+    """
+    # reverse pass
+    mean_state_pred, var_state_pred = state_par["state_pred"]
+    mean_state_filt, var_state_filt = state_par["state_filt"]
+    n_block = mean_state_filt.shape[1]
+    logy_hat = jnp.sum(jax.vmap(lambda b:
+                    jsp.stats.multivariate_normal.logpdf(mean_uncond[0][b], mean_state_filt[1][b], var_state_filt[1][b]))(jnp.arange(n_block)))
+    # 
+    n_tot = len(mean_state_pred)
+
+    # backward pass
+    # lax.scan setup
+    def scan_fun(logy_hat, smooth_kwargs):
+        mean_state_filt = smooth_kwargs['mean_state_filt']
+        var_state_filt = smooth_kwargs['var_state_filt']
+        mean_state_pred = smooth_kwargs['mean_state_pred']
+        var_state_pred = smooth_kwargs['var_state_pred']
+        trans_state = smooth_kwargs['trans_state']
+        mu_prev = smooth_kwargs['mu_prev']
+        mu_curr = smooth_kwargs['mu_curr']
+        mean_state_sim, var_state_sim = jax.vmap(lambda b:
+            smooth_sim(
+                x_state_next = mu_prev[b],
+                mean_state_filt = mean_state_filt[b],
+                var_state_filt = var_state_filt[b],
+                mean_state_pred = mean_state_pred[b],
+                var_state_pred = var_state_pred[b],
+                trans_state = trans_state[b]
+        ))(jnp.arange(n_block))
+        logy_hat += jnp.sum(jax.vmap(lambda b:
+                        jsp.stats.multivariate_normal.logpdf(mu_curr[b], mean_state_sim[b], var_state_sim[b]))(jnp.arange(n_block)))
+        return logy_hat, None
+    # scan arguments
+    scan_kwargs = {
+        'mean_state_filt': mean_state_filt[2:],
+        'var_state_filt': var_state_filt[2:],
+        'mean_state_pred': mean_state_pred[1:n_tot-1],
+        'var_state_pred': var_state_pred[1:n_tot-1],
+        'mu_curr': mean_uncond[1:],
+        'mu_prev': mean_uncond[:n_tot-2],
+        'trans_state': trans_state[1:n_tot]
+    }
+    # Note: initial value x0 is assumed to be known, so no need to smooth it
+    logy_hat, _= jax.lax.scan(scan_fun, logy_hat, scan_kwargs)
+    return logy_hat
+
+def logp_xf(key, fun, W, x0, theta, tmin, tmax, n_res,
+                  trans_state, mean_state, var_state,
+                  trans_obs, mean_obs, var_obs, y_obs, interrogate, mean_uncond):
+    n_obs, n_block, n_bmeas = y_obs.shape
+    n_bstate = trans_state.shape[1]
+    n_steps = (n_obs-1)*n_res
+    y_res = jnp.ones((n_steps+1, n_block, n_bmeas))*jnp.nan
+    y_obs = y_res.at[::n_res].set(y_obs)
+    # forward pass
+    filt_out = forward(
+        key=key, fun=fun, W=W, x0=x0, theta=theta,
+        tmin=tmin, tmax=tmax, n_steps=n_steps,
+        trans_state=trans_state,
+        mean_state=mean_state, var_state=var_state,
+        interrogate=interrogate
+    )
+    mean_state_pred, var_state_pred = filt_out["state_pred"]
+    mean_state_filt, var_state_filt = filt_out["state_filt"]
+
+    # backward pass
+    trans_state_cond, mean_state_cond, var_state_cond = backward(
+        mean_state_filt=mean_state_filt,
+        var_state_filt=var_state_filt,
+        mean_state_pred=mean_state_pred,
+        var_state_pred=var_state_pred,
+        trans_state=trans_state
+    )
+    state_par = reverse(
+        trans_state=trans_state_cond, mean_state=mean_state_cond, 
+        var_state=var_state_cond, trans_obs=trans_obs,
+        mean_obs=mean_obs, var_obs=var_obs, y_obs=y_obs
+    )
+
+    logyhat = smoothf(trans_state_cond, state_par, mean_uncond)
+    return logyhat

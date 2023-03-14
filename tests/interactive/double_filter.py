@@ -488,33 +488,7 @@ def loglikehood(key, fun, W, x0, theta,
                 )                                                
             )(jnp.arange(n_block))
             return jnp.sum(logp), mean_state_next, var_state_next
-            
-            # # kalman forecast
-            # mean_state_fore, var_state_fore = jax.vmap(lambda b:
-            #     forecast(
-            #         mean_state_pred = mean_state_pred[b],
-            #         var_state_pred = var_state_pred[b],
-            #         mean_meas = mean_meas_obs[b],
-            #         trans_meas = trans_meas_obs[b],
-            #         var_meas = var_meas_obs[b]
-            #     )
-            # )(jnp.arange(n_block))
-            # logp = jnp.sum(jax.vmap(lambda b:
-            #     jsp.stats.multivariate_normal.logpdf(x_meas_obs[b], mean=mean_state_fore[b], cov=var_state_fore[b])
-            # )(jnp.arange(n_block)))
-            # # kalman update
-            # mean_state_next, var_state_next = jax.vmap(lambda b:
-            #     update(
-            #         mean_state_pred=mean_state_pred[b],
-            #         var_state_pred=var_state_pred[b],
-            #         W=W_obs[b],
-            #         x_meas=x_meas_obs[b],
-            #         mean_meas=mean_meas_obs[b],
-            #         trans_meas=trans_meas_obs[b],
-            #         var_meas=var_meas_obs[b]
-            #     )
-            # )(jnp.arange(n_block))
-            # return mean_state_next, var_state_next
+
         # only z is observed
         def z_update():
             logp, mean_state_next, var_state_next = jax.vmap(lambda b:
@@ -530,32 +504,6 @@ def loglikehood(key, fun, W, x0, theta,
             )(jnp.arange(n_block))
             # return jnp.sum(logp), mean_state_next, var_state_next
             return jnp.sum(logp), mean_state_next, var_state_next
-            # # kalman forecast
-            # mean_state_fore, var_state_fore = jax.vmap(lambda b:
-            #     forecast(
-            #         mean_state_pred = mean_state_pred[b],
-            #         var_state_pred = var_state_pred[b],
-            #         mean_meas = mean_obs[b],
-            #         trans_meas = trans_obs[b],
-            #         var_meas = var_obs[b]
-            #     )
-            # )(jnp.arange(n_block))
-            # logp = jnp.sum(jax.vmap(lambda b:
-            #     jsp.stats.multivariate_normal.logpdf(x_meas[b], mean=mean_state_fore[b], cov=var_state_fore[b])
-            # )(jnp.arange(n_block)))
-            # # kalman update
-            # mean_state_next, var_state_next = jax.vmap(lambda b:
-            #     update(
-            #         mean_state_pred=mean_state_pred[b],
-            #         var_state_pred=var_state_pred[b],
-            #         W=W[b],
-            #         x_meas=x_meas[b],
-            #         mean_meas=mean_meas[b],
-            #         trans_meas=trans_meas[b],
-            #         var_meas=var_meas[b]
-            #     )
-            # )(jnp.arange(n_block))
-            # return mean_state_next, var_state_next
 
         logp, mean_state_next, var_state_next = jax.lax.cond(jnp.isnan(y_curr).any(), z_update, zy_update)
         logdens += logp
@@ -565,10 +513,6 @@ def loglikehood(key, fun, W, x0, theta,
             "logdens": logdens,
             "key": key
         }
-        # stack = {
-        #     "state_filt": (mean_state_next, var_state_next),
-        #     "state_pred": (mean_state_pred, var_state_pred)
-        # }
         return carry, carry
     
     # lax.scan setup
@@ -657,3 +601,201 @@ def loglikehood(key, fun, W, x0, theta,
         jnp.concatenate([var_state_init[None], z_out2["state_filt"][1]])
     )
     return zy_out2, z_out2
+
+def logp_xy(key, fun, W, x0, theta,
+            tmin, tmax, n_res,
+            trans_state, mean_state, var_state,
+            trans_obs, mean_obs, var_obs, y_obs, 
+            interrogate):
+    
+    n_block, n_bstate = mean_state.shape
+    n_obs, _, n_bmeas = y_obs.shape
+    y_nan =  y_obs*jnp.nan
+    n_steps = (n_obs-1)*n_res
+    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
+    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
+    
+    # forward pass
+    filt_out = _solve_filter(
+        key=key,
+        fun=fun, W=W, x0=x0, theta=theta,
+        tmin=tmin, tmax=tmax, 
+        n_res=n_res, trans_state=trans_state,
+        mean_state=mean_state, var_state=var_state,
+        trans_obs=trans_obs, mean_obs=mean_obs, 
+        var_obs=var_obs, y_obs=y_nan,
+        interrogate=interrogate
+    )
+    mean_state_pred, var_state_pred = filt_out["state_pred"]
+    mean_state_filt, var_state_filt = filt_out["state_filt"]
+
+    y_res = jnp.ones((n_steps+1, n_block, n_bmeas))*jnp.nan
+    y_obs = y_res.at[::n_res].set(y_obs)
+    # backward pass
+    # lax.scan setup
+    def scan_fun(carry, smooth_kwargs):
+        mean_state_next = carry['mean_state_next']
+        logx = carry['logx']
+        logy = carry['logy']
+        mean_state_filt = smooth_kwargs['mean_state_filt']
+        var_state_filt = smooth_kwargs['var_state_filt']
+        mean_state_pred = smooth_kwargs['mean_state_pred']
+        var_state_pred = smooth_kwargs['var_state_pred']
+        y_curr = smooth_kwargs['y_obs']
+        key = smooth_kwargs['key']
+
+        mean_state_sim, var_state_sim = jax.vmap(lambda b: 
+            smooth_sim(
+                x_state_next=mean_state_next[b],
+                trans_state=trans_state[b],
+                mean_state_filt=mean_state_filt[b],
+                var_state_filt=var_state_filt[b],
+                mean_state_pred=mean_state_pred[b],
+                var_state_pred=var_state_pred[b]
+            )
+        )(jnp.arange(n_block))
+
+        logxc = jnp.sum(jax.vmap(lambda b:
+                        jsp.stats.multivariate_normal.logpdf(mean_state_sim[b], mean=mean_state_sim[b], cov=var_state_sim[b]))
+                        (jnp.arange(n_block)))
+        def _y():
+            logyc = jnp.sum(jax.vmap(lambda b:
+                                     jsp.stats.multivariate_normal.logpdf(y_curr[b], mean=trans_obs[b].dot(mean_state_sim[b]) + mean_obs[b], cov=var_obs[b]))
+                                     (jnp.arange(n_block)))
+            # logyc = 0.0
+            return logyc
+        
+        def _nan():
+            logyc = 0.0
+            return logyc
+
+        logyc = jax.lax.cond(jnp.isnan(y_curr).any(), _nan, _y)
+        carry = {
+            "mean_state_next": mean_state_sim,
+            "var_state_next": var_state_sim,
+            "logx": logx + logxc,
+            "logy": logy + logyc
+        }
+        
+        return carry, carry
+    # initialize
+    # scan_init = jax.vmap(lambda b:
+    #                      jax.random.multivariate_normal(
+    #                          subkeys[n_steps-1, b], 
+    #                          mean_state_filt[n_steps, b],
+    #                          var_state_filt[n_steps, b]))(jnp.arange(n_block))
+    
+    # p(y_0|x_0)
+    logy0 = jnp.sum(
+        jax.vmap(lambda b:
+                 jsp.stats.multivariate_normal.logpdf(y_obs[0][b], mean=trans_obs[b].dot(x0[b]) + mean_obs[b], cov=var_obs[b])
+    )(jnp.arange(n_block)))
+    # p(y_N |x_N)
+    logyN = jnp.sum(
+        jax.vmap(lambda b:
+                 jsp.stats.multivariate_normal.logpdf(y_obs[-1][b], mean=trans_obs[b].dot(mean_state_filt[-1][b]) + mean_obs[b], cov=var_obs[b])
+    )(jnp.arange(n_block)))
+    # p(x_N)
+    logxN = jnp.sum(
+        jax.vmap(lambda b:
+                 jsp.stats.multivariate_normal.logpdf(mean_state_filt[-1][b], mean=mean_state_filt[-1][b], cov=var_state_filt[-1][b])
+    )(jnp.arange(n_block)))
+    scan_init = {
+        'mean_state_next': mean_state_filt[-1],
+        'var_state_next': var_state_filt[-1],
+        'logx': logxN,
+        'logy': logy0 + logyN
+    }
+    # scan arguments
+    scan_kwargs = {
+        'mean_state_filt': mean_state_filt[1:n_steps],
+        'var_state_filt': var_state_filt[1:n_steps],
+        'mean_state_pred': mean_state_pred[2:n_steps+1],
+        'var_state_pred': var_state_pred[2:n_steps+1],
+        'y_obs': y_obs[1:n_steps],
+        'key': subkeys[:n_steps-1]
+    }
+    scan_out, scan_out2 = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
+                               reverse=True) 
+    # append initial values to front and back
+    mean_state_sim = jnp.concatenate(
+        [scan_out2["mean_state_next"], scan_init["mean_state_next"][None]]
+    )
+    return scan_out['logx'] + scan_out['logy'], mean_state_sim
+
+def logp_x(key, fun, W, x0, theta,
+           tmin, tmax, n_res,
+           trans_state, mean_state, var_state,
+           trans_obs, mean_obs, var_obs, y_obs, 
+           interrogate, mean_uncond):
+    
+    n_block, n_bstate = mean_state.shape
+    n_obs, _, n_bmeas = y_obs.shape
+    n_steps = (n_obs-1)*n_res
+    # forward pass
+    filt_out = _solve_filter(
+        key=key,
+        fun=fun, W=W, x0=x0, theta=theta,
+        tmin=tmin, tmax=tmax, 
+        n_res=n_res, trans_state=trans_state,
+        mean_state=mean_state, var_state=var_state,
+        trans_obs=trans_obs, mean_obs=mean_obs, 
+        var_obs=var_obs, y_obs=y_obs,
+        interrogate=interrogate
+    )
+    mean_state_pred, var_state_pred = filt_out["state_pred"]
+    mean_state_filt, var_state_filt = filt_out["state_filt"]
+
+    # backward pass
+    # lax.scan setup
+    def scan_fun(carry, smooth_kwargs):
+        logx = carry['logx']
+        mean_state_filt = smooth_kwargs['mean_state_filt']
+        var_state_filt = smooth_kwargs['var_state_filt']
+        mean_state_pred = smooth_kwargs['mean_state_pred']
+        var_state_pred = smooth_kwargs['var_state_pred']
+        mean_next = smooth_kwargs['mean_next']
+        mean_curr = smooth_kwargs['mean_curr']
+
+        mean_state_sim, var_state_sim = jax.vmap(lambda b:
+            smooth_sim(
+                x_state_next=mean_next[b],
+                trans_state=trans_state[b],
+                mean_state_filt=mean_state_filt[b],
+                var_state_filt=var_state_filt[b],
+                mean_state_pred=mean_state_pred[b],
+                var_state_pred=var_state_pred[b]
+        ))(jnp.arange(n_block))
+        logxc = jax.vmap(lambda b:
+                    jsp.stats.multivariate_normal.logpdf(mean_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b]))(jnp.arange(n_block))
+        carry = {
+            "mean_state_next": mean_state_sim,
+            "var_state_next": var_state_sim,
+            "logx": logx + jnp.sum(logxc)
+        }
+        return carry, carry
+    # p(x_N)
+    logxN = jnp.sum(
+        jax.vmap(lambda b:
+                 jsp.stats.multivariate_normal.logpdf(mean_uncond[-1][b], mean=mean_state_filt[-1][b], cov=var_state_filt[-1][b])
+    )(jnp.arange(n_block)))
+    
+    scan_init = {
+        'mean_state_next': mean_state_filt[-1],
+        'var_state_next': var_state_filt[-1],
+        'logx': logxN
+    }
+    # scan arguments
+    scan_kwargs = {
+        'mean_state_filt': mean_state_filt[1:n_steps],
+        'var_state_filt': var_state_filt[1:n_steps],
+        'mean_state_pred': mean_state_pred[2:n_steps+1],
+        'var_state_pred': var_state_pred[2:n_steps+1],
+        'mean_curr': mean_uncond[:n_steps-1],
+        'mean_next': mean_uncond[1:]
+    }
+    
+
+    scan_out, scan_out2 = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
+                               reverse=True)    
+    return scan_out['logx']
