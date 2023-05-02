@@ -18,8 +18,8 @@ class TestrodeoJit(unittest.TestCase):
     def test_interrogate_rodeo(self):
         # without jit
         trans_meas1, mean_meas1, var_meas1 = interrogate_rodeo(
-            key=self.key,
-            fun=self.fitz_jax,
+            self.key,
+            self.fitz_jax,
             W=self.W_block,
             t=self.t,
             theta=self.theta,
@@ -29,8 +29,8 @@ class TestrodeoJit(unittest.TestCase):
         # with jit
         rodeo_jit = jax.jit(interrogate_rodeo, static_argnums=(1,))
         trans_meas2, mean_meas2, var_meas2 = rodeo_jit(
-            key=self.key,
-            fun=self.fitz_jax,
+            self.key,
+            self.fitz_jax,
             W=self.W_block,
             t=self.t,
             theta=self.theta,
@@ -41,7 +41,7 @@ class TestrodeoJit(unittest.TestCase):
         def obj_fun(theta):
             return jnp.mean(
                 interrogate_rodeo(
-                    key=self.key, fun=self.fitz_jax,
+                    self.key, self.fitz_jax,
                     W=self.W_block, t=self.t, theta=theta,
                     mean_state_pred=self.x0_block,
                     var_state_pred=self.var_block)[0])
@@ -57,8 +57,8 @@ class TestrodeoJit(unittest.TestCase):
     def test_interrogate_chkrebtii(self):
         # without jit
         trans_meas1, mean_meas1, var_meas1 = interrogate_chkrebtii(
-            key=self.key,
-            fun=self.fitz_jax,
+            self.key,
+            self.fitz_jax,
             W=self.W_block,
             t=self.t,
             theta=self.theta,
@@ -68,8 +68,8 @@ class TestrodeoJit(unittest.TestCase):
         # with jit
         rodeo_jit = jax.jit(interrogate_chkrebtii, static_argnums=(1,))
         trans_meas2, mean_meas2, var_meas2 = rodeo_jit(
-            key=self.key,
-            fun=self.fitz_jax,
+            self.key,
+            self.fitz_jax,
             W=self.W_block,
             t=self.t,
             theta=self.theta,
@@ -80,7 +80,7 @@ class TestrodeoJit(unittest.TestCase):
         def obj_fun(theta):
             return jnp.mean(
                 interrogate_chkrebtii(
-                    key=self.key, fun=self.fitz_jax,
+                    self.key, self.fitz_jax,
                     W=self.W_block, t=self.t, theta=theta,
                     mean_state_pred=self.x0_block,
                     var_state_pred=self.var_block)[0])
@@ -96,8 +96,8 @@ class TestrodeoJit(unittest.TestCase):
     def test_interrogate_schober(self):
         # without jit
         trans_meas1, mean_meas1, var_meas1 = interrogate_schober(
-            key=self.key,
-            fun=self.fitz_jax,
+            self.key,
+            self.fitz_jax,
             W=self.W_block,
             t=self.t,
             theta=self.theta,
@@ -107,8 +107,8 @@ class TestrodeoJit(unittest.TestCase):
         # with jit
         rodeo_jit = jax.jit(interrogate_schober, static_argnums=(1,))
         trans_meas2, mean_meas2, var_meas2 = rodeo_jit(
-            key=self.key,
-            fun=self.fitz_jax,
+            self.key,
+            self.fitz_jax,
             W=self.W_block,
             t=self.t,
             theta=self.theta,
@@ -119,7 +119,7 @@ class TestrodeoJit(unittest.TestCase):
         def obj_fun(theta):
             return jnp.mean(
                 interrogate_schober(
-                    key=self.key, fun=self.fitz_jax,
+                    self.key, self.fitz_jax,
                     t=self.t, theta=theta,
                     W=self.W_block,
                     mean_state_pred=self.x0_block,
@@ -135,20 +135,20 @@ class TestrodeoJit(unittest.TestCase):
 
     def test_mv(self):
         # without jit
-        mu1, var1 = solve_mv(key=self.key, fun=self.fitz_jax,
+        mu1, var1 = solve_mv(self.key, self.fitz_jax,
                              W=self.W_block, x0=self.x0_block, theta=self.theta,
                              tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                              **self.ode_init)
         # with jit
         mv_jit = jax.jit(solve_mv, static_argnums=(1, 7))
-        mu2, var2 = mv_jit(key=self.key, fun=self.fitz_jax,
+        mu2, var2 = mv_jit(self.key, self.fitz_jax,
                            W=self.W_block, x0=self.x0_block, theta=self.theta,
                            tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                            **self.ode_init)
         # objective function for gradient
         def obj_fun(theta):
             return jnp.mean(
-                solve_mv(key=self.key, fun=self.fitz_jax,
+                solve_mv(self.key, self.fitz_jax,
                          W=self.W_block, x0=self.x0_block, theta=theta,
                          tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                          **self.ode_init)[0])
@@ -162,20 +162,20 @@ class TestrodeoJit(unittest.TestCase):
     
     def test_sim(self):
         # without jit
-        sim1 = solve_sim(key=self.key, fun=self.fitz_jax,
+        sim1 = solve_sim(self.key, self.fitz_jax,
                          W=self.W_block, x0=self.x0_block, theta=self.theta,
                          tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                          **self.ode_init)
         # with jit
         sim_jit = jax.jit(solve_sim, static_argnums=(1, 7))
-        sim2 = sim_jit(key=self.key, fun=self.fitz_jax,
+        sim2 = sim_jit(self.key, self.fitz_jax,
                        W=self.W_block, x0=self.x0_block, theta=self.theta,
                        tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                        **self.ode_init)
         # objective function for gradient
         def obj_fun(theta):
             return jnp.mean(
-                solve_sim(key=self.key, fun=self.fitz_jax,
+                solve_sim(self.key, self.fitz_jax,
                           W=self.W_block, x0=self.x0_block, theta=theta,
                           tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                           **self.ode_init)[0])
@@ -189,21 +189,21 @@ class TestrodeoJit(unittest.TestCase):
     def test_solve(self):
         # without jit
         sim1, mu1, var1 = \
-            solve(key=self.key, fun=self.fitz_jax,
+            solve(self.key, self.fitz_jax,
                   W=self.W_block, x0=self.x0_block, theta=self.theta,
                   tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                   **self.ode_init)
         # with jit
         solve_jit = jax.jit(solve, static_argnums=(1, 7))
         sim2, mu2, var2 = \
-            solve_jit(key=self.key, fun=self.fitz_jax,
+            solve_jit(self.key, self.fitz_jax,
                       W=self.W_block, x0=self.x0_block, theta=self.theta,
                       tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                       **self.ode_init)
         # objective function for gradient
         def obj_fun(theta):
             return jnp.mean(
-                solve(key=self.key, fun=self.fitz_jax,
+                solve(self.key, self.fitz_jax,
                       W=self.W_block, x0=self.x0_block, theta=theta,
                       tmin=self.tmin, tmax=self.tmax, n_steps=self.n_steps,
                       **self.ode_init)[0])
