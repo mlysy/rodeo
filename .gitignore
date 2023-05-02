@@ -10,3 +10,6 @@ build
 /tests/local
 /docs/build/
 src/rodeo.egg-info/
+figures/
+saves/
+
