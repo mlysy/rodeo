@@ -1,5 +1,5 @@
 r"""
-This module implements the double filter solver.
+This module implements the pope solver.
 
 The model is
 
@@ -21,6 +21,16 @@ import jax.scipy as jsp
 from rodeo.kalmantv import *
 import rodeo.ode as rode
 
+def multivariate_normal_logpdf(x, mean, cov):
+    """Using Eigendecomposition."""
+    w, v = jnp.linalg.eigh(cov)
+    z = jnp.dot(v.T, x - mean)
+    z2 = z**2
+    iw = ~jnp.isclose(w/jnp.max(w), 0, atol=1e-15)
+    w = jnp.where(iw, w, 1.) # remove possibility of nan
+    val = z2/w + jnp.log(w)
+    val = -.5 * jnp.sum(jnp.where(iw, val, 0.)) - jnp.sum(iw)*.5*jnp.log(2*jnp.pi) 
+    return val
 
 # use interrogations and observations
 def _solve_filter(key, fun, W, x0, theta,
@@ -29,7 +39,7 @@ def _solve_filter(key, fun, W, x0, theta,
                   trans_obs, mean_obs, var_obs, y_obs, 
                   interrogate):
     r"""
-    Forward pass of the double filter algorithm.
+    Forward pass of the pope algorithm.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -410,7 +420,7 @@ def loglikehood(key, fun, W, x0, theta,
                 trans_obs, mean_obs, var_obs, y_obs, 
                 interrogate):
     r"""
-    Compute marginal loglikelihood of double filter algorithm.
+    Compute marginal loglikelihood of pope algorithm.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -616,7 +626,7 @@ def _solve_filter_nn(key, fun, W, x0, theta,
                      fun_obs, trans_obs, y_obs, 
                      interrogate):
     r"""
-    Forward pass of the double filter algorithm.
+    Forward pass of the pope algorithm.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -899,7 +909,7 @@ def _logx_yhat(mean_state_filt, var_state_filt,
         )(jnp.arange(n_block))
         logx_yhat += jnp.sum(
             jax.vmap(lambda b:
-                     jsp.stats.multivariate_normal.logpdf(mean_state_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b])
+                     multivariate_normal_logpdf(mean_state_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b])
                     )(jnp.arange(n_block))
         )
         state_curr = {
@@ -911,7 +921,7 @@ def _logx_yhat(mean_state_filt, var_state_filt,
     # compute log(mu_{N|N}) at the last filtering step
     logx_yhat0 = jnp.sum(
         jax.vmap(lambda b:
-                 jsp.stats.multivariate_normal.logpdf(mean_state_filt[n_steps][b], mean=mean_state_filt[n_steps][b], cov=var_state_filt[n_steps][b])
+                 multivariate_normal_logpdf(mean_state_filt[n_steps][b], mean=mean_state_filt[n_steps][b], cov=var_state_filt[n_steps][b])
                 )(jnp.arange(n_block)))
     # initialize
     scan_init = {
@@ -973,21 +983,23 @@ def _logx_z(uncond_mean,
         )(jnp.arange(n_block))
         logx_z += jnp.sum(
             jax.vmap(lambda b:
-                     jsp.stats.multivariate_normal.logpdf(uncond_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b])
+                     multivariate_normal_logpdf(uncond_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b])
                     )(jnp.arange(n_block))
         )
         state_curr = {
-            "logx_z":  logx_z
+            "logx_z":  logx_z,
+            "var": var_state_sim
         }
         return state_curr, state_curr
     # compute log(mu_{N|N}) at the last filtering step
     logx_z0 = jnp.sum(
         jax.vmap(lambda b:
-                 jsp.stats.multivariate_normal.logpdf(uncond_mean[n_steps][b], mean=mean_state_filt[n_steps][b], cov=var_state_filt[n_steps][b])
+                 multivariate_normal_logpdf(uncond_mean[n_steps][b], mean=mean_state_filt[n_steps][b], cov=var_state_filt[n_steps][b])
                 )(jnp.arange(n_block)))
     # initialize
     scan_init = {
-        "logx_z": logx_z0
+        "logx_z": logx_z0,
+        "var": var_state_filt[-1]
     }
     # scan arguments
     scan_kwargs = {
@@ -1002,7 +1014,7 @@ def _logx_z(uncond_mean,
     _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
                                reverse=True)
     
-    return scan_out["logx_z"]
+    return scan_out["logx_z"], scan_out["var"]
 
 def loglikehood_nn(key, fun, W, x0, theta,
                 tmin, tmax, n_res,
@@ -1010,7 +1022,7 @@ def loglikehood_nn(key, fun, W, x0, theta,
                 fun_obs, trans_obs, y_obs, 
                 interrogate=rode.interrogate_rodeo):
     r"""
-    Compute marginal loglikelihood of double filter algorithm.
+    Compute marginal loglikelihood of pope algorithm.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -1080,7 +1092,7 @@ def loglikehood_nn(key, fun, W, x0, theta,
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
 
-    logx_z = _logx_z(
+    logx_z, var_state_smooth2 = _logx_z(
         uncond_mean=mean_state_smooth,
         mean_state_filt=mean_state_filt,
         var_state_filt=var_state_filt,

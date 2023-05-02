@@ -36,6 +36,66 @@ from rodeo.ode import interrogate_tronarp, interrogate_rodeo
 #     var_meas = jnp.linalg.multi_dot([W, var_state_pred, W.T])
 #     return mean_meas, trans_meas, var_meas
 
+def _solveV2(V, B):
+    return jsp.linalg.solve(V, B)
+
+def _smooth(var_state_filt, var_state_pred, trans_state):
+    r"""
+    Common part of :func:`kalmantv.smooth_sim` and :func:`kalmantv.smooth_mv`.
+
+    Args:
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        trans_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
+
+    Returns:
+        (tuple):
+        - **var_state_temp** (ndarray(n_state, n_state)): Tempory variance calculation used by :func:`kalmantv.smooth_sim`.
+        - **var_state_temp_tilde** (ndarray(n_state, n_state)): Tempory variance calculation used by :func:`kalmantv.smooth_sim` and :func:`kalmantv.smooth_mv`.
+    """
+    var_state_temp = var_state_filt.dot(trans_state.T)
+    var_state_temp_tilde = _solveV2(var_state_pred, var_state_temp.T).T
+    return var_state_temp, var_state_temp_tilde
+
+
+def smooth_mv(mean_state_next,
+              var_state_next,
+              mean_state_filt,
+              var_state_filt,
+              mean_state_pred,
+              var_state_pred,
+              trans_state):
+    r"""
+    Perform one step of the Kalman mean/variance smoother.
+
+    Calculates :math:`\theta_{n|N}` from :math:`\theta_{n+1|N}`, :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
+
+    Args:
+        mean_state_next(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...N]; denoted by :math:`\mu_{n+1 | N}`.
+        var_state_next(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...N]; denoted by :math:`\Sigma_{n+1 | N}`.
+        mean_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by :math:`\mu_{n | n}`.
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        mean_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\mu_{n | n-1}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        trans_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
+
+    Returns:
+        (tuple):
+        - **mean_state_smooth** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N]; denoted by :math:`\mu_{n | N}`.
+        - **var_state_smooth** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N]; denoted by :math:`\Sigma_{n | N}`.
+
+    """
+    var_state_temp, var_state_temp_tilde = _smooth(
+        var_state_filt, var_state_pred, trans_state
+    )
+    mean_state_smooth = mean_state_filt + \
+        var_state_temp_tilde.dot(mean_state_next - mean_state_pred)
+    var_state_smooth = var_state_filt + jnp.linalg.multi_dot(
+        [var_state_temp_tilde, (var_state_next - var_state_pred), var_state_temp_tilde.T])
+    return mean_state_smooth, var_state_smooth
+
+
+
 # use interrogations first then observations
 def forward(key, fun, W, x0, theta,
             tmin, tmax, n_steps,
@@ -404,272 +464,9 @@ def fenrir_filter(key, fun, W, x0, theta, tmin, tmax, n_res,
         mean_obs=mean_obs, var_obs=var_obs, y_obs=y_obs
     )
     mean_state_smooth, var_state_smooth = smooth(trans_state_cond, state_par)
+    # return state_par["state_filt"][0]
     return mean_state_smooth, var_state_smooth
     # return state_par
-
-# use data first then interrogations
-def obs_passx(x0, trans_state, mean_state, var_state,
-              trans_obs, mean_obs, var_obs, y_obs):
-    r"""
-    Forward pass of the Fenrir algorithm.
-
-    Args:
-        fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
-        x0 (ndarray(n_state)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
-        theta (ndarray(n_theta)): Parameters in the ODE function.
-        tmin (float): First time point of the time interval to be evaluated; :math:`a`.
-        tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        W (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; :math:`W`.
-        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`Q`.
-        mean_state (ndarray(n_state)): Transition_offsets defining the solution prior; :math:`c`.
-        var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
-        varzero (bool): Indicator for the variance of the measurement variable; :math:`z`.
-
-    Returns:
-        (tuple):
-        - **mean_state_pred** (ndarray(n_steps+1, n_state)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **var_state_pred** (ndarray(n_steps+1, n_state, n_state)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **mean_state_filt** (ndarray(n_steps+1, n_state)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
-        - **var_state_filt** (ndarray(n_steps+1, n_state, n_state)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
-
-    """
-    # Dimensions of block, state and measure variables
-    n_state = len(mean_state)
-
-    # arguments for forward
-    mean_state_init = x0
-    var_state_init = jnp.zeros((n_state, n_state))
-
-
-    # forward pass using data
-    def scan_fun(carry, rev_args):
-        mean_state_filt, var_state_filt = carry["state_filt"]
-        y_obs = rev_args['y_obs']
-
-        # kalman predict
-        mean_state_pred, var_state_pred = predict(
-            mean_state_past=mean_state_filt,
-            var_state_past=var_state_filt,
-            mean_state=mean_state,
-            trans_state=trans_state,
-            var_state=var_state
-        )
-        # y_obs is None
-        def _no_obs():
-            mean_state_filt = mean_state_pred
-            var_state_filt = var_state_pred
-            return mean_state_filt, var_state_filt
-
-        # y_obs is not None
-        def _obs():
-            # kalman update
-            mean_state_filt, var_state_filt = update(
-                mean_state_pred=mean_state_pred,
-                var_state_pred=var_state_pred,
-                x_meas=y_obs,
-                mean_meas = mean_obs,
-                trans_meas = trans_obs,
-                var_meas=var_obs
-            )
-            return mean_state_filt, var_state_filt
-
-        mean_state_filt, var_state_filt = jax.lax.cond(jnp.isnan(y_obs).any(), _no_obs, _obs)
-
-        # output
-        carry = {
-            "state_filt": (mean_state_filt, var_state_filt)
-        }
-        stack = {
-            "state_pred": (mean_state_pred, var_state_pred),
-            "state_filt": (mean_state_filt, var_state_filt)
-        }
-        return carry, stack
-
-
-    scan_init = {
-        "state_filt" : (mean_state_init, var_state_init)
-    }
-    rev_args = {
-        "y_obs": y_obs[1:]
-    }
-
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, rev_args)
-
-    # append initial values to front
-    scan_out["state_filt"] = (
-        jnp.concatenate([mean_state_init[None], scan_out["state_filt"][0]]),
-        jnp.concatenate([var_state_init[None], scan_out["state_filt"][1]])
-    )
-    scan_out["state_pred"] = (
-        jnp.concatenate([mean_state_init[None], scan_out["state_pred"][0]]),
-        jnp.concatenate([var_state_init[None], scan_out["state_pred"][1]])
-    )
-    return scan_out
-
-def meas_passx(fun, W, x0, theta,
-               tmin, tmax, n_steps,
-               trans_state, mean_state, var_state):
-    r"""
-    Backward pass using interrogations.
-
-    Args:
-        fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
-        x0 (ndarray(n_state)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
-        theta (ndarray(n_theta)): Parameters in the ODE function.
-        tmin (float): First time point of the time interval to be evaluated; :math:`a`.
-        tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        W (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; :math:`W`.
-        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`Q`.
-        mean_state (ndarray(n_state)): Transition_offsets defining the solution prior; :math:`c`.
-        var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
-        varzero (bool): Indicator for the variance of the measurement variable; :math:`z`.
-
-    Returns:
-        (tuple):
-        - **mean_state_pred** (ndarray(n_steps+1, n_state)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **var_state_pred** (ndarray(n_steps+1, n_state, n_state)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **mean_state_filt** (ndarray(n_steps+1, n_state)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
-        - **var_state_filt** (ndarray(n_steps+1, n_state, n_state)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
-
-    """
-    # Dimensions of block, state and measure variables
-    n_meas, n_state = W.shape
-
-    # arguments for reverse pass using interrogations
-    z_meas = jnp.zeros(n_meas)
-    n_state = trans_state.shape[1]
-    trans_state_end = jnp.zeros(trans_state.shape[1:])
-    trans_state = jnp.concatenate([trans_state, trans_state_end[None]])
-
-    # reverse pass
-    def scan_fun(carry, rev_args):
-        mean_state_filt, var_state_filt = carry["state_filt"]
-        trans_state = rev_args['trans_state']
-        mean_state = rev_args['mean_state']
-        var_state = rev_args['var_state']
-        t = rev_args['t']
-
-        # kalman predict
-        mean_state_pred, var_state_pred = predict(
-            mean_state_past=mean_state_filt,
-            var_state_past=var_state_filt,
-            mean_state=mean_state,
-            trans_state=trans_state,
-            var_state=var_state
-        )
-        # compute meas parameters
-        mean_meas, trans_meas, var_meas = zero_update(
-            fun = fun, 
-            t = t,
-            theta = theta,
-            W = W, 
-            mean_state_pred = mean_state_pred, 
-            var_state_pred = var_state_pred
-        )
-        # kalman update
-        mean_state_next, var_state_next = update(
-            mean_state_pred=mean_state_pred,
-            var_state_pred=var_state_pred,
-            x_meas=z_meas,
-            mean_meas=mean_meas,
-            trans_meas=trans_meas,
-            var_meas=var_meas
-        )
-        # output
-        carry = {
-            "state_filt": (mean_state_next, var_state_next)
-        }
-        stack = {
-            "state_filt": (mean_state_next, var_state_next),
-            "state_pred": (mean_state_pred, var_state_pred)
-        }
-        return carry, stack
-
-    # start at N+1 assuming 0 mean and variance
-    scan_init = {
-        "state_filt" : (jnp.zeros((n_state,)), jnp.zeros((n_state, n_state)))
-    }
-    rev_args = {
-        "trans_state" : trans_state[1:],
-        "mean_state" : mean_state[1:],
-        "var_state" : var_state[1:],
-        "t": jnp.linspace(tmin, tmax, n_steps+1)[1:]
-    }
-    # scan itself
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, rev_args, reverse=True)
-    # append initial values to front
-    scan_out["state_filt"] = (
-        jnp.concatenate([x0[None], scan_out["state_filt"][0]]),
-        jnp.concatenate([jnp.zeros((n_state, n_state))[None], scan_out["state_filt"][1]])
-    )
-    scan_out["state_pred"] = (
-        jnp.concatenate([x0[None], scan_out["state_pred"][0]]),
-        jnp.concatenate([jnp.zeros((n_state, n_state))[None], scan_out["state_pred"][1]])
-    )
-    return scan_out
-
-def rfenrir_filter(fun, W, x0, theta, tmin, tmax, n_res,
-                  trans_state, mean_state, var_state,
-                  trans_obs, mean_obs, var_obs, y_obs):
-    
-    r"""
-    Fenrir algorithm like but uses data first instead of interrogations.
-
-    Args:
-        fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
-        x0 (ndarray(n_state)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
-        theta (ndarray(n_theta)): Parameters in the ODE function.
-        tmin (float): First time point of the time interval to be evaluated; :math:`a`.
-        tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        W (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; :math:`W`.
-        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`Q`.
-        mean_state (ndarray(n_state)): Transition_offsets defining the solution prior; :math:`c`.
-        var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
-        mean_obs (ndarray(n_obs)): Transition offsets defining the noisy observations.
-        trans_obs (ndarray(n_obs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
-        var_obs (ndarray(n_obs, n_obs)): Variance matrix defining the noisy observations; :math:`Omega`.
-        y_obs (ndarray(n_steps, n_obs)): Observed data; :math:`y_n`.
-
-
-    Returns:
-        logdens : The logdensity of p(y_{0:N}).
-
-    """
-    n_obs, n_dim_obs = y_obs.shape
-    n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_dim_obs))*jnp.nan
-    y_obs = y_res.at[::n_res].set(y_obs)
-
-    # forward pass using data
-    filt_out = obs_passx(
-        x0=x0, 
-        trans_state=trans_state, mean_state=mean_state, var_state=var_state, 
-        trans_obs=trans_obs, mean_obs=mean_obs, var_obs=var_obs, y_obs=y_obs
-    )
-    mean_state_pred, var_state_pred = filt_out["state_pred"]
-    mean_state_filt, var_state_filt = filt_out["state_filt"]
-    # backward pass
-    trans_state_cond, mean_state_cond, var_state_cond = backward(
-        mean_state_filt=mean_state_filt,
-        var_state_filt=var_state_filt,
-        mean_state_pred=mean_state_pred,
-        var_state_pred=var_state_pred,
-        trans_state=trans_state
-    )
-    # reverse pass using interrogations
-    state_par = meas_passx(
-        fun=fun, W=W, x0=x0, theta=theta,
-        tmin=tmin, tmax=tmax, n_steps=n_steps,
-        trans_state=trans_state_cond,
-        mean_state=mean_state_cond, var_state=var_state_cond
-    )
-    mean_state_smooth, var_state_smooth = smooth(trans_state_cond, state_par)
-    return filt_out, state_par, mean_state_smooth, var_state_smooth
-    # return state_par
-
-
 
 # for non-gaussian observaions
 
