@@ -1,5 +1,5 @@
 r"""
-This module implements the pope solver.
+This module implements the DALTON solver.
 
 The model is
 
@@ -11,7 +11,7 @@ The model is
 
     z_n = W X_n - f(X_n, t_n) + V_n^{1/2} \eta_n
     
-    y_n = C X_n + \Omega \zeta_n.
+    y_m = g(X_m, \phi_m)
 
 """
 
@@ -22,7 +22,16 @@ from rodeo.kalmantv import *
 import rodeo.ode as rode
 
 def multivariate_normal_logpdf(x, mean, cov):
-    """Using Eigendecomposition."""
+    r"""Using eigendecomposition to compute multivariate normal logpdf.
+    
+    Args:
+        x (ndarray(p)): Observations.
+        mean (ndarray(p)): Mean of the distribution.
+        cov (ndarray(p, p)): Symmetric positive (semi)definite covariance matrix of the distribution.
+    
+    Returns:
+        (float): The logpdf of the multivariate normal.
+    """
     w, v = jnp.linalg.eigh(cov)
     z = jnp.dot(v.T, x - mean)
     z2 = z**2
@@ -32,14 +41,14 @@ def multivariate_normal_logpdf(x, mean, cov):
     val = -.5 * jnp.sum(jnp.where(iw, val, 0.)) - jnp.sum(iw)*.5*jnp.log(2*jnp.pi) 
     return val
 
-# use interrogations and observations
+# use linearizations and observations
 def _solve_filter(key, fun, W, x0, theta,
                   tmin, tmax, n_steps,
                   trans_state, mean_state, var_state,
                   trans_obs, mean_obs, var_obs, y_obs, 
                   interrogate):
     r"""
-    Forward pass of the pope algorithm.
+    Forward pass of the DALTON algorithm with Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -53,6 +62,7 @@ def _solve_filter(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        interrogate (function): Function defining the linearization method.
 
     Returns:
         (tuple):
@@ -174,8 +184,10 @@ def solve_sim(key, fun, W, x0, theta,
              tmin, tmax, n_res,
              trans_state, mean_state, var_state,
              trans_obs, mean_obs, var_obs, y_obs, 
-             interrogate=rode.interrogate_rodeo):
+             interrogate):
     r"""
+    Sample draw of the DALTON algorithm with Gaussian observations.
+
     Args:
         key (PRNGKey): PRNG key.
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
@@ -188,11 +200,10 @@ def solve_sim(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_obs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
-        mean_obs (ndarray(n_obs)): Transition offsets defining the noisy observations.
-        var_obs (ndarray(n_obs, n_obs)): Variance matrix defining the noisy observations; :math:`Omega`.
-        interrogate (function): Function defining the interrogation method.
-
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
+        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`Omega`.
+        interrogate (function): Function defining the linearization method.
 
     Returns:
         (ndarray(n_steps+1, n_blocks, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
@@ -273,9 +284,9 @@ def solve_mv(key, fun, W, x0, theta,
              tmin, tmax, n_res,
              trans_state, mean_state, var_state,
              trans_obs, mean_obs, var_obs, y_obs, 
-             interrogate=rode.interrogate_rodeo):
+             interrogate):
     r"""
-    Mean and variance of the stochastic ODE solver using observations.
+    Smoothing mean and variance of the DALTON algorithm with Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -289,10 +300,10 @@ def solve_mv(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_obs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
-        mean_obs (ndarray(n_obs)): Transition offsets defining the noisy observations.
-        var_obs (ndarray(n_obs, n_obs)): Variance matrix defining the noisy observations; :math:`Omega`.
-        interrogate (function): Function defining the interrogation method.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
+        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`Omega`.
+        interrogate (function): Function defining the linearization method.
 
     Returns:
         (tuple):
@@ -378,19 +389,19 @@ def _forecast_update(mean_state_pred, var_state_pred,
     Perform one update step of the Kalman filter and forecast.
 
     Args:
-        mean_state_pred (ndarray(n_state)): Mean estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\mu_{n|n-1}`.
-        var_state_pred (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\Sigma_{n|n-1}`.
-        x_meas (ndarray(n_meas)): Interrogated measure vector from `x_state`; :math:`y_n`.
-        mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d`.
-        W (ndarray(n_meas, n_state)): Matrix for getting the derivative; denoted by :math:`W`.
-        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W+B`.
-        var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
+        mean_state_pred (ndarray(n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\mu_{n|n-1}`.
+        var_state_pred (ndarray(n_block, n_bstate, n_sbtate)): Covariance of estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\Sigma_{n|n-1}`.
+        W (ndarray(n_block, n_bmeas, n_bstate)): Matrix for getting the derivative; denoted by :math:`W`.
+        x_meas (ndarray(n_block, n_bmeas)): interrogated measure vector from `x_state`; :math:`y_n`.
+        mean_meas (ndarray(n_block, n_bmeas)): Transition offsets defining the measure prior; denoted by :math:`d`.
+        trans_meas (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; denoted by :math:`W+B`.
+        var_meas (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
 
     Returns:
         (tuple):
         - **logdens** (float): The log-likelihood for the observations.
-        - **mean_state_filt** (ndarray(n_state)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
-        - **var_state_filt** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
+        - **mean_state_filt** (ndarray(n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
+        - **var_state_filt** (ndarray(n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
     """
     # kalman forecast
     mean_state_fore, var_state_fore = forecast(
@@ -420,7 +431,7 @@ def loglikehood(key, fun, W, x0, theta,
                 trans_obs, mean_obs, var_obs, y_obs, 
                 interrogate):
     r"""
-    Compute marginal loglikelihood of pope algorithm.
+    Compute marginal loglikelihood of DALTON algorithm for Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -430,10 +441,14 @@ def loglikehood(key, fun, W, x0, theta,
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
+        n_res (int): Resolution number determining how to thin solution process to match observations.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
+        trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
+        var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
+        interrogate (function): Function defining the linearization method.
 
     Returns:
         (tuple):
@@ -518,7 +533,6 @@ def loglikehood(key, fun, W, x0, theta,
                     var_meas=var_meas[b]
                 )                                                
             )(jnp.arange(n_block))
-            # return jnp.sum(logp), mean_state_next, var_state_next
             return jnp.sum(logp), mean_state_next, var_state_next
 
         logp, mean_state_next, var_state_next = jax.lax.cond(jnp.isnan(y_curr).any(), z_update, zy_update)
@@ -547,7 +561,7 @@ def loglikehood(key, fun, W, x0, theta,
                 var_state=var_state[b]
             )
         )(jnp.arange(n_block))
-        # model interrogation
+        # model linearization
         trans_meas, mean_meas, var_meas = interrogate(
             key=subkey,
             fun=fun,
@@ -596,7 +610,7 @@ def loglikehood(key, fun, W, x0, theta,
         'y_obs': y_obs[1:]
     }
     # scan itself
-    zy_out, zy_out2 = jax.lax.scan(scan_zy, scan_init_zy, scan_args)
+    _, zy_out2 = jax.lax.scan(scan_zy, scan_init_zy, scan_args)
     
     # scan p(z|x)
     # scan initial value
@@ -606,16 +620,16 @@ def loglikehood(key, fun, W, x0, theta,
         "key": key2
     }
     # scan itself
-    z_out, z_out2 = jax.lax.scan(scan_z, scan_init_z, jnp.arange(n_steps))
+    _, z_out2 = jax.lax.scan(scan_z, scan_init_z, jnp.arange(n_steps))
     # append initial values to front
-    zy_out2["state_filt"] = (
-        jnp.concatenate([mean_state_init[None], zy_out2["state_filt"][0]]),
-        jnp.concatenate([var_state_init[None], zy_out2["state_filt"][1]])
-    )
-    z_out2["state_filt"] = (
-        jnp.concatenate([mean_state_init[None], z_out2["state_filt"][0]]),
-        jnp.concatenate([var_state_init[None], z_out2["state_filt"][1]])
-    )
+    # zy_out2["state_filt"] = (
+    #     jnp.concatenate([mean_state_init[None], zy_out2["state_filt"][0]]),
+    #     jnp.concatenate([var_state_init[None], zy_out2["state_filt"][1]])
+    # )
+    # z_out2["state_filt"] = (
+    #     jnp.concatenate([mean_state_init[None], z_out2["state_filt"][0]]),
+    #     jnp.concatenate([var_state_init[None], z_out2["state_filt"][1]])
+    # )
     return zy_out2["logdens"][-1] - z_out2["logdens"][-1]
 
 # --------------------------------------------- Non Gaussian Observations ------------------------------------------------------------------
@@ -626,7 +640,7 @@ def _solve_filter_nn(key, fun, W, x0, theta,
                      fun_obs, trans_obs, y_obs, 
                      interrogate):
     r"""
-    Forward pass of the pope algorithm.
+    Forward pass of the DALTON algorithm using non-Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -640,6 +654,10 @@ def _solve_filter_nn(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        fun_obs (function): Observation likelihood function.
+        trans_obs (ndarray(n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`C`.
+        y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
+        interrogate (function): Function defining the linearization method.
 
     Returns:
         (tuple):
@@ -768,12 +786,12 @@ def _solve_filter_nn(key, fun, W, x0, theta,
     return scan_out
 
 def solve_mv_nn(key, fun, W, x0, theta,
-             tmin, tmax, n_res,
-             trans_state, mean_state, var_state,
-             fun_obs, trans_obs, y_obs, 
-             interrogate=rode.interrogate_rodeo):
+                tmin, tmax, n_res,
+                trans_state, mean_state, var_state,
+                fun_obs, trans_obs, y_obs, 
+                interrogate):
     r"""
-    Mean and variance of the stochastic ODE solver using observations.
+    Mean and variance of DALTON using non-Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -786,11 +804,10 @@ def solve_mv_nn(key, fun, W, x0, theta,
         n_res (int): Determines number of evaluations between observations; resolution number.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
-        var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_obs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
-        mean_obs (ndarray(n_obs)): Transition offsets defining the noisy observations.
-        var_obs (ndarray(n_obs, n_obs)): Variance matrix defining the noisy observations; :math:`Omega`.
-        interrogate (function): Function defining the interrogation method.
+        fun_obs (function): Observation likelihood function.
+        trans_obs (ndarray(n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`C`.
+        y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
+        interrogate (function): Function defining the linearization method.
 
     Returns:
         (tuple):
@@ -868,11 +885,22 @@ def solve_mv_nn(key, fun, W, x0, theta,
     return mean_state_smooth, var_state_smooth
 
 def _logx_yhat(mean_state_filt, var_state_filt,
-              mean_state_pred, var_state_pred,
-              trans_state):
+               mean_state_pred, var_state_pred,
+               trans_state):
     r"""
-    Compute the loglikelihood of :math:`p(\mu \mid \hat y, z=0)`.
+    Compute the loglikelihood of :math:`p(X_{0:N} \mid \hat y_{0:M}, z_{0:N}=0)`.
     
+    Args:
+        mean_state_pred (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        var_state_pred (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        mean_state_filt (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        var_state_filt (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
+
+    Returns:
+        (tuple):
+        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **logx_yhat** (float): Loglikelihood of :math:`p(X_{0:N} \mid \hat y_{0:M}, z_{0:N}=0)`.
     """
     # dimensions
     n_tot, n_block, n_bstate = mean_state_filt.shape
@@ -944,18 +972,26 @@ def _logx_yhat(mean_state_filt, var_state_filt,
     scan_out["mean"] = jnp.concatenate(
         [mean_state_filt[0][None], scan_out["mean"], scan_init["mean"][None]]
     )
-    scan_out["var"] = jnp.concatenate(
-        [var_state_filt[0][None], scan_out["var"], scan_init["var"][None]]
-    )
-    return scan_out["mean"], scan_out["var"], scan_out["logx_yhat"]
+    return scan_out["mean"], scan_out["logx_yhat"]
 
 def _logx_z(uncond_mean, 
             mean_state_filt, var_state_filt,
             mean_state_pred, var_state_pred,
             trans_state):
     r"""
-    Compute the loglikelihood of :math:`p(\mu \mid z=0)`.
+    Compute the loglikelihood of :math:`p(X_{0:N} \mid z_{0:N}=0)`.
     
+    Args:
+        uncond_mean (ndarray(n_steps+1, n_block, n_bstate)): Unconditional mean computed from :math:`p(X_{0:N} \mid \hat y_{0:M}, z_{0:N}=0)`.
+        mean_state_pred (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        var_state_pred (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        mean_state_filt (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        var_state_filt (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
+    
+    Return:
+        (float): Loglikelihood of :math:`p(X_{0:N} \mid z_{0:N}=0)`.
+
     """
     # dimensions
     n_tot, n_block, n_bstate = mean_state_filt.shape
@@ -987,8 +1023,7 @@ def _logx_z(uncond_mean,
                     )(jnp.arange(n_block))
         )
         state_curr = {
-            "logx_z":  logx_z,
-            "var": var_state_sim
+            "logx_z":  logx_z
         }
         return state_curr, state_curr
     # compute log(mu_{N|N}) at the last filtering step
@@ -999,7 +1034,6 @@ def _logx_z(uncond_mean,
     # initialize
     scan_init = {
         "logx_z": logx_z0,
-        "var": var_state_filt[-1]
     }
     # scan arguments
     scan_kwargs = {
@@ -1014,15 +1048,15 @@ def _logx_z(uncond_mean,
     _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
                                reverse=True)
     
-    return scan_out["logx_z"], scan_out["var"]
+    return scan_out["logx_z"]
 
 def loglikehood_nn(key, fun, W, x0, theta,
-                tmin, tmax, n_res,
-                trans_state, mean_state, var_state,
-                fun_obs, trans_obs, y_obs, 
-                interrogate=rode.interrogate_rodeo):
+                   tmin, tmax, n_res,
+                   trans_state, mean_state, var_state,
+                   fun_obs, trans_obs, y_obs, 
+                   interrogate):
     r"""
-    Compute marginal loglikelihood of pope algorithm.
+    Compute marginal loglikelihood of DALTON algorithm for non-Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -1038,8 +1072,7 @@ def loglikehood_nn(key, fun, W, x0, theta,
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
 
     Returns:
-        (tuple):
-        - **logdens** (float)): Compute the loglikelihood of :math:`p(y|theta, z=0)` or :math:`p(y, z=0|theta)`
+        (float): Loglikelihood of :math:`p(y_{0:M} \mid p(z_{0:N}))`.
 
     """
     # Reshaping y_obs to be in blocks 
@@ -1065,7 +1098,7 @@ def loglikehood_nn(key, fun, W, x0, theta,
     mean_state_filt, var_state_filt = filt_out["state_filt"]
 
     # logp(x | hat y, z)
-    mean_state_smooth, var_state_smooth, logx_yhat = _logx_yhat(
+    mean_state_smooth, logx_yhat = _logx_yhat(
         mean_state_filt=mean_state_filt,
         var_state_filt=var_state_filt,
         mean_state_pred=mean_state_pred,
@@ -1092,7 +1125,7 @@ def loglikehood_nn(key, fun, W, x0, theta,
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
 
-    logx_z, var_state_smooth2 = _logx_z(
+    logx_z = _logx_z(
         uncond_mean=mean_state_smooth,
         mean_state_filt=mean_state_filt,
         var_state_filt=var_state_filt,
@@ -1102,4 +1135,3 @@ def loglikehood_nn(key, fun, W, x0, theta,
     )
 
     return logy_x + logx_z[0] - logx_yhat[0]
-    # return scan_out

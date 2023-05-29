@@ -38,8 +38,9 @@ def _solveV(V, B):
         (ndarray(n_dim1, n_dim2)): Matrix X in :math:`X = V^{-1}B`
 
     """
-    L, low = jsp.linalg.cho_factor(V)
-    return jsp.linalg.cho_solve((L, low), B)
+    # L, low = jsp.linalg.cho_factor(V)
+    # return jsp.linalg.cho_solve((L, low), B)
+    return jsp.linalg.solve(V, B)
     
 # --- core functions -----------------------------------------------------------
 

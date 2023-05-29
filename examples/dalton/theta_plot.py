@@ -9,17 +9,18 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
+from matplotlib.ticker import FormatStrFormatter
 
-def theta_plot(theta_double, theta_fenrir, theta_diffrax, theta_true, step_sizes, var_names, meth_names, clip=None, rows=1):
+def theta_plot(theta_dalton, theta_fenrir, theta_diffrax, theta_true, step_sizes, var_names, meth_names, clip=None, rows=1):
     r"""Plot the distribution of :math:`\theta` using dalton, fenrir, and diffrax approximation."""
-    n_hlst, _, n_theta = theta_double.shape
+    n_hlst, _, n_theta = theta_dalton.shape
     ncol = ceil(n_theta/rows) +1
-    theta = [theta_double, theta_fenrir]
+    theta = [theta_dalton, theta_fenrir]
     nrow = len(meth_names)
-    fig = plt.figure(figsize=(20, 10*rows))
+    fig = plt.figure(figsize=(28, 10*rows))
     patches = [None]*(n_hlst+2)
     if clip is None:
-        clip = [None]*ncol*rows 
+        clip = [None]*n_theta
     carry = 0
     
     for t in range(1,n_theta+1):
@@ -39,29 +40,36 @@ def theta_plot(theta_double, theta_fenrir, theta_diffrax, theta_true, step_sizes
         for axs in axes:
             axs.axvline(x=theta_true[t-1], linewidth=1, color='r', linestyle='dashed')
             axs.set_yticks([])
+            axs.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+            if t == 1:
+                axs.xaxis.set_major_formatter(FormatStrFormatter('%.2g'))
 
         for h in range(n_hlst):
             if t==1:
                 patches[h] = mpatches.Patch(color='C{}'.format(h), label='$\\Delta$ t ={}'.format(step_sizes[h]))
             
             for r in range(nrow):
-                sns.kdeplot(theta[r][h, :, t-1], ax=axes[r], clip=clip[t-1])
+                tmp_data = theta[r][h, :, t-1]
+                if clip[t-1] is not None:
+                    tmp_data = tmp_data[(tmp_data>clip[t-1][0]) & (tmp_data<clip[t-1][1])]
+                sns.kdeplot(tmp_data, ax=axes[r], linewidth=4)
         
         for r in range(nrow):
-            sns.kdeplot(theta_diffrax[:, t-1], ax=axes[r],  color='black', clip=clip[t-1])
+            tmp_data = theta_diffrax[:, t-1]
+            if clip[t-1] is not None:
+                tmp_data = tmp_data[(tmp_data>clip[t-1][0]) & (tmp_data<clip[t-1][1])]
+            sns.kdeplot(tmp_data, ax=axes[r],  color='black', linewidth=4)
         if t==n_theta:
-            patches[-2] = mpatches.Patch(color='black', label="True Posterior")
+            patches[-2] = mpatches.Patch(color='black', label="RK")
             patches[-1] = mlines.Line2D([], [], color='r', linestyle='dashed', linewidth=1, label='True $\\theta$')
             
-    fig.legend(handles=patches, framealpha=0.5, loc=7)
-    
+    fig.legend(handles=patches, framealpha=0.5, loc=7, bbox_to_anchor=(0.95, 0.5))
     fig.tight_layout()
     plt.show()
     return fig
 
 def theta_plotsingle(theta, theta_diffrax, theta_true, step_sizes, var_names, clip=None, rows=1):
-    r"""Plot the distribution of :math:`\theta` using the Kalman solver 
-        and the Euler approximation."""
+    r"""Plot the distribution of :math:`\theta` using the dalton and diffrax."""
     n_hlst, _, n_theta = theta.shape
     ncol = ceil(n_theta/rows) +1
     fig = plt.figure(figsize=(20, 5*rows))
@@ -82,9 +90,15 @@ def theta_plotsingle(theta, theta_diffrax, theta_true, step_sizes, var_names, cl
         for h in range(n_hlst):
             if t==1:
                 patches[h] = mpatches.Patch(color='C{}'.format(h), label='$\\Delta$ t ={}'.format(step_sizes[h]))
-            sns.kdeplot(theta[h, :, t-1], ax=axs, clip=clip[t-1])
-        
-        sns.kdeplot(theta_diffrax[:, t-1], ax=axs, color='black', clip=clip[t-1])
+            tmp_data = theta[h, :, t-1]
+            if clip[t-1] is not None:
+                tmp_data = tmp_data[(tmp_data>clip[t-1][0]) & (tmp_data<clip[t-1][1])]
+            sns.kdeplot(tmp_data, ax=axs, linewidth=4)
+
+        tmp_data = theta_diffrax[:, t-1]
+        if clip[t-1] is not None:
+            tmp_data = tmp_data[(tmp_data>clip[t-1][0]) & (tmp_data<clip[t-1][1])]
+        sns.kdeplot(tmp_data, ax=axs, color='black', linewidth=4)
         
         if t==n_theta:
             patches[-2] = mpatches.Patch(color='black', label="True Posterior")
@@ -96,11 +110,11 @@ def theta_plotsingle(theta, theta_diffrax, theta_true, step_sizes, var_names, cl
     plt.show()
     return fig
 
-def theta_plotwd(theta_double, theta_fenrir, theta_diffrax, theta_true, step_sizes, var_names, meth_names, clip=None, rows=1):
+def theta_plotwd(theta_dalton, theta_fenrir, theta_diffrax, theta_true, step_sizes, var_names, meth_names, clip=None, rows=1):
     r"""Plot the distribution of :math:`\theta` using dalton, fenrir, and diffrax approximation, separately."""
-    n_hlst, _, n_theta = theta_double.shape
+    n_hlst, _, n_theta = theta_dalton.shape
     ncol = ceil(n_theta/rows) +1
-    theta = [theta_double, theta_fenrir, theta_diffrax]
+    theta = [theta_dalton, theta_fenrir, theta_diffrax]
     nrow = len(meth_names)
     fig = plt.figure(figsize=(25, 5*nrow*rows))
     patches = [None]*(n_hlst+1)
@@ -125,6 +139,7 @@ def theta_plotwd(theta_double, theta_fenrir, theta_diffrax, theta_true, step_siz
         for axs in axes:
             axs.axvline(x=theta_true[t-1], linewidth=1, color='r', linestyle='dashed')
             axs.set_yticks([])
+            axs.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
 
         for h in range(n_hlst):
             if t==1:
@@ -132,9 +147,15 @@ def theta_plotwd(theta_double, theta_fenrir, theta_diffrax, theta_true, step_siz
             
             for r in range(nrow):
                 if r == 2 and h == 0:
-                    sns.kdeplot(theta[r][:, t-1], ax=axes[r], color='black', clip=clip[t-1])
+                    tmp_data = theta[r][:, t-1]
+                    if clip[t-1] is not None:
+                        tmp_data = tmp_data[(tmp_data>clip[t-1][0]) & (tmp_data<clip[t-1][1])]
+                    sns.kdeplot(tmp_data, ax=axes[r], color='black', linewidth=4)
                 elif r!=2:
-                    sns.kdeplot(theta[r][h, :, t-1], ax=axes[r], clip=clip[t-1])
+                    tmp_data = theta[r][h, :, t-1]
+                    if clip[t-1] is not None:
+                        tmp_data = tmp_data[(tmp_data>clip[t-1][0]) & (tmp_data<clip[t-1][1])]
+                    sns.kdeplot(tmp_data, ax=axes[r], clip=clip[t-1], linewidth=4)
 
         if t==n_theta:
             patches[-1] = mlines.Line2D([], [], color='r', linestyle='dashed', linewidth=1, label='True $\\theta$')

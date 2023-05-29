@@ -26,8 +26,68 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from rodeo.kalmantv import *
+from rodeo.ode import interrogate_rodeo, interrogate_tronarp
 
-# use linearizations first then observations
+def _solveV(V, B):
+    return jsp.linalg.solve(V, B)
+
+def _smooth(var_state_filt, var_state_pred, trans_state):
+    r"""
+    Common part of :func:`kalmantv.smooth_sim` and :func:`kalmantv.smooth_mv`.
+
+    Args:
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        trans_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
+
+    Returns:
+        (tuple):
+        - **var_state_temp** (ndarray(n_state, n_state)): Tempory variance calculation used by :func:`kalmantv.smooth_sim`.
+        - **var_state_temp_tilde** (ndarray(n_state, n_state)): Tempory variance calculation used by :func:`kalmantv.smooth_sim` and :func:`kalmantv.smooth_mv`.
+    """
+    var_state_temp = var_state_filt.dot(trans_state.T)
+    var_state_temp_tilde = _solveV(var_state_pred, var_state_temp.T).T
+    return var_state_temp, var_state_temp_tilde
+
+
+def smooth_mv(mean_state_next,
+              var_state_next,
+              mean_state_filt,
+              var_state_filt,
+              mean_state_pred,
+              var_state_pred,
+              trans_state):
+    r"""
+    Perform one step of the Kalman mean/variance smoother.
+
+    Calculates :math:`\theta_{n|N}` from :math:`\theta_{n+1|N}`, :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
+
+    Args:
+        mean_state_next(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...N]; denoted by :math:`\mu_{n+1 | N}`.
+        var_state_next(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...N]; denoted by :math:`\Sigma_{n+1 | N}`.
+        mean_state_filt(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n]; denoted by :math:`\mu_{n | n}`.
+        var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
+        mean_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\mu_{n | n-1}`.
+        var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
+        trans_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
+
+    Returns:
+        (tuple):
+        - **mean_state_smooth** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N]; denoted by :math:`\mu_{n | N}`.
+        - **var_state_smooth** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N]; denoted by :math:`\Sigma_{n | N}`.
+
+    """
+    var_state_temp, var_state_temp_tilde = _smooth(
+        var_state_filt, var_state_pred, trans_state
+    )
+    mean_state_smooth = mean_state_filt + \
+        var_state_temp_tilde.dot(mean_state_next - mean_state_pred)
+    var_state_smooth = var_state_filt + jnp.linalg.multi_dot(
+        [var_state_temp_tilde, (var_state_next - var_state_pred), var_state_temp_tilde.T])
+    return mean_state_smooth, var_state_smooth
+
+
+# use interrogations first then observations
 def forward(key, fun, W, x0, theta,
             tmin, tmax, n_steps,
             trans_state, mean_state, var_state,
@@ -47,7 +107,6 @@ def forward(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        interrogate (function): Function defining the linearization method.
 
     Returns:
         (tuple):
@@ -298,7 +357,7 @@ def backward(trans_state, mean_state, var_state,
 def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
            trans_state, mean_state, var_state,
            trans_obs, mean_obs, var_obs, y_obs,
-           interrogate):
+           interrogate=interrogate_rodeo):
     
     r"""
     Fenrir algorithm to compute the approximate marginal likelihood of :math:`p(\theta \mid y_{0:N})`.
@@ -319,7 +378,6 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
         trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
         var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
         y_obs (ndarray(n_steps, n_block, n_bmeas)): Observed data; :math:`y_{0:N}`.
-        interrogate (function): Function defining the linearization method.
 
     Returns:
         (float) : The logdensity of :math:`p(\theta \mid y_{0:N})`.
@@ -360,15 +418,7 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
 
 def _smooth_mv(trans_state, state_par):
     r"""
-    Smoothing pass of the Fenrir algorithm.
-
-    Args:
-        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        state_par (dict): Dictionary containing the mean and variance matrices of the predicted and updated steps of the Kalman filter.
-
-    Returns:
-        (float) : The logdensity of :math:`p(\theta \mid y_{0:N})`.
-
+    Kalman smooth for the final pass in Fenrir.
     """
     mean_state_pred, var_state_pred = state_par["state_pred"]
     mean_state_filt, var_state_filt = state_par["state_filt"]
@@ -424,33 +474,28 @@ def _smooth_mv(trans_state, state_par):
 
 def fenrir_mv(key, fun, W, x0, theta, tmin, tmax, n_res,
               trans_state, mean_state, var_state,
-              trans_obs, mean_obs, var_obs, y_obs, interrogate):
+              trans_obs, mean_obs, var_obs, y_obs, interrogate=interrogate_rodeo):
     
     r"""
-    Fenrir algorithm to compute the mean and variance of :math:`X_{0:N}`.
+    Fenrir algorithm.
 
     Args:
-        key (PRNGKey): PRNG key.
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
-        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
-        x0 (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
+        x0 (ndarray(n_state)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_res (int): Resolution number determining how to thin solution process to match observations.
-        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
-        var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
-        trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
-        var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
-        y_obs (ndarray(n_steps, n_block, n_bmeas)): Observed data; :math:`y_{0:N}`.
-        interrogate (function): Function defining the linearization method.
+        W (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; :math:`W`.
+        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`Q`.
+        mean_state (ndarray(n_state)): Transition_offsets defining the solution prior; :math:`c`.
+        var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
+        mean_obs (ndarray(n_obs)): Transition offsets defining the noisy observations.
+        trans_obs (ndarray(n_obs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
+        var_obs (ndarray(n_obs, n_obs)): Variance matrix defining the noisy observations; :math:`Omega`.
+        y_obs (ndarray(n_steps, n_obs)): Observed data; :math:`y_n`.
 
     Returns:
-        (tuple):
-        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        The expected value of the solution process :math:`E(X|Y,Z)`.
 
     """
     n_obs, n_block, n_bmeas = y_obs.shape

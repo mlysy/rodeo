@@ -164,6 +164,7 @@ API Documentation
    oc_mcmc
    gauss_markov
    utils
+   dalton
 
 Examples
 ========
