@@ -1,12 +1,15 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
-from scipy.integrate import odeint
+import jax.scipy as jsp
 from rodeo.ode import interrogate_tronarp
-from rodeo.fenrir import *
+from rodeo.fenrir import fenrir
 from rodeo.ibm import ibm_init
+from rodeo.dalton import loglikehood
 from jaxopt import ScipyMinimize
-from pope import loglikehood
+import warnings
+warnings.filterwarnings('ignore')
+from diffrax import diffeqsolve, Dopri8, ODETerm, PIDController, ConstantStepSize, SaveAt
 from jax.config import config
 import matplotlib.pyplot as plt
 config.update("jax_enable_x64", True)
@@ -15,7 +18,8 @@ def logprior(x, mean, sd):
     r"Calculate the loglikelihood of the normal distribution."
     return jnp.sum(jsp.stats.norm.logpdf(x=x, loc=mean, scale=sd))
 
-def double_nlpost(phi, x0):
+def dalton_nlpost(phi, x0):
+    r"Compute the negative loglikihood of :math:`Y_t` using a DALTON."
     n_phi = len(phi_mean)
     theta = jnp.exp(phi[:n_phi])
     sigma = phi[-1]
@@ -27,6 +31,7 @@ def double_nlpost(phi, x0):
     return -lp
 
 def fenrir_nlpost(phi, x0):
+    r"Compute the negative loglikihood of :math:`Y_t` using Fenrir."
     n_phi = len(phi_mean)
     theta = jnp.exp(phi[:n_phi])
     sigma = phi[-1]
@@ -34,6 +39,18 @@ def fenrir_nlpost(phi, x0):
     lp = fenrir(key, lorenz, W_block, x0, theta, tmin, tmax, n_res,
                 ode_init['trans_state'], ode_init['mean_state'], var_state,
                 trans_obs, mean_obs, var_obs, y_obs, interrogate_tronarp)
+    lp += logprior(phi[:n_phi], phi_mean, phi_sd)
+    return -lp
+
+def diffrax_nlpost(phi, x0):
+    r"Compute the negative loglikihood of :math:`Y_t` using a deterministic solver."
+    n_phi = len(phi_mean)
+    theta = jnp.exp(phi[:n_phi])
+    # theta = jnp.exp(phi)
+    X_t = diffeqsolve(term, solver, args = theta, t0=tmin, t1=tmax, dt0 = 0.01, 
+                      y0=x0, saveat=saveat, stepsize_controller=stepsize,
+                      max_steps = 1000000).ys
+    lp = logprior(obs, X_t, gamma)
     lp += logprior(phi[:n_phi], phi_mean, phi_sd)
     return -lp
 
@@ -60,6 +77,14 @@ def lorenz0(X_t, t, theta):
     dz = -beta*z + x*y
     return np.array([dx, dy, dz])
 
+def rax_fun(t, X_t, theta):
+    rho, sigma, beta = theta
+    x, y, z = X_t
+    dx = -sigma*x + sigma*y
+    dy = rho*x - y -x*z
+    dz = -beta*z + x*y
+    return jnp.array([dx, dy, dz])
+
 # problem setup and intialization
 n_deriv = 3  # Total state; q
 n_var = 3  # Total variables
@@ -84,7 +109,13 @@ ode0 = jnp.array([-12., -5., 38.])
 # Get observations
 n_obs = 200
 tseq = np.linspace(tmin, tmax, n_obs+1)
-exact = odeint(lorenz0, ode0, tseq, args=(theta,), rtol=1e-20)
+term = ODETerm(rax_fun)
+stepsize = PIDController(rtol=1e-20, atol=1e-10)
+solver = Dopri8()
+# Get exact solutions for the Lorenz System
+saveat = SaveAt(ts=tseq)
+exact = diffeqsolve(term, solver, args = theta, t0=tmin, t1=tmax, dt0 = .001,
+                  y0=ode0, max_steps = None, saveat=saveat, stepsize_controller=stepsize).ys
 gamma = np.sqrt(0.005)
 e_t = np.random.default_rng(0).normal(loc=0.0, scale=1, size=exact.shape)
 obs = exact + gamma*e_t
@@ -112,33 +143,47 @@ dt = (tmax-tmin)/n_steps
 ode_init = ibm_init(dt, n_order, sigma)
 key = jax.random.PRNGKey(0)
 
+# parameters needed for diffrax
+saveat = SaveAt(ts = tseq)
+term = ODETerm(rax_fun)
+stepsize = ConstantStepSize()
+solver = Dopri8()
+
 # grid for initial parameters
 init_par = jnp.linspace(jnp.log(10e-2), jnp.log(10e1), 5)
-lorenz_double = np.zeros((len(init_par), n_phi))
+lorenz_dalton = np.zeros((len(init_par), n_phi))
 lorenz_fenrir = np.zeros((len(init_par), n_phi))
+lorenz_diffrax = np.zeros((len(init_par), n_phi))
 for i in range(len(init_par)):
     # parameter inference solver
     phi_init = jnp.array([init_par[i]]*n_var + [1])
-    lorenz_double[i] = phi_fit(phi_init, x0_block, double_nlpost)
+    lorenz_dalton[i] = phi_fit(phi_init, x0_block, dalton_nlpost)
     lorenz_fenrir[i] = phi_fit(phi_init, x0_block, fenrir_nlpost)
+    lorenz_diffrax[i] = phi_fit(phi_init, ode0, diffrax_nlpost)
 
-# np.save("saves/lorenz_doubleip.npy", lorenz_double)
-# # np.save("saves/lorenz_fenririp.npy", lorenz_fenrir)
-# lorenz_double =np.load("saves/lorenz_doubleip.npy")
-# lorenz_fenrir = np.load("saves/lorenz_fenririp.npy")
+# np.save("saves/lorenz_doubleip.npy", lorenz_dalton)
+# np.save("saves/lorenz_fenririp.npy", lorenz_fenrir)
+# np.save("saves/lorenz_diffraxip.npy", lorenz_diffrax)
+# lorenz_dalton = np.load("saves/lorenz_doubleip2.npy")
+# lorenz_fenrir = np.load("saves/lorenz_fenririp2.npy")
+# lorenz_diffrax = np.load("saves/lorenz_diffraxip2.npy")
 
 plt.rcParams.update({'font.size': 20})
-fig, axs = plt.subplots(n_var, figsize=(10, 10))
-ylabel = [r"$\sigma$", r"$\rho$", r"$\beta$"]
+fig, axs = plt.subplots(ncols=n_var, figsize=(20, 5))
+title = [r"$\alpha$", r"$\rho$", r"$\beta$"]
 for i in range(n_var):
-    l2 = axs[i].scatter(jnp.exp(init_par), lorenz_double[:, i], label="double")
-    l3 = axs[i].scatter(jnp.exp(init_par), lorenz_fenrir[:, i], label="fenrir")
+    l1 = axs[i].scatter(jnp.exp(init_par), lorenz_dalton[:, i], label="DALTON", s=60)
+    l2 = axs[i].scatter(jnp.exp(init_par), lorenz_fenrir[:, i], label="Fenrir", s=60)
+    l3 = axs[i].scatter(jnp.exp(init_par), lorenz_diffrax[:, i], label="RK", s=60)
     l4 = axs[i].axhline(theta_true[i], linestyle="--", color = "black")
     axs[i].set_xscale("log")
-    axs[i].set(ylabel=ylabel[i])
-handles = [l2, l3, l4]
-
-fig.subplots_adjust(bottom=0.1, wspace=0.33)
-axs[2].legend(handles = [l2,l3,l4] , labels=['double', 'fenrir', 'True'], loc='upper center', 
-              bbox_to_anchor=(0.5, -0.2),fancybox=False, shadow=False, ncol=3)
-# fig.savefig('figures/lorenzip.pdf')
+    if i == 1:
+        axs[i].set_yscale("log")
+    axs[i].set_title(title[i])
+axs[0].set_ylabel("Optimized Parameter")
+fig.supxlabel("Initial Parameter", y=0.15)
+handles = [l1, l2, l3, l4]
+fig.subplots_adjust(bottom=.3, wspace=0.33)
+fig.legend(handles = handles , labels=['DALTON', 'Fenrir', 'RK', 'True'], loc="lower center",
+           fancybox=False, shadow=False, ncol=4)
+fig.savefig('figures/lorenzip.pdf')
