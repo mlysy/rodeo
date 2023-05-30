@@ -9,14 +9,14 @@ API Documentation
 :maxdepth: 1
 :caption: API Documentation
 
-ode.rst
 kalmantv.rst
 ibm.rst
-fenrir.rst
+ode.rst
 oc_mcmc.rst
+fenrir.rst
+dalton.rst
 gauss_markov.rst
 utils.rst
-dalton.rst
 ```
 
 Examples
@@ -25,5 +25,8 @@ Examples
 :maxdepth: 1
 :caption: Examples
 
-examples.rst
+examples/tutorial.md
+examples/higher_order.md
+examples/lorenz.md
+examples/parameter.md
 ```

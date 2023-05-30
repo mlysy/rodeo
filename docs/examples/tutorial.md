@@ -18,7 +18,7 @@ kernelspec:
 
 ## Description
 
-**rodeo** is a Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of size $\delta$.  As $\delta$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers such as **rodeo** also output a solution an a grid of size $\delta$; however, the solution is random.  Still, as $\delta$ goes to zero we get the correct answer.
+**rodeo** is a Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of size $\delta$.  As $\delta$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers also output a solution an a grid of size $\delta$; however, the solution is random.  Still, as $\delta$ goes to zero we get the correct answer.
 
 **rodeo** provides a probabilistic solver for univariate process x(t) of the form
 
@@ -28,7 +28,7 @@ kernelspec:
 
 where $\xx(t) = \big(x^{(0)}(t), x^{(1)}(t), ..., x^{(q)}(t)\big)$ consists of $x(t)$ and its first $q$ derivatives, $\WW$ is a coefficient matrix, and $f(\xx(t), t)$ is typically a nonlinear function.
 
-**rodeo** implements the probabilistic solver of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259).  This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid.
+**rodeo** begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid.
 
 ```{code-cell} ipython3
 import jax
@@ -127,8 +127,9 @@ tseq = np.linspace(tmin, tmax, n_steps+1)
 exact = odeint(ode_fun, ode0, tseq, args=(theta,))
 
 # Graph the results
-_, axs = plt.subplots(2, 1, figsize=(20, 7))
+fig, axs = plt.subplots(2, 1, figsize=(20, 7))
 ylabel = ['V', 'R']
+plt.rcParams.update({'font.size': 20})
 for i in range(2):
     axs[i].plot(tseq, xt[:, i, 0], label="rodeo")
     axs[i].set_ylabel(ylabel[i])

@@ -12,10 +12,9 @@ kernelspec:
   name: python3
 ---
 
-
 # Parameter Inference
 
-In this notebook, we demonstrate the steps to conduct parameter inference using our data-adaptive ODE solver, **DALTON**.
+In this notebook, we demonstrate the steps to conduct parameter inference using our data-adaptive ODE solver, `dalton`.
 
 ```{code-cell} ipython3
 import jax
@@ -60,7 +59,7 @@ def fitz0(X_t, t, theta):
 # it is assumed that the solution is sought on the interval [tmin, tmax].
 tmin = 0.
 tmax = 40.
-theta = jnp.array([0.2, 0.2, 3])
+theta = np.array([0.2, 0.2, 3])
 
 # Initial x0 for odeint
 ode0 = np.array([-1., 1.])
@@ -88,7 +87,7 @@ axs[1].legend(loc=1)
 fig1.tight_layout()
 ```
 
-We now need to define the specifications for **DALTON**. In particular, **DALTON** uses variable blocking to be more computationally efficient (read more about this in our paper). **DALTON** expects observations to be of the form
+We now need to define the specifications for `dalton`. In particular, `dalton` uses variable blocking to be more computationally efficient (read more about this in our paper). `dalton` expects observations to be of the form
 
 \begin{equation*}
 \YY_i \sim \N(\DD \XX_i + \cc, \OOm).
@@ -103,7 +102,7 @@ mean_obs = jnp.zeros((2, 1))
 var_obs = gamma**2*jnp.array([[[1.]],[[1.]]])
 ```
 
-Similar to **rodeo**, we need to define the Gaussian Markov process prior using the IBM. Other choices are possible, however, we have made this simple prior available in the package. The rest of the inputs are the same as **rodeo** with `n_steps` replaced with `n_res`. This variable simply defines the resolution of the solution based on the observations. For example, `n_res=10` in this ODE would give `n_step = 10 * 40 = 400`.
+Similar to `rodeo`, we need to define the Gaussian Markov process prior using the IBM. Other choices are possible, however, we have made this simple prior available in the library. The rest of the inputs are the same as `rodeo` with `n_steps` replaced with `n_res`. This variable simply defines the resolution of the solution based on the observations. For example, `n_res=10` in this ODE would give `n_step = 10 * 40 = 400`.
 
 ```{code-cell} ipython3
 def fitz(X_t, t, theta):
@@ -112,6 +111,8 @@ def fitz(X_t, t, theta):
     V, R = X_t[:, 0]
     return jnp.array([[c*(V - V*V*V/3 + R)],
                       [-1/c*(V - a + b*R)]])
+# ode parameter 
+theta = jnp.array([0.2, 0.2, 3])
 
 # problem setup and intialization
 n_deriv = 1  # Total state; q
@@ -153,11 +154,11 @@ Parameter inference is then accomplished by way of a Laplace approximation, for 
 \begin{equation*}
     \tth \mid \YY_{0:M} \approx \N(\hat \tth, \hat \VV_{\tth}),
 \end{equation*}
-where $\hat \tth = \argmax_{\tth} \log p(\tth \mid \YY_{0:M})$ and $\hat \VV_{\tth} = -\big[\frac{\partial^2}{\partial \tth \partial \tth'} \log p(\hat \tth \mid \YY_{0:M})\big]^{-1}$. 
+where $\hat \tth = \argmax_{\tth} \log p(\tth \mid \YY_{0:M})$ and $\hat \VV_{\tth} = -\big[\frac{\partial^2}{\partial \tth \partial \tth'} \log p(\hat \tth \mid \YY_{0:M})\big]^{-1}$.
 
 +++
 
-We define the prior and posterior functions necessary to conduct parameter inference. The key function to focus is `dalton_nlpost` which takes in `phi = (log a, log b, log c, V(0), R(0))`. It uses the ODE and the $V(0), R(0)$ to compute the  $dV(0), dR(0)$ required for **DALTON** and then zero pad it an extra dimension which helps with accuracy. The other three parameters $\log a, \log b, \log c$ needs to be exponentiated first before it is input to **DALTON** since **DALTON** assumes they are on the regular scale. The function `phi_fit` essentially computes the Laplace approximation detailed above. We use the **jaxopt** package as it supports optimization using **jax**. We choose `Newton-CG` as our optimization algorithm but there are many other possible choices. Consult the **jaxopt** documentation if you are interested in this package.
+We define the prior and posterior functions necessary to conduct parameter inference. The key function to focus is `dalton_nlpost` which takes in `phi = (log a, log b, log c, V(0), R(0))`. It uses the ODE and the $V(0), R(0)$ to compute the  $dV(0), dR(0)$ required for `dalton` and then zero pad it an extra dimension which helps with accuracy. The other three parameters $\log a, \log b, \log c$ needs to be exponentiated first before it is input to `dalton` since `dalton` assumes they are on the regular scale. The function `phi_fit` essentially computes the Laplace approximation detailed above. We use the **jaxopt** library as it supports optimization using **jax**. We choose `Newton-CG` as our optimization algorithm but there are many other possible choices. Consult the **jaxopt** documentation if you are interested in this library.
 
 ```{code-cell} ipython3
 def logprior(x, mean, sd):
