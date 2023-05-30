@@ -19,7 +19,7 @@ The reverse pass model is
 
     X_n = A_n X_{n+1} + b_n + C_n^{1/2} \eta_n
 
-    y_n = D X_n + Omega^{1/2} \epsilon_n.
+    y_n = D X_n + \Omega^{1/2} \epsilon_n.
 
 """
 import jax

@@ -64,7 +64,6 @@ make html
 This will create the documentation in `docs/build`.
 
 ## Walkthrough
-===========
 
 To illustrate the set-up, let's consider the following ODE example (**FitzHugh-Nagumo** model) where $q=1$ for both variables:
 
@@ -156,6 +155,9 @@ xt = mv_jit(key=key, fun=ode_fun_jax,
 ```
 
 We compare the solution from the solver to the deterministic solution provided by `odeint` in the **scipy** library. 
+
+![fitzsol](docs/figures/fitzsol.png)
+
 ## Results
 
 **rodeo** is also capable of performing parameter inference. The main results for three different ODEs found in `/examples/`:

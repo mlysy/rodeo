@@ -451,8 +451,7 @@ def loglikehood(key, fun, W, x0, theta,
         interrogate (function): Function defining the linearization method.
 
     Returns:
-        (tuple):
-        - **logdens** (float)): Compute the loglikelihood of :math:`p(y|theta, z=0)` or :math:`p(y, z=0|theta)$
+        (float): Loglikelihood of :math:`p(y_{0:M} \mid p(z_{0:N}))`.
 
     """
     # Reshaping y_obs to be in blocks 
