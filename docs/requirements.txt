@@ -1,3 +1,4 @@
+jaxopt
 numpy
 scipy
 pandas
