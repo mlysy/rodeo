@@ -4,6 +4,7 @@
 | [**Installation**](#installation)
 | [**Documentation**](#documentation)
 | [**Developers**](#developers)
+| [**Tutorial**](#walkthrough)
 
 ---
 
@@ -13,10 +14,10 @@
 
 **rodeo** provides several probabilistic ODE solvers with a Bayesian filtering paradigm common to many probabilistic solvers [Tronarp et al (2018)](http://arxiv.org/abs/1810.03440). This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid. **rodeo** is built on **jax** which allows for just-in-time compilation and auto-differentiation. The API of **jax** is almost equivalent to that of **numpy**. A brief summary of the solvers available in this library:
 
-- **RODEO**: Implementations of our ODE solver.
-- **Fenrir**: Implementations of Fenrir [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html).
-- **Chkrebtii**: MCMC implementation of Chkrebtii's solver [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259).
-- **DALTON**: Implementation of our data-adaptive ODE solver.
+- `rodeo`: Implementations of our ODE solver.
+- `fenrir`: Implementations of Fenrir [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html).
+- `oc_mcmc`: MCMC implementation of Chkrebtii's solver [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259).
+- `dalton`: Implementation of our data-adaptive ODE solver.
 
 Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
 
@@ -65,17 +66,17 @@ This will create the documentation in `docs/build`.
 
 ## Walkthrough
 
-To illustrate the set-up, let's consider the following ODE example (**FitzHugh-Nagumo** model) where $q=1$ for both variables:
+To illustrate the set-up, let's consider the following ODE example (**FitzHugh-Nagumo** model) where the number of derivatives is $q=1$ for both variables:
 
 $$
 \begin{align*}
     \frac{dV}{dt} &= c(V - \frac{V^3}{3} + R), \\
     \frac{dR}{dt} &= -\frac{(V - a - bR)}{c}, \\
-    \boldsymbol{x(0)} &= (V(0), R(0)) = (-1,1).
+    X(0) &= (V(0), R(0)) = (-1,1).
 \end{align*}
 $$
 
-where the solution $x_t$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$.  
+where the solution $X(t)$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$.  
 
 To approximate the solution with the probabilistic solver, the Gaussian process prior we will use is a so-called 
 [Continuous Autoregressive Process](https://CRAN.R-project.org/package=cts/vignettes/kf.pdf) of order $p$. 
@@ -84,16 +85,16 @@ $p-1$ times integrated Brownian motion,
 
 $$
 \begin{equation*}
-\boldsymbol{x(t)} \sim \mathrm{IBM}(p).
+\boldsymbol{X(t)} \sim \mathrm{IBM}(p).
 \end{equation*}
 $$
 
-Here $\boldsymbol{x(t)} = \big(x(t)^{(0)}, ..., x(t)^{(p-1)}\big)$ consists of $x(t)$ and its first $p-1$ derivatives. 
-The $\mathrm{IBM}(p)$ model specifies that each of these is continuous, but $x^{(p)}(t)$ is not. 
+Here $\boldsymbol{X(t)} = \big(X(t)^{(0)}, \ldots, X(t)^{(p-1)}\big)$ consists of $x(t)$ and its first $p-1$ derivatives. 
+The $\mathrm{IBM}(p)$ model specifies that each of these is continuous, but $X^{(p)}(t)$ is not. 
 Therefore, we need to pick $p > q$. It's usually a good idea to have $p$ a bit larger than $q$, especially when 
-we think that the true solution $x(t)$ is smooth. However, increasing $p$ also increases the computational burden, 
+we think that the true solution $X(t)$ is smooth. However, increasing $p$ also increases the computational burden, 
 and doesn't necessarily have to be large for the solver to work.  For this example, we will use $p=3$. 
-To initialize, we simply set $\boldsymbol{x(0)} = (\boldsymbol{x}_0, 0)$. The Python code to implement all this is as follows.
+To initialize, we simply set $\boldsymbol{X(0)} = (X(0), 0)$. The Python code to implement all this is as follows.
 
 ```python
 import jax
@@ -109,7 +110,7 @@ config.update("jax_enable_x64", True)
 
 # RHS of ODE
 from math import sin, cos
-def ode_fun_jax(X_t, t, theta):
+def fitz(X_t, t, theta):
     "FitzHugh-Nagumo ODE."
     a, b, c = theta
     V, R = X_t[:,0]
@@ -147,20 +148,54 @@ ode_init = ibm_init(dt, n_order, sigma)
 
 # Jit solver
 key = jax.random.PRNGKey(0)
-mv_jit = jax.jit(solve_sim, static_argnums=(1, 6))
-xt = mv_jit(key=key, fun=ode_fun_jax,
-        x0=x0_block, theta=theta,
-        tmin=tmin, tmax=tmax, n_eval=n_eval,
-        wgt_meas=W_block, **ode_init)
+mv_jit = jax.jit(solve_mv, static_argnums=(1, 6))
+xt, _ = mv_jit(key=key, fun=fitz,
+               x0=x0_block, theta=theta,
+               tmin=tmin, tmax=tmax, n_eval=n_eval,
+               wgt_meas=W_block, **ode_init)
 ```
 
 We compare the solution from the solver to the deterministic solution provided by `odeint` in the **scipy** library. 
 
 ![fitzsol](docs/figures/fitzsol.png)
 
-## Results
+## Parameter Inference
 
-**rodeo** is also capable of performing parameter inference. The main results for three different ODEs found in `/examples/`:
+Probabilistic solvers in **rodeo** are capable of parameter inference. Here, we provide a simple likelihood estimation of the model parameters $\boldsymbol{\Theta} = (a, b, c, V(0), R(0))$ with $a,b,c > 0$ in the **FitzHugh-Nagumo** ODE. Suppose observations are simulated via the model
+
+$$
+Y(t) \sim \mathcal{N}(X(t), \phi^2 \cdot \boldsymbol{I}_{2\times 2})
+$$
+where $t=0, 1, \ldots, 40$ and $\phi^2 = 0.005$. For simplicity, we choose a flat prior for $\boldsymbol{\Theta}$ then the following function can be used to compute the likelihood approximation of $\boldsymbol{\Theta}$.
+
+```python
+# Suppose Y_t is simulated from the observation model above.
+def loglikelihood(Theta):
+    r"Compute the negative loglikihood of :math:`Y_t`."
+    # get initial value and theta from Theta
+    x0 = Theta[3:].reshape((2,1))
+    theta = theta[:3]
+    # compute initial dR(0), and dV(0)
+    v0 = fitz(x0, 0, theta)
+    # zero pad as above
+    x0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
+    # compute solution
+    xt, _ = solve_mv(key=key, fun=fitz,
+                     x0=x0, theta=theta,
+                     tmin=tmin, tmax=tmax, n_eval=n_eval,
+                     wgt_meas=W_block, **ode_init)
+    # keep only the points where Y_t exists
+    X_t = X_t[::20, :, 0] 
+    # compute loglikelihood
+    lp = jnp.sum(jsp.stats.norm.logpdf(x=Y_t, loc=X_t, scale=jnp.sqrt(0.005)))
+    return lp
+```
+
+This is a basic example to demonstrate usage. we suggest more sophisticated likelihood approximations which propagate the solution uncertainty to the likelihood approximation such as `fenrir`, `oc_mcmc` and `dalton`. Please refer to the [parameter inference tutorial](docs/examples/parameter.md) for more details.
+
+### Results
+
+Here are some results produced by solvers in **rodeo** from `/examples/`:
 
 ### FitzHugh-Nagumo
 
