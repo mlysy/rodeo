@@ -1,5 +1,5 @@
 r"""
-This module implements the Fenrir algorithm for computing the approximate marginal likelihood of :math:`p(\theta \mid y_{0:N})`.
+This module implements the Fenrir algorithm as described in Tronarp et al 2022 for computing the approximate likelihood of :math:`p(y_{0:M} \mid z_{0:N}))`.
 
 The forward pass model is
 
@@ -11,16 +11,21 @@ The forward pass model is
 
     z_n = W X_n - f(X_n, t_n) + V_n^{1/2} \eta_n.
 
-The reverse pass model is
+Using the Kalman filtering recursions, the above model can be simulated via the reverse pass model
 
 .. math::
 
     X_N \sim N(b_N, C_N)
 
-    X_n = A_n X_{n+1} + b_n + C_n^{1/2} \eta_n
+    X_n = A_n X_{n+1} + b_n + C_n^{1/2} \eta_n.
+    
+Fenrir combines the observations
 
-    y_n = D X_n + \Omega^{1/2} \epsilon_n.
+.. math::
 
+    y_n = D X_n + \Omega^{1/2} \epsilon_n,
+
+with the reverse pass model to condition on data.
 """
 import jax
 import jax.numpy as jnp

@@ -1,6 +1,3 @@
-r"""
-This module implements the MCMC solver by Chkrebtii. 
-"""
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
@@ -8,7 +5,9 @@ import jax.scipy as jsp
 from rodeo.ode import *
 
 class oc_mcmc:
-
+    r"""
+    This module implements the MCMC solver by Chkrebtii et al 2016. 
+    """
     def __init__(self, fun, W, x0, tmin, tmax, n_steps, n_res, prior_pars, y_obs):
         """
         Base class for the MCMC solver by Chkrebtii. The main method is the :meth:`oc_mcmc.oc_mcmc.step` which
@@ -52,7 +51,9 @@ class oc_mcmc:
         return jnp.sum(jsp.stats.multivariate_normal.logpdf(x=theta, mean=theta_prime, cov=param))
     
     def prop_sample(self, key, theta, param):
-        r"""Produce a draw of theta using proposal distribution. The base assumes the proposal is N(theta, param)
+        r"""
+        Produce a draw of theta using proposal distribution. The base assumes the proposal is N(theta, param).
+
         Args:
             theta (ndarray(n_theta)): Parameters for the inference problem.
             param (ndarrary(n_par)): Parameters used in the proposal distribution.
@@ -87,6 +88,7 @@ class oc_mcmc:
     def init(self, key, theta_init):
         r"""
         Compute the initial loglikelihood of theta_init and X_init.
+
         Args:
             key (PRNGKey): PRNG key.
             theta_init (ndarray(n_theta)): Initial parameters for the inference problem.
