@@ -1,5 +1,5 @@
 r"""
-This module implements the DALTON solver.
+This module implements the DALTON solver which gives an approximate likelihood of :math:`p(y_{0:M} \mid z_{0:N}))`.
 
 The model is
 
@@ -12,6 +12,8 @@ The model is
     z_n = W X_n - f(X_n, t_n) + V_n^{1/2} \eta_n
     
     y_m = g(X_m, \phi_m)
+
+where :math:`g()` is a general distribution function. In the case that :math:`g()` is Gaussian, use :func:`~dalton.loglikehood` for a better approximation. In other cases, use :func:`~dalton.loglikehood_nn`.
 
 """
 
