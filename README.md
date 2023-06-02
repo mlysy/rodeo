@@ -174,7 +174,7 @@ def loglikelihood(Theta):
     r"Compute the negative loglikihood of :math:`Y_t`."
     # get initial value and theta from Theta
     x0 = Theta[3:].reshape((2,1))
-    theta = theta[:3]
+    theta = Theta[:3]
     # compute initial dR(0), and dV(0)
     v0 = fitz(x0, 0, theta)
     # zero pad as above
@@ -193,7 +193,7 @@ def loglikelihood(Theta):
 
 This is a basic example to demonstrate usage. we suggest more sophisticated likelihood approximations which propagate the solution uncertainty to the likelihood approximation such as `fenrir`, `oc_mcmc` and `dalton`. Please refer to the [parameter inference tutorial](docs/examples/parameter.md) for more details.
 
-### Results
+## Results
 
 Here are some results produced by solvers in **rodeo** from `/examples/`:
 
