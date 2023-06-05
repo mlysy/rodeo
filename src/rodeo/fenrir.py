@@ -1,5 +1,5 @@
 r"""
-This module implements the Fenrir algorithm as described in Tronarp et al 2022 for computing the approximate likelihood of :math:`p(y_{0:M} \mid z_{0:N}))`.
+This module implements the Fenrir algorithm as described in Tronarp et al 2022 for computing the approximate likelihood of :math:`p(y_{0:M} \mid z_{0:N})`.
 
 The forward pass model is
 
@@ -7,23 +7,23 @@ The forward pass model is
 
     x_0 = v
 
-    X_n = Q X_{n-1} + R^{1/2} \epsilon_n
+    X_n = c_n + Q_n X_{n-1} + R_n^{1/2} \epsilon_n
 
-    z_n = W X_n - f(X_n, t_n) + V_n^{1/2} \eta_n.
+    z_n = W_n X_n - f(X_n, t_n) + V_n^{1/2} \eta_n.
 
-Using the Kalman filtering recursions, the above model can be simulated via the reverse pass model
+We assume that :math:`c_n = c, Q_n = Q, R_n = R`, and :math:`W_n = W` for all :math:`n`. Using the Kalman filtering recursions, the above model can be simulated via the reverse pass model
 
 .. math::
 
     X_N \sim N(b_N, C_N)
 
-    X_n = A_n X_{n+1} + b_n + C_n^{1/2} \eta_n.
+    X_n = A_n X_{n+1} + b_n + C_n^{1/2} \epsilon_n.
     
 Fenrir combines the observations
 
 .. math::
 
-    y_n = D X_n + \Omega^{1/2} \epsilon_n,
+    y_m = D X_m + \Omega^{1/2} \epsilon_m,
 
 with the reverse pass model to condition on data.
 """
@@ -150,7 +150,7 @@ def backward_param(mean_state_filt, var_state_filt,
         (tuple):
         - **trans_state_cond** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Transition of smooth conditional at time t given observations from times [0...T]; :math:`A_{n|N}`.
         - **mean_state_cond** (ndarray(n_steps+1, n_block, n_bstate)): Offset of smooth conditional at time t given observations from times [0...T]; :math:`b_{n|N}`.
-        - *var_state_cond** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance of smooth conditional at time t given observations from times [0...T]; :math:`V_{n|N}`.
+        - **var_state_cond** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance of smooth conditional at time t given observations from times [0...T]; :math:`V_{n|N}`.
 
     """
     # Terminal Point
@@ -193,19 +193,19 @@ def backward(trans_state, mean_state, var_state,
              trans_obs, mean_obs, var_obs, y_obs):
     
     r"""
-    Backward pass of Fenrir algorithm. Uses observations.
+    Backward pass of Fenrir algorithm where observations are used.
 
     Args:
-        trans_state (ndarray(n_steps, n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`A^S`.
-        mean_state (ndarray(n_steps+1, n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`b^S`.
-        var_state (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`V^S`.
-        mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
-        trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
-        var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
-        y_obs (ndarray(n_steps, n_block, n_bmeas)): Observed data; :math:`y_{0:N}`.
+        trans_state (ndarray(n_steps, n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`A_{0:N}`.
+        mean_state (ndarray(n_steps+1, n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`b_{0:N}`.
+        var_state (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`C_{0:N}`.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
+        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
+        y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
 
     Returns:
-        (float) : The logdensity of :math:`p(\theta \mid y_{0:N})`.
+        (float) : The logdensity of :math:`p(y_{0:M} \mid z_{0:N})`.
 
     """
     # Add point to beginning of state variable for simpler loop
@@ -306,7 +306,7 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
            interrogate):
     
     r"""
-    Fenrir algorithm to compute the approximate marginal likelihood of :math:`p(\theta \mid y_{0:N})`.
+    Fenrir algorithm to compute the approximate marginal likelihood of :math:`p(y_{0:M} \mid z_{0:N})`.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -320,19 +320,19 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
-        trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
-        var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
-        y_obs (ndarray(n_steps, n_block, n_bmeas)): Observed data; :math:`y_{0:N}`.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
+        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
+        y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
-        (float) : The logdensity of :math:`p(\theta \mid y_{0:N})`.
+        (float) : The logdensity of :math:`p(y_{0:M} \mid z_{0:N})`.
 
     """
-    n_obs, n_block, n_bmeas = y_obs.shape
+    n_obs, n_block, n_bobs = y_obs.shape
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bmeas))*jnp.nan
+    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
     y_obs = y_res.at[::n_res].set(y_obs)
     # forward pass
     filt_out = forward(
@@ -365,14 +365,16 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
 
 def _smooth_mv(trans_state, state_par):
     r"""
-    Smoothing pass of the Fenrir algorithm.
+    Smoothing pass of the Fenrir algorithm used to compute solution posterior.
 
     Args:
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         state_par (dict): Dictionary containing the mean and variance matrices of the predicted and updated steps of the Kalman filter.
 
     Returns:
-        (float) : The logdensity of :math:`p(\theta \mid y_{0:N})`.
+        (tuple):
+        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
     mean_state_pred, var_state_pred = state_par["state_pred"]
@@ -446,21 +448,21 @@ def fenrir_mv(key, fun, W, x0, theta, tmin, tmax, n_res,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
-        trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
-        var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
-        y_obs (ndarray(n_steps, n_block, n_bmeas)): Observed data; :math:`y_{0:N}`.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
+        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
+        y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
         (tuple):
-        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-    n_obs, n_block, n_bmeas = y_obs.shape
+    n_obs, n_block, n_bobs = y_obs.shape
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bmeas))*jnp.nan
+    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
     y_obs = y_res.at[::n_res].set(y_obs)
     # forward pass
     filt_out = forward(

@@ -38,7 +38,7 @@ class oc_mcmc:
 
     def prop_lpdf(self, theta, theta_prime, param):
         r"""
-        Computes the proposal log PDF of theta. The base assumes the proposal is N(theta; theta_prime, param).
+        Computes the proposal log-PDF of :math:`\theta`. The base class assumes the proposal is N(theta; theta_prime, param).
         
         Args:
             theta (ndarray(n_theta)): Parameters for the inference problem.
@@ -64,18 +64,31 @@ class oc_mcmc:
         return jax.random.multivariate_normal(key=key, mean=theta, cov=param)
 
     def logprior(self, theta):
-        r"The logprior for theta. Dependent on example."
+        r"""
+        The logprior for theta. Dependent on example. Please implement this.
+
+        Args:
+            theta (ndarray(n_theta)): Parameters for the inference problem.
+
+        """
         pass
 
     def loglik(self, X_t):
-        r"The loglikelihood of p(Y_t | X_t). Dependent on example."
+        r"""
+        The loglikelihood of p(Y_t | X_t). Dependent on example. Please implement this.
+        
+        Args:
+            X_t (ndarray(n_block, n_bstate, n_bmeas)): Solution for given initial :math:`\theta` using the Chkrebtii solver.
+        
+        """
         pass
 
     def solve(self, key, theta):
         r"""
-        Solve the ODE given the theta and return the indices where the observations exist.
+        Solve the ODE given :math:`\theta` and return the indices where the observations exist.
         
         Args:
+            key (PRNGKey): PRNG key.
             theta (ndarray(n_theta)): Parameters for the inference problem.
         
         Return:

@@ -1,5 +1,5 @@
 r"""
-This module implements the DALTON solver which gives an approximate likelihood of :math:`p(y_{0:M} \mid z_{0:N}))`.
+This module implements the DALTON solver which gives an approximate likelihood of :math:`p(y_{0:M} \mid z_{0:N})`.
 
 The model is
 
@@ -7,13 +7,21 @@ The model is
 
     x_0 = v
 
-    X_n = Q X_{n-1} + R^{1/2} \epsilon_n
+    X_n = c_n + Q_n X_{n-1} + R_n^{1/2} \epsilon_n
 
-    z_n = W X_n - f(X_n, t_n) + V_n^{1/2} \eta_n
+    z_n = W_n X_n - f(X_n, t_n) + V_n^{1/2} \eta_n
     
     y_m = g(X_m, \phi_m)
 
-where :math:`g()` is a general distribution function. In the case that :math:`g()` is Gaussian, use :func:`~dalton.loglikehood` for a better approximation. In other cases, use :func:`~dalton.loglikehood_nn`.
+where :math:`g()` is a general distribution function. In the case that :math:`g()` is Gaussian, use :func:`~dalton.loglikehood` for a better approximation. In other cases, use :func:`~dalton.loglikehood_nn`. We assume that :math:`c_n = c, Q_n = Q, R_n = R`, and :math:`W_n = W` for all :math:`n`.
+
+In the Gaussian case, we assume the observation model is
+
+.. math::
+
+    y_m = D X_m + \Omega^{1/2} \epsilon_m.
+
+We assume that the :math:`M \leq N`, so that the observation step size is larger than that of the evaluation step size.
 
 """
 
@@ -64,6 +72,10 @@ def _solve_filter(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
+        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
+        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
@@ -188,7 +200,7 @@ def solve_sim(key, fun, W, x0, theta,
              trans_obs, mean_obs, var_obs, y_obs, 
              interrogate):
     r"""
-    Sample draw of the DALTON algorithm with Gaussian observations.
+    DALTON algorithm to compute a sample draw of :math:`X_{0:N}` assuming Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -202,9 +214,10 @@ def solve_sim(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
         mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
-        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`Omega`.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
+        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
@@ -288,7 +301,7 @@ def solve_mv(key, fun, W, x0, theta,
              trans_obs, mean_obs, var_obs, y_obs, 
              interrogate):
     r"""
-    Smoothing mean and variance of the DALTON algorithm with Gaussian observations.
+    DALTON algorithm to compute the mean and variance of :math:`X_{0:N}` assuming Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -302,9 +315,10 @@ def solve_mv(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`C`.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
         mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
-        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`Omega`.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
+        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
@@ -394,8 +408,8 @@ def _forecast_update(mean_state_pred, var_state_pred,
         mean_state_pred (ndarray(n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\mu_{n|n-1}`.
         var_state_pred (ndarray(n_block, n_bstate, n_sbtate)): Covariance of estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\Sigma_{n|n-1}`.
         W (ndarray(n_block, n_bmeas, n_bstate)): Matrix for getting the derivative; denoted by :math:`W`.
-        x_meas (ndarray(n_block, n_bmeas)): interrogated measure vector from `x_state`; :math:`y_n`.
-        mean_meas (ndarray(n_block, n_bmeas)): Transition offsets defining the measure prior; denoted by :math:`d`.
+        x_meas (ndarray(n_block, n_bmeas)): Interrogated measure vector from `x_state`; :math:`y_n`.
+        mean_meas (ndarray(n_block, n_bmeas)): Transition offsets defining the measure prior; denoted by :math:`c`.
         trans_meas (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; denoted by :math:`W+B`.
         var_meas (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
 
@@ -433,7 +447,7 @@ def loglikehood(key, fun, W, x0, theta,
                 trans_obs, mean_obs, var_obs, y_obs, 
                 interrogate):
     r"""
-    Compute marginal loglikelihood of DALTON algorithm for Gaussian observations.
+    Compute marginal loglikelihood of DALTON algorithm for Gaussian observations; :math:`p(y_{0:M} \mid z_{0:N})`.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -447,13 +461,14 @@ def loglikehood(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        mean_obs (ndarray(n_block, n_bmeas)): Transition offsets defining the noisy observations.
-        trans_obs (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
-        var_obs (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the noisy observations; :math:`Omega`.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
+        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
+        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
-        (float): Loglikelihood of :math:`p(y_{0:M} \mid p(z_{0:N}))`.
+        (float): Loglikelihood of :math:`p(y_{0:M} \mid z_{0:N})`.
 
     """
     # Reshaping y_obs to be in blocks 
@@ -656,8 +671,8 @@ def _solve_filter_nn(key, fun, W, x0, theta,
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         fun_obs (function): Observation likelihood function.
-        trans_obs (ndarray(n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`C`.
-        y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
+        trans_obs (ndarray(n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
+        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
@@ -792,7 +807,7 @@ def solve_mv_nn(key, fun, W, x0, theta,
                 fun_obs, trans_obs, y_obs, 
                 interrogate):
     r"""
-    Mean and variance of DALTON using non-Gaussian observations.
+    DALTON algorithm to compute the mean and variance of :math:`X_{0:N}` assuming non-Gaussian observations.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -806,8 +821,8 @@ def solve_mv_nn(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         fun_obs (function): Observation likelihood function.
-        trans_obs (ndarray(n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`C`.
-        y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
+        trans_obs (ndarray(n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
+        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
@@ -1057,7 +1072,7 @@ def loglikehood_nn(key, fun, W, x0, theta,
                    fun_obs, trans_obs, y_obs, 
                    interrogate):
     r"""
-    Compute marginal loglikelihood of DALTON algorithm for non-Gaussian observations.
+    Compute marginal loglikelihood of DALTON algorithm for non-Gaussian observations; :math:`p(y_{0:M} \mid z_{0:N})`.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -1067,13 +1082,17 @@ def loglikehood_nn(key, fun, W, x0, theta,
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
+        n_res (int): Resolution number determining how to thin solution process to match observations.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-
+        fun_obs (function): Observation likelihood function.
+        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
+        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
+        interrogate (function): Function defining the linearization method.
+    
     Returns:
-        (float): Loglikelihood of :math:`p(y_{0:M} \mid p(z_{0:N}))`.
+        (float): Loglikelihood of :math:`p(y_{0:M} \mid z_{0:N})`.
 
     """
     # Reshaping y_obs to be in blocks 
