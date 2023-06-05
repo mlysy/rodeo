@@ -19,16 +19,10 @@ import jax.numpy as jnp
 import numpy as np
 from rodeo.kalmantv import *
 from rodeo.utils import *
-# from jax import jit, lax, random
-# from functools import partial
-# from jax.config import config
-# from kalmantv.jax.kalmantv import *
-# from kalmantv.jax.kalmantv import _state_sim
-# config.update("jax_enable_x64", True)
 
 
-def interrogate_rodeo(key, fun, t, theta,
-                      wgt_meas, mu_state_pred, var_state_pred):
+def interrogate_rodeo(key, fun, W, t, theta,
+                      mean_state_pred, var_state_pred):
     r"""
     Rodeo interrogation method.
 
@@ -37,8 +31,8 @@ def interrogate_rodeo(key, fun, t, theta,
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
         t (float): Time point.
         theta (ndarray(n_theta)): ODE parameter.
-        wgt_meas (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior.
-        mu_state_pred (ndarray(n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\mu_{n|n-1}`.
+        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior.
+        mean_state_pred (ndarray(n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\mu_{n|n-1}`.
         var_state_pred (ndarray(n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\Sigma_{n|n-1}`.
 
     Returns:
@@ -47,122 +41,139 @@ def interrogate_rodeo(key, fun, t, theta,
         - **var_meas** (ndarray(n_block, n_bmeas, n_bmeas)): Interrogation variance.
 
     """
-    n_block, n_bmeas, _ = wgt_meas.shape
+    n_block, n_bmeas, _ = W.shape
     var_meas = np.zeros((n_block, n_bmeas, n_bmeas))
     for i in range(n_block):
-        var_meas[i] = np.linalg.multi_dot([wgt_meas[i], var_state_pred[i], wgt_meas[i].T])
+        var_meas[i] = np.linalg.multi_dot([W[i], var_state_pred[i], W[i].T])
 
-    # var_meas = jnp.linalg.multi_dot([wgt_meas, var_state_pred, wgt_meas.T])
-    # x_state = jnp.ravel(mu_state_pred)
-    # x_meas = jnp.reshape(fun(x_state, t, theta), newshape=(n_block, -1))
-    x_meas = fun(mu_state_pred, t, theta)
+    x_meas = -fun(mean_state_pred, t, theta)
     var_meas = jnp.array(var_meas)
-    return x_meas, var_meas
+    return W, x_meas, var_meas
 
 
-def interrogate_chkrebtii(key, fun, t, theta,
-                          wgt_meas, mu_state_pred, var_state_pred):
+def interrogate_chkrebtii(key, fun, W, t, theta,
+                          mean_state_pred, var_state_pred):
     r"""
     Interrogate method of Chkrebtii et al (2016); DOI: 10.1214/16-BA1017.
 
     Same arguments and returns as :func:`~ode_block_solve.interrogate_rodeo`.
 
     """
-    n_block, n_bmeas, n_bstate = wgt_meas.shape
+    n_block, n_bmeas, n_bstate = W.shape
     key, *subkeys = jax.random.split(key, num=n_block+1)
     #z_state = jax.random.normal(key, (n_block, n_bstate))
     var_meas = np.zeros((n_block, n_bmeas, n_bmeas))
     x_state = np.zeros((n_block, n_bstate))
     for i in range(n_block):
-        var_meas[i] = np.linalg.multi_dot([wgt_meas[i], var_state_pred[i], wgt_meas[i].T])
-        x_state[i] = jax.random.multivariate_normal(subkeys[i], mu_state_pred[i], var_state_pred[i])
-    # x_state = jnp.ravel(x_state)
-    # x_meas = jnp.reshape(fun(x_state, t, theta), newshape=(n_block, -1))
-    x_meas = fun(x_state, t, theta)
+        var_meas[i] = np.linalg.multi_dot([W[i], var_state_pred[i], W[i].T])
+        x_state[i] = jax.random.multivariate_normal(subkeys[i], mean_state_pred[i], var_state_pred[i])
+    x_meas = -fun(x_state, t, theta)
     var_meas = jnp.array(var_meas)
-    return x_meas, var_meas
+    return W, x_meas, var_meas
 
-def _solve_filter(key, fun, x0, theta,
-                  tmin, tmax, n_eval,
-                  wgt_meas, wgt_state, mu_state, var_state,
-                  interrogate=interrogate_rodeo):
+def interrogate_tronarp(key, fun, W, t, theta,
+                        mean_state_pred, var_state_pred):
+    r"""
+    First order interrogate method of Tronarp et al (2019); DOI: https://doi.org/10.1007/s11222-019-09900-1.
+    Assumes one block (because off-diagonals are not necessarily 0).
+    Same arguments and returns as :func:`~ode_block_solve.interrogate_rodeo`.
+
+    """
+    n_block, n_bmeas, n_bstate = W.shape
+    p = int(n_bstate/n_bmeas)
+    mean_meas = -fun(mean_state_pred, t, theta)
+    jac = jax.jacfwd(fun)(mean_state_pred, t, theta)[:, :, 0]
+    trans_meas = W - jac
+    # var_meas = jax.vmap(lambda wm, vsp:
+    #                     jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
+    #     trans_meas, var_state_pred
+    # )
+    var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
+    return trans_meas, mean_meas, var_meas
+
+def _solve_filter(key, fun, W, x0, theta,
+                  tmin, tmax, n_steps, 
+                  trans_state, mean_state, var_state,
+                  interrogate):
     r"""
     Forward pass of the ODE solver.
 
     key (PRNGKey): PRNG key.
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         x0 (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_eval (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        wgt_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mu_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
+        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
+        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
+        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        wgt_meas (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         interrogate (function): Function defining the interrogation method.
 
     Returns:
         (tuple):
-        - **mu_state_pred** (ndarray(n_steps, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **var_state_pred** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
-        - **mu_state_filt** (ndarray(n_steps, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
-        - **var_state_filt** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        - **mean_state_pred** (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        - **var_state_pred** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t-1] for :math:`t \in [a, b]`.
+        - **mean_state_filt** (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
+        - **var_state_filt** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance estimate for state at time t given observations from times [a...t] for :math:`t \in [a, b]`.
 
     """
     # Dimensions of block, state and measure variables
-    n_block, n_bmeas, n_bstate = wgt_meas.shape
-    #n_state = len(mu_state)
+    n_block, n_bmeas, n_bstate = W.shape
+    #n_state = len(mean_state)
 
     # arguments for kalman_filter and kalman_smooth
-    mu_meas = jnp.zeros((n_block, n_bmeas))
-    mu_state_filt = np.zeros((n_eval+1, n_block, n_bstate))
-    mu_state_pred = np.zeros((n_eval+1, n_block, n_bstate))
-    var_state_filt = np.zeros((n_eval+1, n_block, n_bstate, n_bstate))
-    var_state_pred = np.zeros((n_eval+1, n_block, n_bstate, n_bstate))
+    mean_meas = jnp.zeros((n_block, n_bmeas))
+    mean_state_filt = np.zeros((n_steps+1, n_block, n_bstate))
+    mean_state_pred = np.zeros((n_steps+1, n_block, n_bstate))
+    var_state_filt = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
+    var_state_pred = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
 
     # initialize
-    mu_state_filt[0] = x0
-    mu_state_pred[0] = x0
+    mean_state_filt[0] = x0
+    mean_state_pred[0] = x0
+    x_meas = jnp.zeros((n_block, n_bmeas))
 
-    for t in range(n_eval):
+    for t in range(n_steps):
         key, subkey = jax.random.split(key)
         for b in range(n_block):
-            mu_state_pred[t+1, b], var_state_pred[t+1, b] = \
+            mean_state_pred[t+1, b], var_state_pred[t+1, b] = \
                 predict(
-                    mu_state_past=mu_state_filt[t, b],
+                    mean_state_past=mean_state_filt[t, b],
                     var_state_past=var_state_filt[t, b],
-                    mu_state=mu_state[b],
-                    wgt_state=wgt_state[b],
+                    mean_state=mean_state[b],
+                    trans_state=trans_state[b],
                     var_state=var_state[b]
                 )
         # model interrogation
-        x_meas, var_meas = interrogate(
+        trans_meas, mean_meas, var_meas = interrogate(
             key=subkey,
             fun=fun,
-            t=tmin + (tmax-tmin)*(t+1)/n_eval,
+            W=W,
+            t=tmin + (tmax-tmin)*(t+1)/n_steps,
             theta=theta,
-            wgt_meas=wgt_meas,
-            mu_state_pred=mu_state_pred[t+1],
+            mean_state_pred=mean_state_pred[t+1],
             var_state_pred=var_state_pred[t+1]
         )
         for b in range(n_block):
             # kalman update
-            mu_state_filt[t+1, b], var_state_filt[t+1, b] = \
+            mean_state_filt[t+1, b], var_state_filt[t+1, b] = \
                 update(
-                    mu_state_pred=mu_state_pred[t+1, b],
+                    mean_state_pred=mean_state_pred[t+1, b],
                     var_state_pred=var_state_pred[t+1, b],
+                    W=W[b],
                     x_meas=x_meas[b],
-                    mu_meas=mu_meas[b],
-                    wgt_meas=wgt_meas[b],
+                    mean_meas=mean_meas[b],
+                    trans_meas=trans_meas[b],
                     var_meas=var_meas[b]
                 )
-    return mu_state_pred, var_state_pred, mu_state_filt, var_state_filt
+    return mean_state_pred, var_state_pred, mean_state_filt, var_state_filt
 
 
-def solve_sim(key, fun, x0, theta,
-              tmin, tmax, n_eval,
-              wgt_meas, wgt_state, mu_state, var_state,
+def solve_sim(key, fun, W, x0, theta,
+              tmin, tmax, n_steps,
+              trans_state, mean_state, var_state,
               interrogate=interrogate_rodeo):
     r"""
     Random draw from the stochastic ODE solver.
@@ -170,72 +181,70 @@ def solve_sim(key, fun, x0, theta,
     Args:
         key (PRNGKey): PRNG key.
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         x0 (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_eval (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        wgt_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mu_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
+        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
+        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
+        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        wgt_meas (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         interrogate (function): Function defining the interrogation method.
 
     Returns:
         (ndarray(n_steps, n_blocks, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
 
     """
-    n_block, n_bstate = mu_state.shape
-    # key, subkey = jax.random.split(key)
-    key, *subkeys = jax.random.split(key, num=n_eval*n_block+1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_eval, n_block, 2))
-    # z_state = jax.random.normal(subkey, (n_eval, n_block, n_bstate))
-    x_state_smooth = np.zeros((n_eval+1, n_block, n_bstate))
+    n_block, n_bstate = mean_state.shape
+    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
+    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
+    x_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
     x_state_smooth[0] = x0
 
     # forward pass
-    mu_state_pred, var_state_pred, mu_state_filt, var_state_filt = \
+    mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = \
         _solve_filter(
             key=key,
-            fun=fun, theta=theta, x0=x0,
-            tmin=tmin, tmax=tmax, n_eval=n_eval,
-            wgt_meas=wgt_meas, wgt_state=wgt_state,
-            mu_state=mu_state, var_state=var_state,
+            fun=fun, W=W, x0=x0, theta=theta,
+            tmin=tmin, tmax=tmax, 
+            n_steps=n_steps, trans_state=trans_state,
+            mean_state=mean_state, var_state=var_state,
             interrogate=interrogate
         )
 
     # for b in range(n_block):
-    #     x_state_smooth[n_eval, b] = \
+    #     x_state_smooth[n_steps, b] = \
     #         _state_sim(
-    #             mu_state_filt[n_eval, b],
-    #             var_state_filt[n_eval, b],
-    #             z_state[n_eval-1, b])
+    #             mean_state_filt[n_steps, b],
+    #             var_state_filt[n_steps, b],
+    #             z_state[n_steps-1, b])
 
     for b in range(n_block):
-        x_state_smooth[n_eval, b] = \
+        x_state_smooth[n_steps, b] = \
             jax.random.multivariate_normal(
-                subkeys[n_eval-1, b],
-                mu_state_filt[n_eval, b],
-                var_state_filt[n_eval, b])
+                subkeys[n_steps-1, b],
+                mean_state_filt[n_steps, b],
+                var_state_filt[n_steps, b])
 
-    for t in range(n_eval-1, 0, -1):
+    for t in range(n_steps-1, 0, -1):
         for b in range(n_block):
-            mu_state_sim, var_state_sim = smooth_sim(
+            mean_state_sim, var_state_sim = smooth_sim(
                     x_state_next=x_state_smooth[t+1, b],
-                    wgt_state=wgt_state[b],
-                    mu_state_filt=mu_state_filt[t, b],
+                    trans_state=trans_state[b],
+                    mean_state_filt=mean_state_filt[t, b],
                     var_state_filt=var_state_filt[t, b],
-                    mu_state_pred=mu_state_pred[t+1, b],
+                    mean_state_pred=mean_state_pred[t+1, b],
                     var_state_pred=var_state_pred[t+1, b]
                 )
-            x_state_smooth[t, b] = jax.random.multivariate_normal(subkeys[t-1, b], mu_state_sim, var_state_sim)
+            x_state_smooth[t, b] = jax.random.multivariate_normal(subkeys[t-1, b], mean_state_sim, var_state_sim)
     
     # x_state_smooth = jnp.reshape(x_state_smooth, newshape=(-1, n_block*n_bstate))
     return jnp.array(x_state_smooth)
 
-def solve_mv(key, fun, x0, theta,
-             tmin, tmax, n_eval,
-             wgt_meas, wgt_state, mu_state, var_state,
+def solve_mv(key, fun, W, x0, theta,
+             tmin, tmax, n_steps,
+             trans_state, mean_state, var_state,
              interrogate=interrogate_rodeo):
     r"""
     Mean and variance of the stochastic ODE solver.
@@ -243,62 +252,62 @@ def solve_mv(key, fun, x0, theta,
     Args:
         key (PRNGKey): PRNG key.
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         x0 (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_eval (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        wgt_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mu_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
+        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
+        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
+        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        wgt_meas (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         interrogate (function): Function defining the interrogation method.
 
     Returns:
         (tuple):
-        - **mu_state_smooth** (ndarray(n_steps, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
-        - **var_state_smooth** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
+        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-    n_block, n_bstate = mu_state.shape
-    mu_state_smooth = np.zeros((n_eval+1, n_block, n_bstate))
-    mu_state_smooth[0] = x0
-    var_state_smooth = np.zeros((n_eval+1, n_block, n_bstate, n_bstate))
+    n_block, n_bstate = mean_state.shape
+    mean_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
+    mean_state_smooth[0] = x0
+    var_state_smooth = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
 
     # forward pass
-    mu_state_pred, var_state_pred, mu_state_filt, var_state_filt = \
+    mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = \
         _solve_filter(
             key=key,
-            fun=fun, theta=theta, x0=x0,
-            tmin=tmin, tmax=tmax, n_eval=n_eval,
-            wgt_meas=wgt_meas, wgt_state=wgt_state,
-            mu_state=mu_state, var_state=var_state,
+            fun=fun, W=W, x0=x0, theta=theta,
+            tmin=tmin, tmax=tmax, n_steps=n_steps,
+            trans_state=trans_state,
+            mean_state=mean_state, var_state=var_state,
             interrogate=interrogate
         )
     
-    mu_state_smooth[-1] = mu_state_filt[-1]
+    mean_state_smooth[-1] = mean_state_filt[-1]
     var_state_smooth[-1] = var_state_filt[-1]
     # backward pass
-    for t in range(n_eval-1, 0, -1):
+    for t in range(n_steps-1, 0, -1):
         for b in range(n_block):
-            mu_state_smooth[t, b], var_state_smooth[t, b] = \
+            mean_state_smooth[t, b], var_state_smooth[t, b] = \
                 smooth_mv(
-                    mu_state_next=mu_state_smooth[t+1, b],
+                    mean_state_next=mean_state_smooth[t+1, b],
                     var_state_next=var_state_smooth[t+1, b],
-                    wgt_state=wgt_state[b],
-                    mu_state_filt=mu_state_filt[t, b],
+                    trans_state=trans_state[b],
+                    mean_state_filt=mean_state_filt[t, b],
                     var_state_filt=var_state_filt[t, b],
-                    mu_state_pred=mu_state_pred[t+1, b],
+                    mean_state_pred=mean_state_pred[t+1, b],
                     var_state_pred=var_state_pred[t+1, b],
             )
-    # mu_state_smooth = jnp.reshape(mu_state_smooth, newshape=(-1, n_block*n_bstate))
+    # mean_state_smooth = jnp.reshape(mean_state_smooth, newshape=(-1, n_block*n_bstate))
     # var_state_smooth = block_diag(jnp.array(var_state_smooth))
-    return jnp.array(mu_state_smooth), jnp.array(var_state_smooth)
+    return jnp.array(mean_state_smooth), jnp.array(var_state_smooth)
 
 
-def solve(key, fun, x0, theta,
-          tmin, tmax, n_eval,
-          wgt_meas, wgt_state, mu_state, var_state,
+def solve(key, fun, W, x0, theta,
+          tmin, tmax, n_steps,
+          trans_state, mean_state, var_state,
           interrogate=interrogate_rodeo):
     r"""
     Both random draw and mean/variance of the stochastic ODE solver.
@@ -306,79 +315,79 @@ def solve(key, fun, x0, theta,
     Args:
         key (PRNGKey): PRNG key.
         fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         x0 (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_eval (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        wgt_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mu_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
+        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
+        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
+        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        wgt_meas (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
         interrogate (function): Function defining the interrogation method.
 
     Returns:
         (tuple):
         - **x_state_smooth** (ndarray(n_steps, n_block, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
-        - **mu_state_smooth** (ndarray(n_steps, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **mean_state_smooth** (ndarray(n_steps, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
         - **var_state_smooth** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-    n_block, n_bstate = mu_state.shape
+    n_block, n_bstate = mean_state.shape
     #key, subkey = jax.random.split(key)
-    #z_state = jax.random.normal(subkey, (n_eval, n_block, n_bstate))
-    key, *subkeys = jax.random.split(key, num=n_eval*n_block+1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_eval, n_block, 2))
-    x_state_smooth = np.zeros((n_eval+1, n_block, n_bstate))
+    #z_state = jax.random.normal(subkey, (n_steps, n_block, n_bstate))
+    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
+    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
+    x_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
     x_state_smooth[0] = x0
-    mu_state_smooth = np.zeros((n_eval+1, n_block, n_bstate))
-    mu_state_smooth[0] = x0
-    var_state_smooth = np.zeros((n_eval+1, n_block, n_bstate, n_bstate))
+    mean_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
+    mean_state_smooth[0] = x0
+    var_state_smooth = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
 
     # forward pass
-    mu_state_pred, var_state_pred, mu_state_filt, var_state_filt = \
+    mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = \
         _solve_filter(
             key=key,
-            fun=fun, theta=theta, x0=x0,
-            tmin=tmin, tmax=tmax, n_eval=n_eval,
-            wgt_meas=wgt_meas, wgt_state=wgt_state,
-            mu_state=mu_state, var_state=var_state,
+            fun=fun, W=W, x0=x0, theta=theta,
+            tmin=tmin, tmax=tmax, n_steps=n_steps,
+            trans_state=trans_state,
+            mean_state=mean_state, var_state=var_state,
             interrogate=interrogate
         )
 
-    mu_state_smooth[-1] = mu_state_filt[-1]
+    mean_state_smooth[-1] = mean_state_filt[-1]
     var_state_smooth[-1] = var_state_filt[-1]
 
     # for b in range(n_block):
-    #     x_state_smooth[n_eval, b] = \
+    #     x_state_smooth[n_steps, b] = \
     #         _state_sim(
-    #             mu_state_filt[n_eval, b],
-    #             var_state_filt[n_eval, b],
-    #             z_state[n_eval-1, b])
+    #             mean_state_filt[n_steps, b],
+    #             var_state_filt[n_steps, b],
+    #             z_state[n_steps-1, b])
 
     for b in range(n_block):
-        x_state_smooth[n_eval, b] = \
+        x_state_smooth[n_steps, b] = \
             jax.random.multivariate_normal(
-                subkeys[n_eval-1, b],
-                mu_state_filt[n_eval, b],
-                var_state_filt[n_eval, b])
+                subkeys[n_steps-1, b],
+                mean_state_filt[n_steps, b],
+                var_state_filt[n_steps, b])
 
     # backward pass
-    for t in range(n_eval-1, 0, -1):
+    for t in range(n_steps-1, 0, -1):
         for b in range(n_block):
-            mu_state_sim, var_state_sim, mu_state_smooth[t, b], var_state_smooth[t, b] = \
+            mean_state_sim, var_state_sim, mean_state_smooth[t, b], var_state_smooth[t, b] = \
                 smooth(
                     x_state_next=x_state_smooth[t+1, b],
-                    mu_state_next=mu_state_smooth[t+1, b],
+                    mean_state_next=mean_state_smooth[t+1, b],
                     var_state_next=var_state_smooth[t+1, b],
-                    wgt_state=wgt_state[b],
-                    mu_state_filt=mu_state_filt[t, b],
+                    trans_state=trans_state[b],
+                    mean_state_filt=mean_state_filt[t, b],
                     var_state_filt=var_state_filt[t, b],
-                    mu_state_pred=mu_state_pred[t+1, b],
+                    mean_state_pred=mean_state_pred[t+1, b],
                     var_state_pred=var_state_pred[t+1, b]
                 )
-            x_state_smooth[t, b] = jax.random.multivariate_normal(subkeys[t-1, b], mu_state_sim, var_state_sim)
+            x_state_smooth[t, b] = jax.random.multivariate_normal(subkeys[t-1, b], mean_state_sim, var_state_sim)
     # x_state_smooth = jnp.reshape(x_state_smooth, newshape=(-1, n_block*n_bstate))
-    # mu_state_smooth = jnp.reshape(mu_state_smooth, newshape=(-1, n_block*n_bstate))
+    # mean_state_smooth = jnp.reshape(mean_state_smooth, newshape=(-1, n_block*n_bstate))
     # var_state_smooth = block_diag(jnp.array(var_state_smooth))
-    return jnp.array(x_state_smooth), jnp.array(mu_state_smooth), jnp.array(var_state_smooth)
+    return jnp.array(x_state_smooth), jnp.array(mean_state_smooth), jnp.array(var_state_smooth)

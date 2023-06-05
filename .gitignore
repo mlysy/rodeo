@@ -9,3 +9,7 @@ build
 /examples/saves/
 /tests/local
 /docs/build/
+src/rodeo.egg-info/
+figures/
+saves/
+*.ipynb

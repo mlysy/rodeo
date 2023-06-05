@@ -1,4 +1,4 @@
 Integrated Brownian Motion
 ==========================
-.. automodule:: rodeo.ibm_init
+.. automodule:: rodeo.ibm
     :members:
