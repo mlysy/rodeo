@@ -166,6 +166,7 @@ Probabilistic solvers in **rodeo** are capable of parameter inference. Here, we 
 $$
 Y(t) \sim \mathcal{N}(X(t), \phi^2 \cdot \boldsymbol{I}_{2\times 2})
 $$
+
 where $t=0, 1, \ldots, 40$ and $\phi^2 = 0.005$. For simplicity, we choose a flat prior for $\boldsymbol{\Theta}$ then the following function can be used to compute the likelihood approximation of $\boldsymbol{\Theta}$.
 
 ```python
