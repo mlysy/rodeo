@@ -15,7 +15,7 @@ where :math:`\alpha_1 = \ldots = \alpha_{p-1} = 0`. It has the analytical formul
 
 .. math::
 
-    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-1)!}, \qquad R_{ij} = \frac{(\Delta t)^{2p+1-i-j}}{(2p+1-i-j)(p-i)!(p-j)!}.
+    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-1)!}, \qquad R_{ij} = \sigma^2 \frac{(\Delta t)^{2p+1-i-j}}{(2p+1-i-j)(p-i)!(p-j)!}.
 
 """
 
