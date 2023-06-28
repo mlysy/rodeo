@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from jax.config import config
 
 from inference.fitz_inference import fitz_inference
+from inference.fitz_ocmcmc import fitz_ocmcmc
 from inference.theta_plot import *
 from rodeo.ibm import ibm_init
 from rodeo.ode import *
@@ -113,6 +114,18 @@ def fitz_example(load_calcs=False):
             theta_kalman[i, :, :n_theta] = np.exp(theta_kalman[i, :, :n_theta])
         # np.save('saves/fitz_theta_kalman.npy', theta_kalman)
         
+        # Parameter inference using MCMC
+        # theta_mcmc = np.zeros((len(n_res_list), n_samples, n_phi))
+        # fitz_ch = fitz_ocmcmc(fitz, W, tmin, tmax, phi_mean, phi_sd, Y_t, n_theta, noise_sigma)
+        # for i in range(len(n_res_list)):
+        #     prior_pars = ibm_init(1/n_res_list[i], n_deriv, sigma)
+        #     n_steps = int((tmax-tmin)*n_res_list[i])
+        #     fitz_ch.n_steps = n_steps
+        #     fitz_ch.n_res = n_res_list[i]
+        #     fitz_ch.prior_pars = prior_pars
+        #     theta_mcmc[i] = fitz_ch.mcmc_sample(key, phi_init, n_samples)
+        #     theta_mcmc[i, :, :n_theta] = np.exp(theta_mcmc[i, :, :n_theta])
+
         # Parameter inference using diffrax
         inf.diff_dt0 = dt_obs
         phi_hat, phi_var =  inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.diffrax_nlpost)
