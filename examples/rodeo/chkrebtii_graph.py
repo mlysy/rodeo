@@ -69,9 +69,9 @@ def solve(W, x0, tmin, tmax, n_steps, n_deriv, sigma, draws):
     # Run the solver which gives the posterior mean and variance
     key = jax.random.PRNGKey(0)  # PRNG key for JAX
     Xm, _ = jit_mv(
-        key=key,
+        key,
         # define ode
-        fun=ode_rodeo,
+        ode_rodeo,
         W=W,
         x0=x0,
         theta=None,
@@ -87,9 +87,9 @@ def solve(W, x0, tmin, tmax, n_steps, n_deriv, sigma, draws):
         # Run the solver which gives a draw
         key, subkey = random.split(key)
         x_sol = jit_sim(
-            key=subkey,
+            subkey,
             # define ode
-            fun=ode_rodeo,
+            ode_rodeo,
             W=W,
             x0=x0,
             theta=None,
@@ -180,6 +180,8 @@ def graph():
     axs[0, -1].legend(loc='upper left', bbox_to_anchor=[1, 1])
     
     fig.tight_layout()
-    fig.savefig('figures/chkrebtiifigure.pdf')
+    # fig.savefig('figures/chkrebtiifigure.pdf')
     plt.show()
     return fig
+
+graph()

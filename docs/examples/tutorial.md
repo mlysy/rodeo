@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.14.1
+    jupytext_version: 1.14.7
 kernelspec:
   display_name: Python 3 (ipykernel)
   language: python
@@ -120,14 +120,14 @@ For simple problems such as this one, we recommend `interrogate_rodeo` because i
 ```{code-cell} ipython3
 # Jit solver
 key = jax.random.PRNGKey(0)
-sim_jit = jax.jit(solve_sim, static_argnums=(1, 7, 11))
-mv_jit = jax.jit(solve_mv, static_argnums=(1, 7, 11))
+sim_jit = jax.jit(solve_sim, static_argnums=(1, 7, 10))
+mv_jit = jax.jit(solve_mv, static_argnums=(1, 7, 10))
 
-xt = sim_jit(key=key, fun=ode_fun_jax,
+xt = sim_jit(key, ode_fun_jax,
              W=W_block, x0=x0_block, theta=theta,
              tmin=tmin, tmax=tmax, n_steps=n_steps, **ode_init,
              interrogate=interrogate_rodeo)
-mut, _ = mv_jit(key=key, fun=ode_fun_jax,
+mut, _ = mv_jit(key, ode_fun_jax,
                 W=W_block, x0=x0_block, theta=theta,
                 tmin=tmin, tmax=tmax, n_steps=n_steps, **ode_init,
                 interrogate=interrogate_rodeo)

@@ -63,6 +63,31 @@ class TestrodeoFor(unittest.TestCase):
         self.assertAlmostEqual(utils.rel_err(mean_meas1, mean_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var_meas1, var_meas2), 0.0)
 
+    def test_interrogate_kramer(self):
+        trans_meas1, mean_meas1, var_meas1 = interrogate_kramer(
+            key=self.key,
+            fun=self.fitz_jax,
+            W=self.W_block,
+            t=self.t,
+            theta=self.theta,
+            mean_state_pred=self.x0_block,
+            var_state_pred=self.var_block
+        )
+        # for
+        trans_meas2, mean_meas2, var_meas2 = bfor.interrogate_kramer(
+            key=self.key,
+            fun=self.fitz_jax,
+            W=self.W_block,
+            t=self.t,
+            theta=self.theta,
+            mean_state_pred=self.x0_block,
+            var_state_pred=self.var_block
+        )
+        
+        self.assertAlmostEqual(utils.rel_err(trans_meas1, trans_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(mean_meas1, mean_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(var_meas1, var_meas2), 0.0)
+
     def test_solve_sim(self):
         sim1 = solve_sim(key=self.key, fun=self.fitz_jax, W=self.W_block,
                          x0=self.x0_block, theta=self.theta,

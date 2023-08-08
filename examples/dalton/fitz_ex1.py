@@ -2,12 +2,12 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from rodeo.ode import interrogate_tronarp
+from rodeo.ode import interrogate_kramer
 from rodeo.fenrir import *
 from rodeo.ibm import ibm_init
 from jaxopt import ScipyMinimize
 from jax import jacfwd, jacrev
-from rodeo.dalton import loglikehood
+from rodeo.dalton import dalton
 from jax.config import config
 
 import seaborn as sns
@@ -17,7 +17,7 @@ from theta_plot import theta_plot
 config.update("jax_enable_x64", True)
 import warnings
 warnings.filterwarnings('ignore')
-from diffrax import diffeqsolve, Dopri8, ODETerm, PIDController, SaveAt
+from diffrax import diffeqsolve, Dopri8, ODETerm, PIDController, SaveAt, DirectAdjoint
 
 backend = mpl.get_backend()
 mpl.use('agg')
@@ -35,9 +35,9 @@ def dalton_nlpost(phi, x0):
     x0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
     sigma = phi[-1]
     var_state = sigma**2*ode_init['var_state']
-    lp = loglikehood(key, fitz, W, x0, theta, tmin, tmax, n_res,
-            ode_init['trans_state'], ode_init['mean_state'], ode_init['var_state'],
-            trans_obs, mean_obs, var_obs, y_obs, interrogate_tronarp)
+    lp = dalton(key, fitz, W, x0, theta, tmin, tmax, n_res,
+            ode_init['trans_state'], ode_init['var_state'],
+            trans_obs, var_obs, y_obs, interrogate_kramer)
     lp += logprior(phi[:n_phi], phi_mean, phi_sd)
     return -lp
 
@@ -51,8 +51,8 @@ def fenrir_nlpost(phi, x0):
     sigma = phi[-1]
     var_state = sigma**2*ode_init['var_state']
     lp = fenrir(key, fitz, W, x0, theta, tmin, tmax, n_res,
-                ode_init['trans_state'], ode_init['mean_state'], ode_init['var_state'],
-                trans_obs, mean_obs, var_obs, y_obs, interrogate_tronarp)
+                ode_init['trans_state'], ode_init['var_state'],
+                trans_obs, var_obs, y_obs, interrogate_kramer)
     lp += logprior(phi[:n_phi], phi_mean, phi_sd)
     return -lp
 
@@ -64,9 +64,11 @@ def diffrax_nlpost(phi, x0):
     x0 = x0.flatten()
     theta = jnp.exp(phi[:n_theta])
     X_t = diffeqsolve(term, solver, args = theta, t0=tmin, t1=tmax, dt0 = diff_dt0, 
-                        y0=jnp.array(x0), saveat=saveat, stepsize_controller=stepsize_controller).ys
+                        y0=jnp.array(x0), saveat=saveat, stepsize_controller=stepsize_controller,
+                        adjoint=DirectAdjoint()).ys[:, 1]
     # lp = g(X_t, y_obs.reshape((41, -1)))
-    lp = logprior(y_obs.reshape((41, -1)), X_t, gamma)
+    # lp = logprior(y_obs.reshape((41, -1)), X_t, gamma)
+    lp = logprior(obs[:, 1], X_t, gamma)
     lp += logprior(phi[:n_phi], phi_mean, phi_sd)
     return -lp
     
@@ -134,27 +136,29 @@ n_obs = 40
 tseq = np.linspace(tmin, tmax, n_obs+1)
 saveat = SaveAt(ts = tseq)
 exact = diffeqsolve(term, solver, args = theta, t0=tmin, t1=tmax, dt0 = diff_dt0, 
-                  y0=ode0, saveat=saveat, stepsize_controller=stepsize_controller).ys
+                  y0=ode0, saveat=saveat, stepsize_controller=stepsize_controller).ys[:,1]
 gamma = np.sqrt(.005)
 e_t = np.random.default_rng(0).normal(loc=0.0, scale=1, size=exact.shape)
-obs = exact + gamma*e_t
+obs = np.zeros((len(exact), n_var))
+obs[:, 1] = exact + gamma*e_t
+# obs = exact + gamma*e_t
 y_obs = jnp.expand_dims(obs, -1)
-trans_obs = jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]])
-mean_obs = jnp.zeros((2, 1))
+trans_obs = jnp.zeros((n_obs+1, n_var, 1, n_deriv))
+trans_obs = trans_obs.at[:].set(jnp.array([[[0., 0., 0.]], [[1., 0., 0.]]]))
 var_obs = gamma**2*jnp.array([[[1.]],[[1.]]])
 
 # plot one graph
-plt.rcParams.update({'font.size': 30})
-fig1, axs = plt.subplots(2, 1, figsize=(8, 10))
-axs[0].plot(tseq, exact[:,0], label = 'True', linewidth=4)
-axs[0].scatter(tseq, obs[:,0], label = 'Obs', color='orange', s=200, zorder=2)
-axs[0].set_title("$V(t)$")
-axs[1].plot(tseq, exact[:,1], label = 'True', linewidth=4)
-axs[1].scatter(tseq, obs[:,1], label = 'Obs', color='orange', s=200, zorder=2)
-axs[1].set_title("$R(t)$")
-fig1.tight_layout()
-fig1.suptitle('(a)', horizontalalignment='left', x=0, y=1)
-fig1.savefig('figures/fitzODEvert.pdf')
+# plt.rcParams.update({'font.size': 30})
+# fig1, axs = plt.subplots(2, 1, figsize=(8, 10))
+# axs[0].plot(tseq, exact[:,0], label = 'True', linewidth=4)
+# axs[0].scatter(tseq, obs[:,0], label = 'Obs', color='orange', s=200, zorder=2)
+# axs[0].set_title("$V(t)$")
+# axs[1].plot(tseq, exact[:,1], label = 'True', linewidth=4)
+# axs[1].scatter(tseq, obs[:,1], label = 'Obs', color='orange', s=200, zorder=2)
+# axs[1].set_title("$R(t)$")
+# fig1.tight_layout()
+# fig1.suptitle('(a)', horizontalalignment='left', x=0, y=1)
+# fig1.savefig('figures/fitzODEvert.pdf')
 
 # logprior parameters
 theta_true = jnp.array([0.2, 0.2, 3]) # True theta
@@ -164,60 +168,61 @@ phi_sd = jnp.log(10)*jnp.ones(n_phi)
 n_theta = 3
 n_samples = 100000
 
-# # posteriors for diffrax
+# posteriors for diffrax
 phi_init = jnp.append(jnp.log(theta_true), ode0)
 phi_init = jnp.append(phi_init, jnp.array([1]))
-phi_hat, phi_var = phi_fit(phi_init, jnp.zeros((2,1)), diffrax_nlpost)
-theta_diffrax = phi_sample(phi_hat, phi_var, n_samples)
-theta_diffrax[:, :n_theta] = np.exp(theta_diffrax[:, :n_theta])
+# phi_hat, phi_var = phi_fit(phi_init, jnp.zeros((2,1)), diffrax_nlpost)
+# theta_diffrax = phi_sample(phi_hat, phi_var, n_samples)
+# theta_diffrax[:, :n_theta] = np.exp(theta_diffrax[:, :n_theta])
 key = jax.random.PRNGKey(0)
 W = jnp.array([[[0., 1., 0.]], [[0., 1., 0.]]])  # ODE LHS matrix
 
 # run for each res
-n_reslst = [4, 10, 20]
-sigma = 10
-sigma = jnp.array([sigma]*n_var)
-n_order = jnp.array([n_deriv]*n_var)
-theta_fenrir = np.zeros((len(n_reslst), n_samples, 5))
-theta_dalton = np.zeros((len(n_reslst), n_samples, 5))
-for i, n_res in enumerate(n_reslst):
-    n_steps = n_obs*n_res
-    dt = (tmax-tmin)/n_steps
-    ode_init = ibm_init(dt, n_order, sigma)
-    phi_hat, phi_var = phi_fit(phi_init, jnp.zeros((2,1)), dalton_nlpost)
-    theta_dalton[i] = phi_sample(phi_hat, phi_var, n_samples)
-    theta_dalton[i, :, :n_theta] = np.exp(theta_dalton[i, :, :n_theta])
-    phi_hat, phi_var = phi_fit(phi_init, jnp.zeros((2,1)), fenrir_nlpost)
-    theta_fenrir[i] = phi_sample(phi_hat, phi_var, n_samples)
-    theta_fenrir[i, :, :n_theta] = np.exp(theta_fenrir[i, :, :n_theta])
+# n_reslst = [4, 10,20]
+# sigmalst = [50, 1, 1]
+# n_order = jnp.array([n_deriv]*n_var)
+# theta_fenrir = np.zeros((len(n_reslst), n_samples, 5))
+# theta_dalton = np.zeros((len(n_reslst), n_samples, 5))
+# for i, n_res in enumerate(n_reslst):
+#     sigma = sigmalst[i]
+#     sigma = jnp.array([sigma]*n_var)
+#     n_steps = n_obs*n_res
+#     dt = (tmax-tmin)/n_steps
+#     ode_init = ibm_init(dt, n_order, sigma)
+#     phi_hat, phi_var = phi_fit(phi_init, jnp.zeros((2,1)), dalton_nlpost)
+#     theta_dalton[i] = phi_sample(phi_hat, phi_var, n_samples)
+#     theta_dalton[i, :, :n_theta] = np.exp(theta_dalton[i, :, :n_theta])
+#     phi_hat, phi_var = phi_fit(phi_init, jnp.zeros((2,1)), fenrir_nlpost)
+#     theta_fenrir[i] = phi_sample(phi_hat, phi_var, n_samples)
+#     theta_fenrir[i, :, :n_theta] = np.exp(theta_fenrir[i, :, :n_theta])
     
 # np.save("saves/theta_diffraxg.npy", theta_diffrax)
 # np.save("saves/theta_fenrirg.npy", theta_fenrir)
 # np.save("saves/theta_doubleg.npy", theta_dalton)
-# theta_diffrax = np.load("saves/theta_diffraxg.npy")
-# theta_fenrir = np.load("saves/theta_fenrirg.npy")
-# theta_dalton = np.load("saves/theta_doubleg.npy")
+theta_diffrax = np.load("saves/theta_diffraxg.npy")
+theta_fenrir = np.load("saves/theta_fenrirg.npy")
+theta_dalton = np.load("saves/theta_doubleg.npy")
 
 plt.rcParams.update({'font.size': 30})
 var_names = ['a', 'b', 'c', r"$V(0)$", r"$R(0)$"]
 meth_names = ["DALTON", "Fenrir"]
 param_true = np.append(theta_true, np.array([-1, 1]))
 hlist = [1/4, 1/10, 1/20]
-fig2 = theta_plot(theta_dalton, theta_fenrir, theta_diffrax, param_true, hlist, var_names, meth_names, clip=[None, (0, 4), None, None, None], rows=1)
-fig2.suptitle('(b)', horizontalalignment='left', x=0, y=1)
-fig2.savefig('figures/fitzfigure.pdf')
+fig2 = theta_plot(theta_dalton, theta_fenrir, theta_diffrax, param_true, hlist, var_names, meth_names, clip=[None, (0, 1), (2, 4), None, None], rows=1)
+# fig2.suptitle('(b)', horizontalalignment='left', x=0, y=1)
+fig2.savefig('figures/fitzfigure2.pdf')
 
-# combine figures
-c1 = fig1.canvas
-c2 = fig2.canvas
-c1.draw()
-c2.draw()
-a1 = np.array(c1.buffer_rgba())
-a2 = np.array(c2.buffer_rgba())
-a = np.hstack((a1,a2))
-mpl.use(backend)
-fig,ax = plt.subplots(figsize=(28, 10))
-fig.subplots_adjust(0, 0, 1, 1)
-ax.set_axis_off()
-ax.matshow(a)
-fig.savefig('figures/fitzcombined.pdf')
+# # combine figures
+# c1 = fig1.canvas
+# c2 = fig2.canvas
+# c1.draw()
+# c2.draw()
+# a1 = np.array(c1.buffer_rgba())
+# a2 = np.array(c2.buffer_rgba())
+# a = np.hstack((a1,a2))
+# mpl.use(backend)
+# fig,ax = plt.subplots(figsize=(28, 10))
+# fig.subplots_adjust(0, 0, 1, 1)
+# ax.set_axis_off()
+# ax.matshow(a)
+# fig.savefig('figures/fitzcombined.pdf')

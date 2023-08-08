@@ -67,7 +67,7 @@ def fitz_example(load_calcs=False):
     axs[1].legend(loc='upper left', bbox_to_anchor=[1, 1])
     # fig.savefig('figures/fitzsim.pdf')
     
-    n_res_list = np.array([10, 20, 50, 100])
+    n_res_list = np.array([10])
     phi_init = jnp.append(jnp.log(theta_true), ode0)
     if load_calcs:
         theta_euler = np.load('saves/fitz_theta_euler.npy')
@@ -75,8 +75,10 @@ def fitz_example(load_calcs=False):
         theta_diffrax = np.load('saves/fitz_theta_diffrax.npy')
         theta_fenrir = np.load('saves/fitz_theta_fenrir.npy')
     else:
-        # Parameter inference using fenrir solver
+        # Parameter inference for non-MCMC probabilistic methods
         theta_fenrir = np.zeros((len(n_res_list), n_samples, n_phi))
+        theta_euler = np.zeros((len(n_res_list), n_samples, n_phi))
+        theta_kalman = np.zeros((len(n_res_list), n_samples, n_phi))
         for i in range(len(n_res_list)):
             print(n_res_list[i])
             prior_pars = ibm_init(1/n_res_list[i], n_deriv, sigma)
@@ -84,47 +86,34 @@ def fitz_example(load_calcs=False):
             inf.n_steps = n_steps
             inf.n_res = n_res_list[i]
             inf.prior_pars = prior_pars
+            # fenrir
             phi_hat, phi_var = inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.fenrir_nlpost)
             theta_fenrir[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_fenrir[i, :, :n_theta] = np.exp(theta_fenrir[i, :, :n_theta])
-        # np.save('saves/fitz_theta_fenrir.npy', theta_fenrir)
-
-        # Parameter inference using Euler's approximation
-        theta_euler = np.zeros((len(n_res_list), n_samples, n_phi))
-        for i in range(len(n_res_list)):
-            n_steps = int((tmax-tmin)*n_res_list[i])
-            inf.n_steps = n_steps
-            inf.n_res = n_res_list[i]
+            # euler
             phi_hat, phi_var = inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.euler_nlpost)
             theta_euler[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_euler[i, :, :n_theta] = np.exp(theta_euler[i, :, :n_theta])
-            
-        # np.save('saves/fitz_theta_euler.npy', theta_euler)
-        
-        # Parameter inference using Kalman solver
-        theta_kalman = np.zeros((len(n_res_list), n_samples, n_phi))
-        for i in range(len(n_res_list)):
-            prior_pars = ibm_init(1/n_res_list[i], n_deriv, sigma)
-            n_steps = int((tmax-tmin)*n_res_list[i])
-            inf.n_steps = n_steps
-            inf.n_res = n_res_list[i]
-            inf.prior_pars = prior_pars
+            # basic
             phi_hat, phi_var = inf.phi_fit(phi_init, jnp.zeros((2,1)), inf.kalman_nlpost)
             theta_kalman[i] = inf.phi_sample(phi_hat, phi_var, n_samples)
             theta_kalman[i, :, :n_theta] = np.exp(theta_kalman[i, :, :n_theta])
+
+        # np.save('saves/fitz_theta_fenrir.npy', theta_fenrir)
+        # np.save('saves/fitz_theta_euler.npy', theta_euler)
         # np.save('saves/fitz_theta_kalman.npy', theta_kalman)
         
         # Parameter inference using MCMC
-        # theta_mcmc = np.zeros((len(n_res_list), n_samples, n_phi))
-        # fitz_ch = fitz_ocmcmc(fitz, W, tmin, tmax, phi_mean, phi_sd, Y_t, n_theta, noise_sigma)
-        # for i in range(len(n_res_list)):
-        #     prior_pars = ibm_init(1/n_res_list[i], n_deriv, sigma)
-        #     n_steps = int((tmax-tmin)*n_res_list[i])
-        #     fitz_ch.n_steps = n_steps
-        #     fitz_ch.n_res = n_res_list[i]
-        #     fitz_ch.prior_pars = prior_pars
-        #     theta_mcmc[i] = fitz_ch.mcmc_sample(key, phi_init, n_samples)
-        #     theta_mcmc[i, :, :n_theta] = np.exp(theta_mcmc[i, :, :n_theta])
+        theta_mcmc = np.zeros((len(n_res_list), n_samples, n_phi))
+        fitz_ch = fitz_ocmcmc(fitz, W, tmin, tmax, phi_mean, phi_sd, Y_t, n_theta, noise_sigma)
+        for i in range(len(n_res_list)):
+            prior_pars = ibm_init(1/n_res_list[i], n_deriv, sigma)
+            n_steps = int((tmax-tmin)*n_res_list[i])
+            fitz_ch.n_steps = n_steps
+            fitz_ch.n_res = n_res_list[i]
+            fitz_ch.prior_pars = prior_pars
+            theta_mcmc[i] = fitz_ch.mcmc_sample(key, phi_init, n_samples)
+            theta_mcmc[i, :, :n_theta] = np.exp(theta_mcmc[i, :, :n_theta])
 
         # Parameter inference using diffrax
         inf.diff_dt0 = dt_obs
@@ -133,15 +122,14 @@ def fitz_example(load_calcs=False):
         theta_diffrax[:, :n_theta] = np.exp(theta_diffrax[:, :n_theta])
         # np.save('saves/fitz_theta_diffrax.npy', theta_diffrax)
     
-    theta_mcmc= np.load('saves/fitz_theta_mcmc.npy')
+    # theta_mcmc= np.load('saves/fitz_theta_mcmc.npy')
     # Produces the graph in Figure 3
     plt.rcParams.update({'font.size': 20})
     var_names = ['a', 'b', 'c', r"$V(0)$", r"$R(0)$"]
     param_true = np.append(theta_true, np.array([-1, 1]))
     figure = theta_plot(theta_euler, theta_kalman, theta_fenrir, theta_mcmc, theta_diffrax, param_true, 1/n_res_list, var_names, clip=[None, (0, 0.5), None, None, None], rows=1)
-    figure.savefig('figures/fitzfigure.pdf')
+    # figure.savefig('figures/fitzfigure.pdf')
     plt.show()
     return 
 
-if __name__ == '__main__':
-    fitz_example(False)
+fitz_example(False)

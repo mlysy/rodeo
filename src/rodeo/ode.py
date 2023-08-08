@@ -53,7 +53,7 @@ def interrogate_rodeo(key, fun, W, t, theta,
         W, var_state_pred
     )
     mean_meas = -fun(mean_state_pred, t, theta)
-    return W, mean_meas, var_meas
+    return jnp.zeros(W.shape), mean_meas, var_meas
 
 
 def interrogate_chkrebtii(key, fun, W, t, theta,
@@ -78,7 +78,7 @@ def interrogate_chkrebtii(key, fun, W, t, theta,
                            var_state_pred[b]
                        ))(jnp.arange(n_block))
     mean_meas = -fun(x_state, t, theta)
-    return W, mean_meas, var_meas
+    return jnp.zeros(W.shape), mean_meas, var_meas
 
 def interrogate_schober(key, fun, W, t, theta,
                         mean_state_pred, var_state_pred):
@@ -91,23 +91,25 @@ def interrogate_schober(key, fun, W, t, theta,
     n_block, n_bmeas, _ = W.shape
     var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
     mean_meas = -fun(mean_state_pred, t, theta)
-    return W, mean_meas, var_meas
+    return jnp.zeros(W.shape), mean_meas, var_meas
 
-def interrogate_tronarp(key, fun, W, t, theta,
-                        mean_state_pred, var_state_pred):
+def interrogate_kramer(key, fun, W, t, theta,
+                       mean_state_pred, var_state_pred):
     r"""
-    First order interrogate method of Tronarp et al (2019); DOI: https://doi.org/10.1007/s11222-019-09900-1.
+    First order interrogate method of Kramer et al (2021); DOI: https://doi.org/10.48550/arXiv.2110.11812.
+    Assumes off block diagonals are zero.
     Same arguments and returns as :func:`~ode.interrogate_rodeo`.
 
     """
     n_block, n_bmeas, n_bstate = W.shape
-    p = int(n_bstate/n_bmeas)
-    mean_meas = -fun(mean_state_pred, t, theta)
+    fun_meas = -fun(mean_state_pred, t, theta)
     jac = jax.jacfwd(fun)(mean_state_pred, t, theta)
     # need to get the diagonal of jac
     jac = jax.vmap(lambda b:
                    jac[b, :, b])(jnp.arange(n_block))
-    trans_meas = W - jac
+    trans_meas = -jac
+    mean_meas = jax.vmap(lambda b:
+                         fun_meas[b] + jac[b].dot(mean_state_pred[b]))(jnp.arange(n_block))
     # var_meas = jax.vmap(lambda wm, vsp:
     #                     jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
     #     trans_meas, var_state_pred
@@ -118,7 +120,7 @@ def interrogate_tronarp(key, fun, W, t, theta,
 
 def _solve_filter(key, fun,  W,  x0, theta,
                   tmin, tmax, n_steps,
-                  trans_state, mean_state, var_state,
+                  trans_state, var_state,
                   interrogate):
     r"""
     Forward pass of the ODE solver.
@@ -150,6 +152,7 @@ def _solve_filter(key, fun,  W,  x0, theta,
 
     # arguments for kalman_filter and kalman_smooth
     x_meas = jnp.zeros((n_block, n_bmeas))
+    mean_state = jnp.zeros((n_block, n_bstate))
     mean_state_init = x0
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
@@ -178,15 +181,15 @@ def _solve_filter(key, fun,  W,  x0, theta,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
         )
+        W_meas = W + trans_meas
         # kalman update
         mean_state_next, var_state_next = jax.vmap(lambda b:
             update(
                 mean_state_pred=mean_state_pred[b],
                 var_state_pred=var_state_pred[b],
-                W=W[b],
                 x_meas=x_meas[b],
                 mean_meas=mean_meas[b],
-                trans_meas=trans_meas[b],
+                trans_meas=W_meas[b],
                 var_meas=var_meas[b]
             )
         )(jnp.arange(n_block))
@@ -220,7 +223,7 @@ def _solve_filter(key, fun,  W,  x0, theta,
 
 def solve_sim(key, fun, W, x0, theta,
               tmin, tmax, n_steps,
-              trans_state, mean_state, var_state,
+              trans_state, var_state,
               interrogate=interrogate_rodeo):
     r"""
     Args:
@@ -241,7 +244,7 @@ def solve_sim(key, fun, W, x0, theta,
         (ndarray(n_steps+1, n_blocks, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
 
     """
-    n_block, n_bstate = mean_state.shape
+    n_block = trans_state.shape[0]
     key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
     subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
 
@@ -251,7 +254,7 @@ def solve_sim(key, fun, W, x0, theta,
         fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, 
         n_steps=n_steps, trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
+        var_state=var_state,
         interrogate=interrogate
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
@@ -309,7 +312,7 @@ def solve_sim(key, fun, W, x0, theta,
 
 def solve_mv(key, fun, W, x0, theta,
              tmin, tmax, n_steps,
-             trans_state, mean_state, var_state,
+             trans_state, var_state,
              interrogate=interrogate_rodeo):
     r"""
     Mean and variance of the stochastic ODE solver.
@@ -334,14 +337,14 @@ def solve_mv(key, fun, W, x0, theta,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-    n_block, n_bstate = mean_state.shape
+    n_block, n_bstate, _ = trans_state.shape
     # forward pass
     filt_out = _solve_filter(
         key=key,
         fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, 
         n_steps=n_steps, trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
+        var_state=var_state,
         interrogate=interrogate
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
@@ -398,7 +401,7 @@ def solve_mv(key, fun, W, x0, theta,
 
 def solve(key, fun, W, x0, theta,
           tmin, tmax, n_steps,
-          trans_state, mean_state, var_state,
+          trans_state, var_state,
           interrogate=interrogate_rodeo):
     r"""
     Both random draw and mean/variance of the stochastic ODE solver.
@@ -424,7 +427,7 @@ def solve(key, fun, W, x0, theta,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-    n_block, n_bstate = mean_state.shape
+    n_block, n_bstate, _ = trans_state.shape
     key, *subkeys = jax.random.split(key, num=n_steps * n_block + 1)
     subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
 
@@ -434,7 +437,7 @@ def solve(key, fun, W, x0, theta,
         fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax,
         n_steps=n_steps, trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
+        var_state=var_state,
         interrogate=interrogate
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]

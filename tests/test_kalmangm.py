@@ -48,7 +48,6 @@ class TestKalmanTVGM(unittest.TestCase):
         mean_state_filt2, var_state_filt2 = ktv.update(
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
-            W=self.trans_meas[1],
             x_meas=self.x_meas[1],
             mean_meas=self.mean_meas[1],
             trans_meas=self.trans_meas[1],

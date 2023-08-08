@@ -133,7 +133,7 @@ class inference:
         y_obs = jnp.expand_dims(self.y_obs, -1)
         lp = fenrir(self.key, self.fun, self.W, X_0, theta, self.tmin, self.tmax, self.n_res,
                     self.prior_pars['trans_state'], self.prior_pars['mean_state'], self.prior_pars['var_state'],
-                    self.trans_obs, self.mean_obs, self.var_obs, y_obs)
+                    self.trans_obs, self.mean_obs, self.var_obs, y_obs, interrogate_rodeo)
         lp += self.logprior(phi[:n_phi], self.phi_mean, self.phi_sd)
         return -lp
 

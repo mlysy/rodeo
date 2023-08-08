@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.14.1
+    jupytext_version: 1.14.7
 kernelspec:
   display_name: Python 3 (ipykernel)
   language: python
@@ -25,7 +25,7 @@ from jax import jacfwd, jacrev
 from jaxopt import ScipyMinimize
 
 from rodeo.ibm import ibm_init
-from rodeo.ode import interrogate_tronarp, interrogate_chkrebtii
+from rodeo.ode import interrogate_kramer, interrogate_chkrebtii
 import rodeo.ode as ro
 import rodeo.fenrir as rf
 import rodeo.dalton as rd
@@ -103,12 +103,11 @@ def fitz(X_t, t, theta):
 theta = jnp.array([0.2, 0.2, 3])
 
 # problem setup and intialization
-n_deriv = 1  # Total state; q
-n_var = 2  # Total variables
-n_deriv_prior = 3 # p
+n_vars = 2  # Total variables
+n_deriv = jnp.array([3] * n_vars)
 
 # tuning parameter in the IBM process
-sigma = jnp.array([.1]*n_var) 
+sigma = jnp.array([.1]*n_vars) 
 
 # block definition for W, and x0
 W = jnp.array([[[0., 1., 0.]], [[0., 1., 0.]]])  # ODE LHS matrix
@@ -118,8 +117,7 @@ x0 = jnp.array([[-1., 1., 0.], [1., 1/3, 0.]])
 n_res = 10
 n_steps = n_obs*n_res
 dt = (tmax-tmin)/n_steps
-n_order = jnp.array([n_deriv_prior]*n_var)
-prior_pars = ibm_init(dt, n_order, sigma)
+prior_pars = ibm_init(dt, n_deriv, sigma)
 
 # prng key
 key = jax.random.PRNGKey(0)
@@ -135,6 +133,65 @@ Parameter inference is then accomplished by way of a Laplace approximation, for 
     \tth \mid \YY_{0:M} \approx \N(\hat \tth, \hat \VV_{\tth}),
 \end{equation*}
 where $\hat \tth = \argmax_{\tth} \log p(\tth \mid \YY_{0:M})$ and $\hat \VV_{\tth} = -\big[\frac{\partial^2}{\partial \tth \partial \tth'} \log p(\hat \tth \mid \YY_{0:M})\big]^{-1}$. For the prior, we assume independent $\N(0, 10^2)$ priors on $\log a, \log b, \log c$ and $V(0), R(0)$.
+
+```{code-cell} ipython3
+def constrain_pars(phi):
+    r"""
+    Separate parameters into ODE parameters, initial values and tuning parameters.
+
+    Args:
+        phi : Parameters to optimize over.
+        x0 : The initial value which may contain some missing values.
+
+    Returns:
+        (tuple):
+        - **theta** : ODE parameters.
+        - **x0** : Initial values.
+        - **sigma** : Tuning parameters.
+    """
+    theta = jnp.exp(phi[:n_theta])
+    x0 = jnp.expand_dims(phi[n_theta:n_phi], -1)
+    sigma = phi[n_phi:]
+    return theta, x0, sigma
+
+def jaxopt_solver(fun, method="Newton-CG"):
+    r"""
+    Jaxopt solver or equivalent.
+
+    Args:
+        fun : Objective function to optimize.
+        method : Choice of optimization method.
+
+    Returns:
+        (solver): Jaxopt solver.
+    """
+    return ScipyMinimize(fun=fun, method=method, jit=True)
+
+def bna_fit(key, fun, n_samples, phi_init):
+    """
+    Sample from the Bayesian normal approximation.
+
+    Args:
+        key : PRNG key.
+        fun : Objective function to optimize.
+        n_samples : Number of samples.
+        phi_init : Parameters to optimize over.
+        x0 : The initial value which may contain some missing values.
+    
+    Returns:
+        phi : Sample phi.
+    """
+    solver = jaxopt_solver(fun)
+    hes = jax.jacfwd(jax.jacrev(fun))
+    opt_res = solver.run(phi_init)
+    phi_hat = opt_res.params
+    phi_fisher = hes(phi_hat)
+    phi_var = jsp.linalg.solve(phi_fisher[:n_phi, :n_phi], jnp.eye(n_phi))
+    phi = jax.random.multivariate_normal(
+        key=key, mean=phi_hat[:n_phi], cov=phi_var, shape=(n_samples, ))
+    # phi = np.random.default_rng(12345).multivariate_normal(phi_hat[:n_phi], phi_var, n_samples)
+    return phi
+```
 
 ```{code-cell} ipython3
 # logprior parameters
@@ -153,16 +210,22 @@ To start, we use a standard probabilistic ODE solver, `rodeo`, to construct a li
 We define the prior and posterior functions necessary to conduct parameter inference. The key function to focus is `basic_nlpost` which takes in `phi = (log a, log b, log c, V(0), R(0))`. It uses the ODE and the $V(0), R(0)$ to compute the  $dV(0), dR(0)$ required for `rodeo` and then zero pad it an extra dimension which helps with accuracy as explained in the Introduction notebook. The other three parameters $\log a, \log b, \log c$ needs to be exponentiated first because `rodeo` assumes they are on the regular scale. The function `phi_fit` essentially computes the Laplace approximation detailed above. We use the **jaxopt** library as it supports optimization using **jax**. We choose `Newton-CG` as our optimization algorithm but there are many other possible choices. Consult the **jaxopt** documentation if you are interested in this library.
 
 ```{code-cell} ipython3
-def logprior(x, mean, sd):
-    r"Calculate the loglikelihood of the normal distribution."
-    return jnp.sum(jsp.stats.norm.logpdf(x=x, loc=mean, scale=sd))
-
-def basic_nlpost(phi):
-    r"Compute the negative loglikihood of :math:`Y_t` using rodeo."
-    x0 = phi[n_theta:].reshape((2,1))
-    theta = jnp.exp(phi[:n_theta])
+def logpost_basic(phi):
+    r"""
+    Compute the logposterior for the basic approximation in the Fitz-Hugh Nagumo ODE.
+    
+    Args:
+        phi : Parameters to optimize over; 
+            `phi = (log a, log b, log c, V0, R0, sigma_V, sigma_R)`.
+        x0 : The initial value which may contain some missing values.
+    
+    Returns:
+        (float): Logposterior approximation.
+    """
+    theta, x0, sigma = constrain_pars(phi)
     v0 = fitz(x0, 0, theta)
     x0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
+    var_state = jax.vmap(lambda b: sigma[b]**2*prior_pars['var_state'][b])(jnp.arange(2))
     Xt, _ = ro.solve_mv(
         key=key,
         fun=fitz,
@@ -171,9 +234,10 @@ def basic_nlpost(phi):
         theta=theta,
         tmin=tmin,
         tmax=tmax,
-        interrogate=interrogate_tronarp,
+        interrogate=interrogate_kramer,
         n_steps=n_steps,
-        **prior_pars
+        trans_state=prior_pars['trans_state'],
+        var_state=var_state
     )
     # compute the loglikelihood and the log-prior
     loglik = jnp.sum(jsp.stats.norm.logpdf(
@@ -182,38 +246,19 @@ def basic_nlpost(phi):
         scale=noise_sd
     ))
     logprior = jnp.sum(jsp.stats.norm.logpdf(
-        x=phi,
+        x=phi[:n_phi],
         loc=phi_mean,
         scale=phi_sd
     ))
-    
     return -(loglik + logprior)
-
-def phi_fit(phi_init):
-    r"""Compute the optimized :math:`\log{\theta}` and its variance given 
-        :math:`Y_t`."""
-    n_phi = len(phi_init)
-    hes = jacfwd(jacrev(basic_nlpost))
-    solver = ScipyMinimize(method="Newton-CG", fun = basic_nlpost)
-    opt_res = solver.run(phi_init)
-    phi_hat = opt_res.params
-    phi_fisher = hes(phi_hat)
-    phi_var = jsp.linalg.solve(phi_fisher, jnp.eye(n_phi))
-    return phi_hat, phi_var
-
-def phi_sample(phi_hat, phi_var, n_samples):
-    r"""Simulate :math:`\theta` given the :math:`\log{\hat{\theta}}` 
-        and its variance."""
-    phi = np.random.default_rng(12345).multivariate_normal(phi_hat, phi_var, n_samples)
-    return phi
 ```
 
 ```{code-cell} ipython3
 # optimization process
 phi_init = jnp.append(jnp.log(theta_true), ode0)
-phi_hat, phi_var = phi_fit(phi_init)
-basic_post = phi_sample(phi_hat, phi_var, n_samples)
-basic_post[:, :n_theta] = np.exp(basic_post[:, :n_theta])
+phi_init = jnp.append(phi_init, jnp.ones(n_vars))
+basic_post = bna_fit(key, logpost_basic, n_samples, phi_init)
+basic_post = basic_post.at[:, :n_theta].set(np.exp(basic_post[:, :n_theta]))
 ```
 
 ### Chkrebtii MCMC
@@ -229,7 +274,7 @@ class fitz_ocmcmc(rc.oc_mcmc):
 
     def logprior(self, phi):
         r"Calculate the loglikelihood of the prior."
-        return jnp.sum(jsp.stats.norm.logpdf(x=phi, loc=phi_mean, scale=phi_sd))
+        return jnp.sum(jsp.stats.norm.logpdf(x=phi[:n_phi], loc=phi_mean, scale=phi_sd))
 
     def loglik(self, Xt):
         r"Calculate the loglikelihood of the observations."
@@ -237,7 +282,7 @@ class fitz_ocmcmc(rc.oc_mcmc):
 
     def solve(self, key, phi):
         r"Solve the ODE given the theta"
-        x0 = jnp.expand_dims(phi[n_theta:],-1)
+        x0 = jnp.expand_dims(phi[n_theta:n_phi],-1)
         theta = jnp.exp(phi[:n_theta])
         v0 = self.fun(x0, 0, theta)
         x0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
@@ -247,7 +292,7 @@ class fitz_ocmcmc(rc.oc_mcmc):
         return Xt
     
     def mcmc_sample(self, key, phi_init, n_samples):
-        param = jnp.diag(jnp.array([0.0001, 0.01, 0.0001, 0.0001, 0.0001]))
+        param = jnp.diag(jnp.array([0.0001, 0.01, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]))
         key, subkey = jax.random.split(key)
         initial_state = self.init(subkey, phi_init)
         def one_step(state, key):
@@ -260,6 +305,8 @@ class fitz_ocmcmc(rc.oc_mcmc):
 ```
 
 ```{code-cell} ipython3
+phi_init = jnp.append(jnp.log(theta_true), ode0)
+phi_init = jnp.append(phi_init, jnp.ones(n_vars))
 fitz_ch = fitz_ocmcmc(fitz, W, None, tmin, tmax, n_steps, n_res, prior_pars, Yt)
 mcmc_post = np.array(fitz_ch.mcmc_sample(key, phi_init, n_samples))
 mcmc_post[:, :n_theta] = np.exp(mcmc_post[:, :n_theta])
@@ -285,51 +332,50 @@ This translates to the following set of definitions for this 2-state ODE.
 ```{code-cell} ipython3
 # format observations to be taken by fenrir
 y_obs = jnp.expand_dims(Yt, -1) 
-trans_obs = jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]]) 
-mean_obs = jnp.zeros((2, 1))
+trans_obs = jnp.zeros((len(y_obs), n_vars, 1, n_deriv[0]))
+trans_obs = trans_obs.at[:].set(jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]]))
 var_obs = noise_sd**2*jnp.array([[[1.]],[[1.]]])
 ```
 
 The way to construct a likelihood estimation is very similar to the basic method. The one difference is that since `fenrir` gives a direct approximation to $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$, the function `fenrir_nlpost` uses that instead.
 
 ```{code-cell} ipython3
-def fenrir_nlpost(phi):
-    r"Compute the negative loglikihood of :math:`Y_t` using DALTON."
-    x0 = phi[n_theta:].reshape((2,1))
-    theta = jnp.exp(phi[:n_theta])
+def logpost_fenrir(phi):
+    r"""
+    Compute the logposterior for the fenrir solver in the Fitz-Hugh Nagumo ODE.
+    Sames arguments as `fitz_logpost_basic`.
+    """
+    theta, x0, sigma = constrain_pars(phi)
     v0 = fitz(x0, 0, theta)
     x0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
-    loglik = rf.fenrir(key=key, fun=fitz, W=W, x0=x0, theta=theta, 
-                       tmin=tmin, tmax=tmax, n_res=n_res,
-                       trans_state=prior_pars['trans_state'], mean_state=prior_pars['mean_state'], var_state=prior_pars['var_state'],
-                       trans_obs=trans_obs, mean_obs=mean_obs, var_obs=var_obs, y_obs=y_obs, interrogate=interrogate_tronarp)
-    logprior = jnp.sum(jsp.stats.norm.logpdf(
-        x=phi,
-        loc=phi_mean,
-        scale=phi_sd
-    ))
-    
-    return -(loglik + logprior)
+    var_state = jax.vmap(lambda b: sigma[b]**2*prior_pars['var_state'][b])(jnp.arange(2))
+    loglik = rf.fenrir(
+        key=key,
+        fun=fitz,
+        W=W,
+        x0=x0,
+        theta=theta,
+        tmin=tmin,
+        tmax=tmax,
+        interrogate=interrogate_kramer,
+        n_res=n_res,
+        trans_state=prior_pars['trans_state'],
+        var_state=var_state,
+        trans_obs=trans_obs,
+        var_obs=var_obs,
+        y_obs=jnp.expand_dims(Yt, -1)
 
-def phi_fit(phi_init):
-    r"""Compute the optimized :math:`\log{\theta}` and its variance given 
-        :math:`Y_t`."""
-    n_phi = len(phi_init)
-    hes = jacfwd(jacrev(fenrir_nlpost))
-    solver = ScipyMinimize(method="Newton-CG", fun = fenrir_nlpost)
-    opt_res = solver.run(phi_init)
-    phi_hat = opt_res.params
-    phi_fisher = hes(phi_hat)
-    phi_var = jsp.linalg.solve(phi_fisher, jnp.eye(n_phi))
-    return phi_hat, phi_var
+    )
+    logprior = jnp.sum(jsp.stats.norm.logpdf(phi[:n_phi], phi_mean, phi_sd))
+    return -(loglik + logprior)
 ```
 
 ```{code-cell} ipython3
 # optimization process
 phi_init = jnp.append(jnp.log(theta_true), ode0)
-phi_hat, phi_var = phi_fit(phi_init)
-fenrir_post = phi_sample(phi_hat, phi_var, n_samples)
-fenrir_post[:, :n_theta] = np.exp(fenrir_post[:, :n_theta])
+phi_init = jnp.append(phi_init, jnp.ones(n_vars))
+fenrir_post = bna_fit(key, logpost_fenrir, n_samples, phi_init)
+fenrir_post = fenrir_post.at[:, :n_theta].set(np.exp(fenrir_post[:, :n_theta]))
 ```
 
 ### Dalton
@@ -345,45 +391,42 @@ Finally, we present the method, `dalton`, developed by [Wu, Lysy](https://arxiv.
 where the data is used directly in the forward pass instead of just the backward pass of `fenrir`. For Gaussian observations such as this example, `dalton.loglikelihood` is the appropriate function to use.
 
 ```{code-cell} ipython3
-def dalton_nlpost(phi):
-    r"Compute the negative loglikihood of :math:`Y_t` using DALTON."
-    x0 = phi[n_theta:].reshape((2,1))
-    theta = jnp.exp(phi[:n_theta])
+def logpost_dalton(phi):
+    r"""
+    Compute the logposterior for the dalton solver in the Fitz-Hugh Nagumo ODE.
+    Sames arguments as `fitz_logpost_basic`.
+    """
+    theta, x0, sigma = constrain_pars(phi)
     v0 = fitz(x0, 0, theta)
     x0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
-    loglik = rd.loglikehood(key=key, fun=fitz, W=W, x0=x0, theta=theta, 
-                            tmin=tmin, tmax=tmax, n_res=n_res,
-                            trans_state=prior_pars['trans_state'], mean_state=prior_pars['mean_state'], 
-                            var_state=prior_pars['var_state'],
-                            trans_obs=trans_obs, mean_obs=mean_obs, var_obs=var_obs, 
-                            y_obs=y_obs, interrogate=interrogate_tronarp)
-    logprior = jnp.sum(jsp.stats.norm.logpdf(
-        x=phi,
-        loc=phi_mean,
-        scale=phi_sd
-    ))
-    
-    return -(loglik + logprior)
+    var_state = jax.vmap(lambda b: sigma[b]**2*prior_pars['var_state'][b])(jnp.arange(2))
+    loglik = rd.dalton(
+        key=key,
+        fun=fitz,
+        W=W,
+        x0=x0,
+        theta=theta,
+        tmin=tmin,
+        tmax=tmax,
+        interrogate=interrogate_kramer,
+        n_res=n_res,
+        trans_state=prior_pars['trans_state'],
+        var_state=var_state,
+        trans_obs=trans_obs,
+        var_obs=var_obs,
+        y_obs=jnp.expand_dims(Yt, -1)
 
-def phi_fit(phi_init):
-    r"""Compute the optimized :math:`\log{\theta}` and its variance given 
-        :math:`Y_t`."""
-    n_phi = len(phi_init)
-    hes = jacfwd(jacrev(dalton_nlpost))
-    solver = ScipyMinimize(method="Newton-CG", fun = dalton_nlpost)
-    opt_res = solver.run(phi_init)
-    phi_hat = opt_res.params
-    phi_fisher = hes(phi_hat)
-    phi_var = jsp.linalg.solve(phi_fisher, jnp.eye(n_phi))
-    return phi_hat, phi_var
+    )
+    logprior = jnp.sum(jsp.stats.norm.logpdf(phi[:n_phi], phi_mean, phi_sd))
+    return -(loglik + logprior)
 ```
 
 ```{code-cell} ipython3
 # optimization process
 phi_init = jnp.append(jnp.log(theta_true), ode0)
-phi_hat, phi_var = phi_fit(phi_init)
-dalton_post = phi_sample(phi_hat, phi_var, n_samples)
-dalton_post[:, :n_theta] = np.exp(dalton_post[:, :n_theta])
+phi_init = jnp.append(phi_init, jnp.ones(n_vars))
+dalton_post = bna_fit(key, logpost_dalton, n_samples, phi_init)
+dalton_post = dalton_post.at[:, :n_theta].set(np.exp(dalton_post[:, :n_theta]))
 ```
 
 ## Results
@@ -413,60 +456,64 @@ Now suppose that the noisy observation model is
 \begin{equation}\label{eq:fitznoiseng}
     Y_{ij} \sim \operatorname{Poisson}(\exp{b_0 + b_1x_j(t_i)}),
 \end{equation}
-where $b_0 = 0.1$ and $b_1 = 0.5$. 
+where $b_0 = 0.1$ and $b_1 = 0.5$.
 
 ```{code-cell} ipython3
 # simulate data
 b0 = 0.1
 b1 = 0.5
 Yt = np.random.default_rng(0).poisson(lam = jnp.exp(b0+b1*exact))
-trans_obs = jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]])
+trans_obs = jnp.zeros((len(y_obs), n_vars, 1, n_deriv[0]))
+trans_obs = trans_obs.at[:].set(jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]]))
 y_obs = jnp.expand_dims(Yt, -1)
 ```
 
 For non-Gaussian observations, please use `dalton.loglikelihood_nn`. The inputs are the same as `dalton.loglikelihood` with `mean_obs` and `var_obs` replaced by `fun_obs`, which is the loglikelihood function of the observation. The rest of the process is the same as the Gaussian example.
 
 ```{code-cell} ipython3
-def loglik(x_obs, y_curr):
+def fun_obs(x_obs, y_curr, theta, i):
     "Likelihood of observation for DALTON"
     n_block = y_curr.shape[0]
     b0 = 0.1
     b1 = 0.5
     return jnp.sum(jax.vmap(lambda b: jsp.stats.poisson.logpmf(y_curr[b], jnp.exp(b0+b1*x_obs[b])))(jnp.arange(n_block)))
 
-def dalton_nlpost(phi):
-    r"Compute the negative loglikihood of :math:`Y_t` using a DALTON."
-    x0 = phi[n_theta:].reshape((2,1))
-    theta = jnp.exp(phi[:n_theta])
+def logpost_dalton(phi):
+    r"""
+    Compute the logposterior for the dalton solver in the Fitz-Hugh Nagumo ODE.
+    Sames arguments as `fitz_logpost_basic`.
+    """
+    theta, x0, sigma = constrain_pars(phi)
     v0 = fitz(x0, 0, theta)
     x0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
-    lp = rd.loglikehood_nn(key=key, fun=fitz, W=W, x0=x0, theta=theta, 
-                            tmin=tmin, tmax=tmax, n_res=n_res,
-                            trans_state=prior_pars['trans_state'], mean_state=prior_pars['mean_state'], 
-                            var_state=prior_pars['var_state'],
-                            fun_obs=loglik, trans_obs=trans_obs, y_obs=y_obs, interrogate=interrogate_tronarp)
-    lp += logprior(phi[:n_phi], phi_mean, phi_sd)
-    return -lp
+    var_state = jax.vmap(lambda b: sigma[b]**2*prior_pars['var_state'][b])(jnp.arange(2))
+    loglik = rd.daltonng(
+        key=key,
+        fun=fitz,
+        W=W,
+        x0=x0,
+        theta=theta,
+        tmin=tmin,
+        tmax=tmax,
+        interrogate=interrogate_kramer,
+        n_res=n_res,
+        trans_state=prior_pars['trans_state'],
+        var_state=var_state,
+        fun_obs=fun_obs,
+        trans_obs=trans_obs,
+        y_obs=jnp.expand_dims(Yt, -1)
 
-def phi_fit(phi_init):
-    r"""Compute the optimized :math:`\log{\theta}` and its variance given 
-        :math:`Y_t`."""
-    n_phi = len(phi_init)
-    hes = jacfwd(jacrev(dalton_nlpost))
-    solver = ScipyMinimize(method="Newton-CG", fun = dalton_nlpost)
-    opt_res = solver.run(phi_init)
-    phi_hat = opt_res.params
-    phi_fisher = hes(phi_hat)
-    phi_var = jsp.linalg.solve(phi_fisher, jnp.eye(n_phi))
-    return phi_hat, phi_var
+    )
+    logprior = jnp.sum(jsp.stats.norm.logpdf(phi[:n_phi], phi_mean, phi_sd))
+    return -(loglik + logprior)
 ```
 
 ```{code-cell} ipython3
 # optimization process
 phi_init = jnp.append(jnp.log(theta_true), ode0)
-phi_hat, phi_var = phi_fit(phi_init)
-dalton_post = phi_sample(phi_hat, phi_var, n_samples)
-dalton_post[:, :n_theta] = np.exp(dalton_post[:, :n_theta])
+phi_init = jnp.append(phi_init, jnp.ones(n_vars))
+dalton_post = bna_fit(key, logpost_dalton, n_samples, phi_init)
+dalton_post = dalton_post.at[:, :n_theta].set(np.exp(dalton_post[:, :n_theta]))
 ```
 
 ## Results
@@ -476,7 +523,7 @@ fig, axs = plt.subplots(1, 5, figsize=(20,5))
 for i in range(5):
     tmp_data = dalton_post[:, i]
     if i==1:
-        tmp_data = tmp_data[(tmp_data>0) & (tmp_data<4)]
+        tmp_data = tmp_data[(tmp_data>0) & (tmp_data<3)]
     sns.kdeplot(tmp_data, ax=axs[i], label='dalton')
     axs[i].axvline(x=param_true[i], linewidth=1, color='r', linestyle='dashed')
     axs[i].set_ylabel("")

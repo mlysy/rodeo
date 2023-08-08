@@ -23,7 +23,7 @@ Fenrir combines the observations
 
 .. math::
 
-    y_m = D X_m + \Omega^{1/2} \epsilon_m,
+    y_m = D_m X_m + \Omega^{1/2} \epsilon_m,
 
 with the reverse pass model to condition on data.
 """
@@ -31,11 +31,12 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from rodeo.kalmantv import *
+from rodeo.utils import multivariate_normal_logpdf
 
 # use linearizations first then observations
 def forward(key, fun, W, x0, theta,
             tmin, tmax, n_steps,
-            trans_state, mean_state, var_state,
+            trans_state, var_state,
             interrogate):
     r"""
     Forward pass of the Fenrir algorithm.
@@ -50,7 +51,6 @@ def forward(key, fun, W, x0, theta,
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         interrogate (function): Function defining the linearization method.
 
@@ -67,6 +67,7 @@ def forward(key, fun, W, x0, theta,
 
     # arguments for kalman_filter and kalman_smooth
     x_meas = jnp.zeros((n_block, n_bmeas))
+    mean_state = jnp.zeros((n_block, n_bstate))
     mean_state_init = x0
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
@@ -94,15 +95,15 @@ def forward(key, fun, W, x0, theta,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
         )
+        W_meas = W + trans_meas
         # kalman update
         mean_state_next, var_state_next = jax.vmap(lambda b:
             update(
                 mean_state_pred=mean_state_pred[b],
                 var_state_pred=var_state_pred[b],
-                W=W[b],
                 x_meas=x_meas[b],
                 mean_meas=mean_meas[b],
-                trans_meas=trans_meas[b],
+                trans_meas=W_meas[b],
                 var_meas=var_meas[b]
             )
         )(jnp.arange(n_block))
@@ -189,18 +190,18 @@ def backward_param(mean_state_filt, var_state_filt,
     var_state_cond = jnp.concatenate([var_state_cond, var_state_end[None]])
     return trans_state_cond, mean_state_cond, var_state_cond
 
-def backward(trans_state, mean_state, var_state,
-             trans_obs, mean_obs, var_obs, y_obs):
+def backward(n_res, trans_state, mean_state, var_state,
+             trans_obs, var_obs, y_obs):
     
     r"""
     Backward pass of Fenrir algorithm where observations are used.
 
     Args:
+        n_res (int): Resolution number determining how to thin solution process to match observations.
         trans_state (ndarray(n_steps, n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`A_{0:N}`.
         mean_state (ndarray(n_steps+1, n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`b_{0:N}`.
         var_state (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`C_{0:N}`.
-        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
-        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        trans_obs (ndarray(n_obs, n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D_{0:M}`.
         var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
         y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
 
@@ -209,9 +210,13 @@ def backward(trans_state, mean_state, var_state,
 
     """
     # Add point to beginning of state variable for simpler loop
-    n_tot, n_block, n_bstate = mean_state.shape
+    n_obs, n_block, n_bobs, n_bstate = trans_obs.shape
+    n_steps = (n_obs-1)*n_res
     trans_state_end = jnp.zeros(trans_state.shape[1:])
     trans_state = jnp.concatenate([trans_state, trans_state_end[None]])
+
+    # offset of obs is assumed to be 0
+    mean_obs = jnp.zeros((n_block, n_bobs))
 
     # reverse pass
     def scan_fun(carry, back_args):
@@ -220,7 +225,8 @@ def backward(trans_state, mean_state, var_state,
         trans_state = back_args['trans_state']
         mean_state = back_args['mean_state']
         var_state = back_args['var_state']
-        y_obs = back_args['y_obs']
+        t = back_args['t']
+        i = t//n_res
 
         # kalman predict
         mean_state_pred, var_state_pred = jax.vmap(lambda b:
@@ -241,37 +247,38 @@ def backward(trans_state, mean_state, var_state,
 
         # y_obs is not None
         def _obs():
+            y_curr = y_obs[i]
+            trans_curr = trans_obs[i]
             # kalman forecast
             mean_state_fore, var_state_fore = jax.vmap(lambda b:
                 forecast(
                     mean_state_pred = mean_state_pred[b],
                     var_state_pred = var_state_pred[b],
-                    W = trans_obs[b],
                     mean_meas = mean_obs[b],
-                    trans_meas = trans_obs[b],
+                    trans_meas = trans_curr[b],
                     var_meas = var_obs[b]
                     )
             )(jnp.arange(n_block))
             # logdensity of forecast
             # logp = 0.0
             logp = jnp.sum(jax.vmap(lambda b:
-                jsp.stats.multivariate_normal.logpdf(y_obs[b], mean=mean_state_fore[b], cov=var_state_fore[b])
+                # jsp.stats.multivariate_normal.logpdf(y_curr[b], mean=mean_state_fore[b], cov=var_state_fore[b])
+                multivariate_normal_logpdf(y_curr[b], mean=mean_state_fore[b], cov=var_state_fore[b])
             )(jnp.arange(n_block)))
             # kalman update
             mean_state_filt, var_state_filt = jax.vmap(lambda b:
                 update(
                     mean_state_pred=mean_state_pred[b],
                     var_state_pred=var_state_pred[b],
-                    W = trans_obs[b],
-                    x_meas=y_obs[b],
-                    mean_meas = mean_obs[b],
-                    trans_meas = trans_obs[b],
+                    x_meas=y_curr[b],
+                    mean_meas=mean_obs[b],
+                    trans_meas=trans_curr[b],
                     var_meas=var_obs[b]
                 )
             )(jnp.arange(n_block))
             return mean_state_filt, var_state_filt, logp
 
-        mean_state_filt, var_state_filt, logp = jax.lax.cond(jnp.isnan(y_obs).any(), _no_obs, _obs)
+        mean_state_filt, var_state_filt, logp = jax.lax.cond(i*n_res == t, _obs, _no_obs)
         logdens += logp
 
         # output
@@ -294,15 +301,16 @@ def backward(trans_state, mean_state, var_state,
         "trans_state" : trans_state,
         "mean_state" : mean_state,
         "var_state" : var_state,
-        "y_obs": y_obs
+        # "y_obs": y_obs
+        "t": jnp.arange(n_steps+1)
     }
 
     scan_out, scan_out2 = jax.lax.scan(scan_fun, scan_init, back_args, reverse=True)
     return scan_out["logdens"], scan_out2
     
 def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
-           trans_state, mean_state, var_state,
-           trans_obs, mean_obs, var_obs, y_obs,
+           trans_state, var_state,
+           trans_obs, var_obs, y_obs,
            interrogate):
     
     r"""
@@ -318,10 +326,8 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_res (int): Resolution number determining how to thin solution process to match observations.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
-        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
         var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
         y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
@@ -330,16 +336,15 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
         (float) : The logdensity of :math:`p(y_{0:M} \mid z_{0:N})`.
 
     """
-    n_obs, n_block, n_bobs = y_obs.shape
+    n_obs = y_obs.shape[0]
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
-    y_obs = y_res.at[::n_res].set(y_obs)
+
     # forward pass
     filt_out = forward(
         key=key, fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, n_steps=n_steps,
         trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
+        var_state=var_state,
         interrogate=interrogate
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
@@ -356,9 +361,9 @@ def fenrir(key, fun, W, x0, theta, tmin, tmax, n_res,
 
     # reverse pass
     logdens, _ = backward(
-        trans_state=trans_state_cond, mean_state=mean_state_cond, 
-        var_state=var_state_cond, trans_obs=trans_obs,
-        mean_obs=mean_obs, var_obs=var_obs, y_obs=y_obs
+        n_res=n_res, trans_state=trans_state_cond, 
+        mean_state=mean_state_cond, var_state=var_state_cond, 
+        trans_obs=trans_obs, var_obs=var_obs, y_obs=y_obs
     )
 
     return logdens
@@ -430,8 +435,8 @@ def _smooth_mv(trans_state, state_par):
     return mean_state_smooth, var_state_smooth
 
 def fenrir_mv(key, fun, W, x0, theta, tmin, tmax, n_res,
-              trans_state, mean_state, var_state,
-              trans_obs, mean_obs, var_obs, y_obs, interrogate):
+              trans_state, var_state,
+              trans_obs, var_obs, y_obs, interrogate):
     
     r"""
     Fenrir algorithm to compute the mean and variance of :math:`X_{0:N}`.
@@ -446,10 +451,8 @@ def fenrir_mv(key, fun, W, x0, theta, tmin, tmax, n_res,
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_res (int): Resolution number determining how to thin solution process to match observations.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
-        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
         var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
         y_obs (ndarray(n_steps, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
@@ -460,16 +463,15 @@ def fenrir_mv(key, fun, W, x0, theta, tmin, tmax, n_res,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-    n_obs, n_block, n_bobs = y_obs.shape
+    n_obs = y_obs.shape[0]
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
-    y_obs = y_res.at[::n_res].set(y_obs)
+
     # forward pass
     filt_out = forward(
         key=key, fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, n_steps=n_steps,
         trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
+        var_state=var_state,
         interrogate=interrogate
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
@@ -486,9 +488,9 @@ def fenrir_mv(key, fun, W, x0, theta, tmin, tmax, n_res,
 
     # reverse pass
     _, state_par = backward(
-        trans_state=trans_state_cond, mean_state=mean_state_cond, 
-        var_state=var_state_cond, trans_obs=trans_obs,
-        mean_obs=mean_obs, var_obs=var_obs, y_obs=y_obs
+        n_res=n_res, trans_state=trans_state_cond, 
+        mean_state=mean_state_cond, var_state=var_state_cond, 
+        trans_obs=trans_obs, var_obs=var_obs, y_obs=y_obs
     )
     mean_state_smooth, var_state_smooth = _smooth_mv(trans_state_cond, state_par)
     return mean_state_smooth, var_state_smooth

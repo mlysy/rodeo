@@ -89,11 +89,9 @@ def ibm_init(dt, n_deriv, sigma):
     """
     n_block = len(n_deriv)
     p = max(n_deriv)
-    mean_state = jnp.zeros((n_block, p))
 
     trans_state, var_state = jax.vmap(lambda b:
         ibm_state(dt, p-1, sigma[b]))(jnp.arange(n_block))
     
-    init = {"trans_state": trans_state,  "mean_state": mean_state,
-            "var_state": var_state}
+    init = {"trans_state": trans_state, "var_state": var_state}
     return init

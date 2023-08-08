@@ -51,7 +51,6 @@ def ibm_init(dt, n_deriv, sigma):
     """
     n_block = len(n_deriv)
     p = max(n_deriv)
-    mean_state = np.zeros((n_block, p))
     trans_state = [None]*n_block
     var_state = [None]*n_block
     for i in range(n_block):
@@ -61,8 +60,7 @@ def ibm_init(dt, n_deriv, sigma):
     #    trans_state = trans_state[0]
     #    var_state = var_state[0]
     
-    init = {"trans_state":trans_state,  "mean_state":mean_state,
-            "var_state":var_state}
+    init = {"trans_state":trans_state, "var_state":var_state}
     return init
 
 
@@ -79,22 +77,18 @@ def indep_init(init, n_deriv):
         - **kinit** (dict): Dictionary holding the computed initial parameters for the
           Kalman solver.
     """
-    mean_state_i = init['mean_state']
     trans_state_i = init['trans_state']
     var_state_i = init['var_state']
 
     n_var = len(var_state_i)
     p = sum(n_deriv)
-    mean_state = np.zeros((p,), order='F')
     trans_state = np.zeros((p, p), order='F')
     var_state = np.zeros((p, p), order='F')
     ind = 0
     for i in range(n_var):
-        mean_state[ind:ind+n_deriv[i]] = mean_state_i[i]
         trans_state[ind:ind+n_deriv[i], ind:ind+n_deriv[i]] = trans_state_i[i]
         var_state[ind:ind+n_deriv[i], ind:ind+n_deriv[i]] = var_state_i[i]
         ind += n_deriv[i]
-    kinit = {"trans_state":trans_state, "mean_state":mean_state,
-            "var_state":var_state}
+    kinit = {"trans_state":trans_state, "var_state":var_state}
     
     return kinit

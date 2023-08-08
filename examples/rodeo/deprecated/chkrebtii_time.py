@@ -153,6 +153,7 @@ grad_jit1 = jax.jit(jax.grad(logpost_rodeo))
 grad_jit2 = jax.jit(jax.grad(logpost_diffrax))
 
 # rodeo grad
+grad_jit1(thetaj, y_meas, gamma)
 start = timer()
 for i in range(n_loops):
     _ = grad_jit1(thetaj, y_meas, gamma)
@@ -160,6 +161,7 @@ end = timer()
 time_jaxgrad = (end - start)/n_loops
 
 # diffrax grad
+grad_jit2(thetaj, y_meas, gamma)
 start = timer()
 for i in range(n_loops):
     _ = grad_jit2(thetaj, y_meas, gamma)

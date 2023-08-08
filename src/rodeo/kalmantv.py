@@ -73,7 +73,6 @@ def predict(mean_state_past, var_state_past,
 
 def update(mean_state_pred,
            var_state_pred,
-           W,
            x_meas,
            mean_meas,
            trans_meas,
@@ -86,10 +85,10 @@ def update(mean_state_pred,
     Args:
         mean_state_pred (ndarray(n_state)): Mean estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\mu_{n|n-1}`.
         var_state_pred (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\Sigma_{n|n-1}`.
+        W (ndarray(n_meas, n_state)): Matrix for getting the derivative; denoted by :math:`W`.
         x_meas (ndarray(n_meas)): Interrogated measure vector from `x_state`; :math:`y_n`.
         mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d`.
-        W (ndarray(n_meas, n_state)): Matrix for getting the derivative; denoted by :math:`W`.
-        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W+B`.
+        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`B_n`.
         var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
 
     Returns:
@@ -98,7 +97,9 @@ def update(mean_state_pred,
         - **var_state_filt** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
 
     """
-    mean_meas_pred = W.dot(mean_state_pred) + mean_meas
+    # trans_meas = W + trans_meas
+    # mean_meas_pred = W.dot(mean_state_pred) + mean_meas
+    mean_meas_pred = trans_meas.dot(mean_state_pred) + mean_meas
     var_meas_state_pred = trans_meas.dot(var_state_pred)
     var_meas_meas_pred = jnp.linalg.multi_dot(
         [trans_meas, var_state_pred, trans_meas.T]) + var_meas
@@ -131,9 +132,10 @@ def filter(mean_state_past,
         mean_state (ndarray(n_state)): Transition offsets defining the solution prior; denoted by :math:`c`.
         trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
         var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; denoted by :math:`R`.
+        W (ndarray(n_meas, n_state)): Matrix for getting the derivative; denoted by :math:`W`.
         x_meas (ndarray(n_meas)): Interrogated measure vector from `x_state`; :math:`y_n`.
         mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d`.
-        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W`.
+        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`B_n`.
         var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
 
     Returns:
@@ -154,7 +156,6 @@ def filter(mean_state_past,
     mean_state_filt, var_state_filt = update(
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
-        W=trans_meas,
         x_meas=x_meas,
         mean_meas=mean_meas,
         trans_meas=trans_meas,
@@ -301,7 +302,6 @@ def smooth(x_state_next,
 
 def forecast(mean_state_pred,
              var_state_pred,
-             W,
              mean_meas,
              trans_meas,
              var_meas):
@@ -311,16 +311,18 @@ def forecast(mean_state_pred,
     Args:
         mean_state_pred(ndarray(n_state)): Mean estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\mu_{n | n-1}`.
         var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
-        mean_meas(ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d`.
-        trans_meas(ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W`.
-        var_meas(ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
+        W (ndarray(n_meas, n_state)): Matrix for getting the derivative; denoted by :math:`W`.
+        mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d`.
+        trans_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`B_n`.
+        var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`\Sigma_n`.
 
     Returns:
         (tuple):
         - **mean_fore** (ndarray(n_meas)): Mean estimate for measurement at n given observations from [0...n-1]
         - **var_fore** (ndarray(n_meas, n_meas)): Covariance of estimate for state at time n given observations from times[0...n-1]
     """
-    mean_fore = W.dot(mean_state_pred) + mean_meas
+    # trans_meas = W + trans_meas
+    mean_fore = trans_meas.dot(mean_state_pred) + mean_meas
     var_fore = jnp.linalg.multi_dot(
         [trans_meas, var_state_pred, trans_meas.T]) + var_meas
     return mean_fore, var_fore

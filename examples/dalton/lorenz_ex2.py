@@ -5,7 +5,7 @@ import jax.scipy as jsp
 from rodeo.ode import interrogate_tronarp
 from rodeo.fenrir import fenrir
 from rodeo.ibm import ibm_init
-from rodeo.dalton import loglikehood
+from rodeo.dalton import dalton
 from jaxopt import ScipyMinimize
 import warnings
 warnings.filterwarnings('ignore')
@@ -24,9 +24,9 @@ def dalton_nlpost(phi, x0):
     theta = jnp.exp(phi[:n_phi])
     sigma = phi[-1]
     var_state = sigma**2*ode_init['var_state']
-    lp = loglikehood(key, lorenz, W_block, x0, theta, tmin, tmax, n_res,
+    lp = dalton(key, lorenz, W_block, x0, theta, tmin, tmax, n_res,
             ode_init['trans_state'], ode_init['mean_state'], var_state,
-            trans_obs, mean_obs, var_obs, y_obs, interrogate_tronarp)
+            trans_obs, var_obs, y_obs, interrogate_tronarp)
     lp += logprior(phi[:n_phi], phi_mean, phi_sd)
     return -lp
 
@@ -38,7 +38,7 @@ def fenrir_nlpost(phi, x0):
     var_state = sigma**2*ode_init['var_state']
     lp = fenrir(key, lorenz, W_block, x0, theta, tmin, tmax, n_res,
                 ode_init['trans_state'], ode_init['mean_state'], var_state,
-                trans_obs, mean_obs, var_obs, y_obs, interrogate_tronarp)
+                trans_obs, var_obs, y_obs, interrogate_tronarp)
     lp += logprior(phi[:n_phi], phi_mean, phi_sd)
     return -lp
 
@@ -122,9 +122,8 @@ obs = exact + gamma*e_t
 y_obs = jnp.expand_dims(obs, -1)
 
 # arguments involving the observations for solvers
-mean_obs = jnp.zeros((n_var, 1))
-trans_obs = np.zeros((n_var, 1, n_deriv))
-trans_obs[:, :, 0] = 1
+trans_obs = np.zeros((n_obs+1, n_var, 1, n_deriv))
+trans_obs[:, :, :, 0] = 1
 trans_obs = jnp.array(trans_obs)
 var_obs = gamma**2*jnp.ones((n_var, 1, 1))
 

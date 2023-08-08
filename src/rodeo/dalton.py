@@ -19,7 +19,7 @@ In the Gaussian case, we assume the observation model is
 
 .. math::
 
-    y_m = D X_m + \Omega^{1/2} \epsilon_m.
+    y_m = D_m X_m + \Omega^{1/2} \epsilon_m.
 
 We assume that the :math:`M \leq N`, so that the observation step size is larger than that of the evaluation step size.
 
@@ -29,33 +29,14 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from rodeo.kalmantv import *
+from rodeo.utils import multivariate_normal_logpdf
 import rodeo.ode as rode
-
-def multivariate_normal_logpdf(x, mean, cov):
-    r"""Using eigendecomposition to compute multivariate normal logpdf.
-    
-    Args:
-        x (ndarray(p)): Observations.
-        mean (ndarray(p)): Mean of the distribution.
-        cov (ndarray(p, p)): Symmetric positive (semi)definite covariance matrix of the distribution.
-    
-    Returns:
-        (float): The logpdf of the multivariate normal.
-    """
-    w, v = jnp.linalg.eigh(cov)
-    z = jnp.dot(v.T, x - mean)
-    z2 = z**2
-    iw = ~jnp.isclose(w/jnp.max(w), 0, atol=1e-15)
-    w = jnp.where(iw, w, 1.) # remove possibility of nan
-    val = z2/w + jnp.log(w)
-    val = -.5 * jnp.sum(jnp.where(iw, val, 0.)) - jnp.sum(iw)*.5*jnp.log(2*jnp.pi) 
-    return val
 
 # use linearizations and observations
 def _solve_filter(key, fun, W, x0, theta,
-                  tmin, tmax, n_steps,
-                  trans_state, mean_state, var_state,
-                  trans_obs, mean_obs, var_obs, y_obs, 
+                  tmin, tmax, n_res,
+                  trans_state, var_state,
+                  trans_obs, var_obs, y_obs, 
                   interrogate):
     r"""
     Forward pass of the DALTON algorithm with Gaussian observations.
@@ -68,12 +49,11 @@ def _solve_filter(key, fun, W, x0, theta,
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
+        n_res (int): Resolution number determining how to thin solution process to match observations.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
-        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        trans_obs (ndarray(n_obs, n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
         var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
         y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
@@ -88,9 +68,13 @@ def _solve_filter(key, fun, W, x0, theta,
     """
     # Dimensions of block, state and measure variables
     n_block, n_bmeas, n_bstate = W.shape
+    n_obs, _, n_bobs = y_obs.shape
+    n_steps = (n_obs-1)*n_res
 
     # arguments for kalman_filter and kalman_smooth
     x_meas = jnp.zeros((n_block, n_bmeas))
+    mean_obs = jnp.zeros((n_block, n_bobs))
+    mean_state = jnp.zeros((n_block, n_bstate))
     mean_state_init = x0
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
@@ -100,7 +84,7 @@ def _solve_filter(key, fun, W, x0, theta,
         mean_state_filt, var_state_filt = carry["state_filt"]
         key, subkey = jax.random.split(carry["key"])
         t = args['t']
-        y_curr = args['y_obs']
+        i = (t+1)//n_res
         # kalman predict
         mean_state_pred, var_state_pred = jax.vmap(lambda b:
             predict(
@@ -121,20 +105,20 @@ def _solve_filter(key, fun, W, x0, theta,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
         )
+        W_meas = W + trans_meas
         # both z and y are observed
         def zy_update():
-            trans_meas_obs = jnp.concatenate([trans_meas, trans_obs], axis=1)
+            y_curr = y_obs[i]
+            trans_curr = trans_obs[i]
+            trans_meas_obs = jnp.concatenate([W_meas, trans_curr], axis=1)
             mean_meas_obs = jnp.concatenate([mean_meas, mean_obs], axis=1)
-            # var_meas_obs = jnp.concatenate([var_meas, var_obs], axis=1)
             var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], var_obs[b]))(jnp.arange(n_block))
             x_meas_obs = jnp.concatenate([x_meas, y_curr], axis=1)
-            W_obs = jnp.concatenate([W, trans_obs], axis=1)
             # kalman update
             mean_state_next, var_state_next = jax.vmap(lambda b:
                 update(
                     mean_state_pred=mean_state_pred[b],
                     var_state_pred=var_state_pred[b],
-                    W=W_obs[b],
                     x_meas=x_meas_obs[b],
                     mean_meas=mean_meas_obs[b],
                     trans_meas=trans_meas_obs[b],
@@ -149,16 +133,15 @@ def _solve_filter(key, fun, W, x0, theta,
                 update(
                     mean_state_pred=mean_state_pred[b],
                     var_state_pred=var_state_pred[b],
-                    W=W[b],
                     x_meas=x_meas[b],
                     mean_meas=mean_meas[b],
-                    trans_meas=trans_meas[b],
+                    trans_meas=W_meas[b],
                     var_meas=var_meas[b]
                 )
             )(jnp.arange(n_block))
             return mean_state_next, var_state_next
 
-        mean_state_next, var_state_next = jax.lax.cond(jnp.isnan(y_curr).any(), z_update, zy_update)
+        mean_state_next, var_state_next = jax.lax.cond(i*n_res == (t+1), zy_update, z_update)
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
@@ -177,8 +160,8 @@ def _solve_filter(key, fun, W, x0, theta,
     }
     # args for scan
     scan_args = {
-        't': jnp.arange(n_steps),
-        'y_obs': y_obs[1:]
+        't': jnp.arange(n_steps)
+        # 'y_obs': y_obs[1:]
     }
 
     # scan itself
@@ -194,111 +177,10 @@ def _solve_filter(key, fun, W, x0, theta,
     )
     return scan_out
 
-def solve_sim(key, fun, W, x0, theta,
-             tmin, tmax, n_res,
-             trans_state, mean_state, var_state,
-             trans_obs, mean_obs, var_obs, y_obs, 
-             interrogate):
-    r"""
-    DALTON algorithm to compute a sample draw of :math:`X_{0:N}` assuming Gaussian observations.
-
-    Args:
-        key (PRNGKey): PRNG key.
-        fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
-        W (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior; :math:`W`.
-        x0 (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
-        theta (ndarray(n_theta)): Parameters in the ODE function.
-        tmin (float): First time point of the time interval to be evaluated; :math:`a`.
-        tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_res (int): Determines number of evaluations between observations; resolution number.
-        trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
-        mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
-        var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
-        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
-        var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
-        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
-        interrogate (function): Function defining the linearization method.
-
-    Returns:
-        (ndarray(n_steps+1, n_blocks, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
-
-    """
-    # Reshaping y_obs to be in blocks 
-    n_obs, n_block, n_bobs = y_obs.shape
-    n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
-    y_obs = y_res.at[::n_res].set(y_obs)
-    
-    # prng keys
-    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
-
-    # forward pass
-    filt_out = _solve_filter(
-        key=key,
-        fun=fun, W=W, x0=x0, theta=theta,
-        tmin=tmin, tmax=tmax, 
-        n_steps=n_steps, trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
-        trans_obs=trans_obs, mean_obs=mean_obs, 
-        var_obs=var_obs, y_obs=y_obs,
-        interrogate=interrogate
-    )
-    mean_state_pred, var_state_pred = filt_out["state_pred"]
-    mean_state_filt, var_state_filt = filt_out["state_filt"]
-
-    # backward pass
-    # lax.scan setup
-    def scan_fun(x_state_next, smooth_kwargs):
-        mean_state_filt = smooth_kwargs['mean_state_filt']
-        var_state_filt = smooth_kwargs['var_state_filt']
-        mean_state_pred = smooth_kwargs['mean_state_pred']
-        var_state_pred = smooth_kwargs['var_state_pred']
-        key = smooth_kwargs['key']
-
-        def vmap_fun(b):
-            mean_state_sim, var_state_sim = smooth_sim(
-                x_state_next=x_state_next[b],
-                trans_state=trans_state[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b]
-            )
-            return jax.random.multivariate_normal(key[b], mean_state_sim, var_state_sim)
-
-        x_state_curr = jax.vmap(lambda b:
-            vmap_fun(b)
-        )(jnp.arange(n_block))
-        return x_state_curr, x_state_curr
-    # initialize
-    scan_init = jax.vmap(lambda b:
-                         jax.random.multivariate_normal(
-                             subkeys[n_steps-1, b], 
-                             mean_state_filt[n_steps, b],
-                             var_state_filt[n_steps, b]))(jnp.arange(n_block))
-    # scan arguments
-    scan_kwargs = {
-        'mean_state_filt': mean_state_filt[1:n_steps],
-        'var_state_filt': var_state_filt[1:n_steps],
-        'mean_state_pred': mean_state_pred[2:n_steps+1],
-        'var_state_pred': var_state_pred[2:n_steps+1],
-        'key': subkeys[:n_steps-1]
-    }
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
-                               reverse=True)
-
-    # append initial values to front and back
-    x_state_smooth = jnp.concatenate(
-        [x0[None], scan_out, scan_init[None]]
-    )
-    return x_state_smooth
-
 def solve_mv(key, fun, W, x0, theta,
              tmin, tmax, n_res,
-             trans_state, mean_state, var_state,
-             trans_obs, mean_obs, var_obs, y_obs, 
+             trans_state, var_state,
+             trans_obs, var_obs, y_obs, 
              interrogate):
     r"""
     DALTON algorithm to compute the mean and variance of :math:`X_{0:N}` assuming Gaussian observations.
@@ -315,8 +197,7 @@ def solve_mv(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
-        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        trans_obs (ndarray(n_obs, n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
         var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
         y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
@@ -328,21 +209,18 @@ def solve_mv(key, fun, W, x0, theta,
 
     """
     # Reshaping y_obs to be in blocks 
-    n_obs, n_block, n_bobs = y_obs.shape
-    n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
-    y_obs = y_res.at[::n_res].set(y_obs)
+    n_block = trans_state.shape[0]
 
     # get dimensions
-    n_block, n_bstate = mean_state.shape
+    n_block, n_bstate, _ = trans_state.shape
     # forward pass
     filt_out = _solve_filter(
         key=key,
         fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, 
-        n_steps=n_steps, trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
-        trans_obs=trans_obs, mean_obs=mean_obs, 
+        n_res=n_res, trans_state=trans_state,
+        var_state=var_state,
+        trans_obs=trans_obs,
         var_obs=var_obs, y_obs=y_obs,
         interrogate=interrogate
     )
@@ -399,7 +277,7 @@ def solve_mv(key, fun, W, x0, theta,
     return mean_state_smooth, var_state_smooth
 
 def _forecast_update(mean_state_pred, var_state_pred,
-                     W, x_meas, mean_meas,
+                     x_meas, mean_meas,
                      trans_meas, var_meas):
     r"""
     Perform one update step of the Kalman filter and forecast.
@@ -423,17 +301,15 @@ def _forecast_update(mean_state_pred, var_state_pred,
     mean_state_fore, var_state_fore = forecast(
         mean_state_pred = mean_state_pred,
         var_state_pred = var_state_pred,
-        W = W,
         mean_meas = mean_meas,
         trans_meas = trans_meas,
         var_meas = var_meas
     )
-    logdens = jsp.stats.multivariate_normal.logpdf(x_meas, mean=mean_state_fore, cov=var_state_fore)
+    logdens = multivariate_normal_logpdf(x_meas, mean=mean_state_fore, cov=var_state_fore)
     # kalman update
     mean_state_filt, var_state_filt = update(
         mean_state_pred = mean_state_pred,
         var_state_pred = var_state_pred,
-        W = W,
         x_meas = x_meas,
         mean_meas = mean_meas,
         trans_meas = trans_meas,
@@ -441,11 +317,11 @@ def _forecast_update(mean_state_pred, var_state_pred,
     )
     return logdens, mean_state_filt, var_state_filt
 
-def loglikehood(key, fun, W, x0, theta,
-                tmin, tmax, n_res,
-                trans_state, mean_state, var_state,
-                trans_obs, mean_obs, var_obs, y_obs, 
-                interrogate):
+def dalton(key, fun, W, x0, theta,
+           tmin, tmax, n_res,
+           trans_state, var_state,
+           trans_obs, var_obs, y_obs, 
+           interrogate):
     r"""
     Compute marginal loglikelihood of DALTON algorithm for Gaussian observations; :math:`p(y_{0:M} \mid z_{0:N})`.
 
@@ -461,8 +337,7 @@ def loglikehood(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
-        mean_obs (ndarray(n_block, n_bobs)): Transition offsets defining the noisy observations.
+        trans_obs (ndarray(n_obs, n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
         var_obs (ndarray(n_block, n_bobs, n_bobs)): Variance matrix defining the noisy observations; :math:`\Omega`.
         y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
@@ -472,16 +347,16 @@ def loglikehood(key, fun, W, x0, theta,
 
     """
     # Reshaping y_obs to be in blocks 
-    n_obs, n_block, n_bobs = y_obs.shape
+    n_obs, _, n_bobs = y_obs.shape
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
-    y_obs = y_res.at[::n_res].set(y_obs)
 
     # Dimensions of block, state and measure variables
     n_block, n_bmeas, n_bstate = W.shape
 
     # arguments for kalman_filter and kalman_smooth
     x_meas = jnp.zeros((n_block, n_bmeas))
+    mean_obs = jnp.zeros((n_block, n_bobs))
+    mean_state = jnp.zeros((n_block, n_bstate))
     mean_state_init = x0
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
@@ -495,7 +370,7 @@ def loglikehood(key, fun, W, x0, theta,
         logdens = carry["logdens"]
         key, subkey = jax.random.split(carry["key"])
         t = args['t']
-        y_curr = args["y_obs"]
+        i = (t+1)//n_res
         # kalman predict
         mean_state_pred, var_state_pred = jax.vmap(lambda b:
             predict(
@@ -516,18 +391,19 @@ def loglikehood(key, fun, W, x0, theta,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
         )
+        W_meas = trans_meas + W
         # both z and y are observed
         def zy_update():
-            trans_meas_obs = jnp.concatenate([trans_meas, trans_obs], axis=1)
+            y_curr = y_obs[i]
+            trans_curr = trans_obs[i]
+            trans_meas_obs = jnp.concatenate([W_meas, trans_curr], axis=1)
             mean_meas_obs = jnp.concatenate([mean_meas, mean_obs], axis=1)
             var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], var_obs[b]))(jnp.arange(n_block))
             x_meas_obs = jnp.concatenate([x_meas, y_curr], axis=1)
-            W_obs = jnp.concatenate([W, trans_obs], axis=1)
             logp, mean_state_next, var_state_next = jax.vmap(lambda b:
                 _forecast_update(
                     mean_state_pred=mean_state_pred[b],
                     var_state_pred=var_state_pred[b],
-                    W=W_obs[b],
                     x_meas=x_meas_obs[b],
                     mean_meas=mean_meas_obs[b],
                     trans_meas=trans_meas_obs[b],
@@ -542,16 +418,15 @@ def loglikehood(key, fun, W, x0, theta,
                 _forecast_update(
                     mean_state_pred=mean_state_pred[b],
                     var_state_pred=var_state_pred[b],
-                    W=W[b],
                     x_meas=x_meas[b],
                     mean_meas=mean_meas[b],
-                    trans_meas=trans_meas[b],
+                    trans_meas=W_meas[b],
                     var_meas=var_meas[b]
                 )                                                
             )(jnp.arange(n_block))
             return jnp.sum(logp), mean_state_next, var_state_next
 
-        logp, mean_state_next, var_state_next = jax.lax.cond(jnp.isnan(y_curr).any(), z_update, zy_update)
+        logp, mean_state_next, var_state_next = jax.lax.cond(i*n_res==(t+1), zy_update, z_update)
         logdens += logp
         # output
         carry = {
@@ -559,7 +434,7 @@ def loglikehood(key, fun, W, x0, theta,
             "logdens": logdens,
             "key": key
         }
-        return carry, carry
+        return carry, None
     
     # lax.scan setup
     # scan function
@@ -587,15 +462,15 @@ def loglikehood(key, fun, W, x0, theta,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
         )
+        W_meas = W + trans_meas
         # kalman forecast and update
         logp, mean_state_next, var_state_next = jax.vmap(lambda b:
             _forecast_update(
                 mean_state_pred=mean_state_pred[b],
                 var_state_pred=var_state_pred[b],
-                W=W[b],
                 x_meas=x_meas[b],
                 mean_meas=mean_meas[b],
-                trans_meas=trans_meas[b],
+                trans_meas=W_meas[b],
                 var_meas=var_meas[b]
             )                                                
         )(jnp.arange(n_block))
@@ -606,13 +481,13 @@ def loglikehood(key, fun, W, x0, theta,
             "logdens": logdens,
             "key": key
         }
-        return carry, carry
+        return carry, None
     
     # scan p(y, z|x)
     # compute log-density of p(y_0 |x_0)
     logdens_zy = jnp.sum(
         jax.vmap(lambda b:
-                 jsp.stats.multivariate_normal.logpdf(y_obs[0][b], mean=trans_obs[b].dot(x0[b]) + mean_obs[b], cov=var_obs[b])
+                 multivariate_normal_logpdf(y_obs[0][b], mean=trans_obs[0][b].dot(x0[b]) + mean_obs[b], cov=var_obs[b])
         )(jnp.arange(n_block)))
     # scan initial value
     scan_init_zy = {
@@ -622,11 +497,11 @@ def loglikehood(key, fun, W, x0, theta,
     }
     # args for scan
     scan_args = {
-        't': jnp.arange(n_steps),
-        'y_obs': y_obs[1:]
+        't': jnp.arange(n_steps)
+        # 'y_obs': y_obs[1:]
     }
     # scan itself
-    _, zy_out2 = jax.lax.scan(scan_zy, scan_init_zy, scan_args)
+    zy_out, _ = jax.lax.scan(scan_zy, scan_init_zy, scan_args)
     
     # scan p(z|x)
     # scan initial value
@@ -636,23 +511,14 @@ def loglikehood(key, fun, W, x0, theta,
         "key": key2
     }
     # scan itself
-    _, z_out2 = jax.lax.scan(scan_z, scan_init_z, jnp.arange(n_steps))
-    # append initial values to front
-    # zy_out2["state_filt"] = (
-    #     jnp.concatenate([mean_state_init[None], zy_out2["state_filt"][0]]),
-    #     jnp.concatenate([var_state_init[None], zy_out2["state_filt"][1]])
-    # )
-    # z_out2["state_filt"] = (
-    #     jnp.concatenate([mean_state_init[None], z_out2["state_filt"][0]]),
-    #     jnp.concatenate([var_state_init[None], z_out2["state_filt"][1]])
-    # )
-    return zy_out2["logdens"][-1] - z_out2["logdens"][-1]
+    z_out, _ = jax.lax.scan(scan_z, scan_init_z, jnp.arange(n_steps))
+    return zy_out["logdens"] - z_out["logdens"]
 
 # --------------------------------------------- Non Gaussian Observations ------------------------------------------------------------------
 
 def _solve_filter_nn(key, fun, W, x0, theta,
-                     tmin, tmax, n_steps,
-                     trans_state, mean_state, var_state,
+                     tmin, tmax, n_res,
+                     trans_state, var_state,
                      fun_obs, trans_obs, y_obs, 
                      interrogate):
     r"""
@@ -666,13 +532,13 @@ def _solve_filter_nn(key, fun, W, x0, theta,
         theta (ndarray(n_theta)): Parameters in the ODE function.
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
-        n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
+        n_res (int): Resolution number determining how to thin solution process to match observations.
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         fun_obs (function): Observation likelihood function.
-        trans_obs (ndarray(n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
-        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
+        trans_obs (ndarray(n_obs, n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
+        y_obs (ndarray(n_obs, n_yblock, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
@@ -685,13 +551,15 @@ def _solve_filter_nn(key, fun, W, x0, theta,
     """
     # Dimensions of block, state, measure and observation variables
     n_block, n_bmeas, n_bstate = W.shape
-    n_bobs = y_obs.shape[2]
+    n_obs, _, n_bobs = y_obs.shape
+    n_steps = (n_obs-1)*n_res
 
     # arguments for kalman_filter and kalman_smooth
-    mean_state_init = x0
-    var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
     x_meas = jnp.zeros((n_block, n_bmeas))
     mean_obs = jnp.zeros((n_block, n_bobs))
+    mean_state = jnp.zeros((n_block, n_bstate))
+    mean_state_init = x0
+    var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
     # lax.scan setup
     # scan function
@@ -699,7 +567,8 @@ def _solve_filter_nn(key, fun, W, x0, theta,
         mean_state_filt, var_state_filt = carry["state_filt"]
         key, subkey = jax.random.split(carry["key"])
         t = args['t']
-        y_curr = args['y_obs']
+        i = (t+1)//n_res
+        # y_curr = args['y_obs']
         # kalman predict
         mean_state_pred, var_state_pred = jax.vmap(lambda b:
             predict(
@@ -720,27 +589,27 @@ def _solve_filter_nn(key, fun, W, x0, theta,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
         )
-        
+        W_meas = W + trans_meas
         # both z and y are observed
         def zy_update():
+            y_curr = y_obs[i]
+            trans_curr = trans_obs[i]
             # transform to yhat
-            Cmu = jax.vmap(lambda b: trans_obs[b].dot(mean_state_pred[b]))(jnp.arange(n_block))
-            gpmu = jax.jacfwd(fun_obs)(Cmu, y_curr)
-            gppmu = jax.jacfwd(jax.jacrev(fun_obs))(Cmu, y_curr)
-            var_obs = jax.vmap(lambda b: -jnp.linalg.inv(gppmu[b, :, b]))(jnp.arange(n_block))
+            Cmu = jax.vmap(lambda b: trans_curr[b].dot(mean_state_pred[b]))(jnp.arange(n_block))
+            gpmu = jax.jacfwd(fun_obs)(Cmu, y_curr, theta, i)
+            gppmu = jax.jacfwd(jax.jacrev(fun_obs))(Cmu, y_curr, theta, i)
+            var_obs = jax.vmap(lambda b: -jnp.linalg.pinv(gppmu[b, :, b]))(jnp.arange(n_block))
             y_new = jax.vmap(lambda b: Cmu[b] + var_obs[b].dot(gpmu[b]))(jnp.arange(n_block))
             # stack measure and observation variables
-            trans_meas_obs = jnp.concatenate([trans_meas, trans_obs], axis=1)
+            trans_meas_obs = jnp.concatenate([W_meas, trans_curr], axis=1)
             mean_meas_obs = jnp.concatenate([mean_meas, mean_obs], axis=1)
             var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], var_obs[b]))(jnp.arange(n_block))
             x_meas_obs = jnp.concatenate([x_meas, y_new], axis=1)
-            W_obs = jnp.concatenate([W, trans_obs], axis=1)
             # kalman update
             mean_state_next, var_state_next = jax.vmap(lambda b:
                 update(
                     mean_state_pred=mean_state_pred[b],
                     var_state_pred=var_state_pred[b],
-                    W=W_obs[b],
                     x_meas=x_meas_obs[b],
                     mean_meas=mean_meas_obs[b],
                     trans_meas=trans_meas_obs[b],
@@ -756,16 +625,15 @@ def _solve_filter_nn(key, fun, W, x0, theta,
                 update(
                     mean_state_pred=mean_state_pred[b],
                     var_state_pred=var_state_pred[b],
-                    W=W[b],
                     x_meas=x_meas[b],
                     mean_meas=mean_meas[b],
-                    trans_meas=trans_meas[b],
+                    trans_meas=W_meas[b],
                     var_meas=var_meas[b]
                 )
             )(jnp.arange(n_block))
             return mean_state_next, var_state_next
 
-        mean_state_next, var_state_next = jax.lax.cond(jnp.isnan(y_curr).any(), z_update, zy_update)
+        mean_state_next, var_state_next = jax.lax.cond(i*n_res == (t+1), zy_update, z_update)
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
@@ -784,8 +652,8 @@ def _solve_filter_nn(key, fun, W, x0, theta,
     }
     # args for scan
     scan_args = {
-        't': jnp.arange(n_steps),
-        'y_obs': y_obs[1:]
+        't': jnp.arange(n_steps)
+        # 'y_obs': y_obs[1:]
     }
 
     # scan itself
@@ -803,7 +671,7 @@ def _solve_filter_nn(key, fun, W, x0, theta,
 
 def solve_mv_nn(key, fun, W, x0, theta,
                 tmin, tmax, n_res,
-                trans_state, mean_state, var_state,
+                trans_state, var_state,
                 fun_obs, trans_obs, y_obs, 
                 interrogate):
     r"""
@@ -821,8 +689,8 @@ def solve_mv_nn(key, fun, W, x0, theta,
         trans_state (ndarray(n_block, n_bstate, n_bstate)): Transition matrix defining the solution prior; :math:`Q`.
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         fun_obs (function): Observation likelihood function.
-        trans_obs (ndarray(n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
-        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
+        trans_obs (ndarray(n_obs, n_block, n_bobs, n_bstate)): Transition matrix defining the noisy observations; :math:`D`.
+        y_obs (ndarray(n_obs, n_yblock, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
 
     Returns:
@@ -832,20 +700,18 @@ def solve_mv_nn(key, fun, W, x0, theta,
 
     """
     # get dimensions
-    n_block, n_bstate = mean_state.shape
+    n_block, n_bstate, _ = trans_state.shape
     # Reshaping y_obs to be in blocks 
-    n_obs, n_block, n_bobs = y_obs.shape
+    n_obs = y_obs.shape[0]
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
-    y_obs = y_res.at[::n_res].set(y_obs)
 
     # forward pass
     filt_out = _solve_filter_nn(
         key=key,
         fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, 
-        n_steps=n_steps, trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
+        n_res=n_res, trans_state=trans_state,
+        var_state=var_state,
         fun_obs=fun_obs, trans_obs=trans_obs, y_obs=y_obs,
         interrogate=interrogate
     )
@@ -1066,11 +932,11 @@ def _logx_z(uncond_mean,
     
     return scan_out["logx_z"]
 
-def loglikehood_nn(key, fun, W, x0, theta,
-                   tmin, tmax, n_res,
-                   trans_state, mean_state, var_state,
-                   fun_obs, trans_obs, y_obs, 
-                   interrogate):
+def daltonng(key, fun, W, x0, theta,
+             tmin, tmax, n_res,
+             trans_state, var_state,
+             fun_obs, trans_obs, y_obs, 
+             interrogate):
     r"""
     Compute marginal loglikelihood of DALTON algorithm for non-Gaussian observations; :math:`p(y_{0:M} \mid z_{0:N})`.
 
@@ -1087,8 +953,8 @@ def loglikehood_nn(key, fun, W, x0, theta,
         mean_state (ndarray(n_block, n_bstate)): Transition_offsets defining the solution prior; :math:`c`.
         var_state (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         fun_obs (function): Observation likelihood function.
-        trans_obs (ndarray(n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
-        y_obs (ndarray(n_obs, n_block, n_bobs)): Observed data; :math:`y_{0:M}`.
+        trans_obs (ndarray(n_obs, n_block, n_bobs, n_state)): Transition matrix defining the noisy observations; :math:`D`.
+        y_obs (ndarray(n_obs, n_yblock, n_bobs)): Observed data; :math:`y_{0:M}`.
         interrogate (function): Function defining the linearization method.
     
     Returns:
@@ -1096,21 +962,17 @@ def loglikehood_nn(key, fun, W, x0, theta,
 
     """
     # Reshaping y_obs to be in blocks 
-    n_obs, n_block, n_bobs = y_obs.shape
+    n_block = W.shape[0]
+    n_obs = y_obs.shape[0]
     n_steps = (n_obs-1)*n_res
-    y_res = jnp.ones((n_steps+1, n_block, n_bobs))*jnp.nan
-    y_obs = y_res.at[::n_res].set(y_obs)
-
-    # Dimensions of block, state and measure variables
-    n_block, n_bmeas, n_bstate = W.shape
 
     # forward pass
     filt_out = _solve_filter_nn(
         key=key,
         fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, 
-        n_steps=n_steps, trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
+        n_res=n_res, trans_state=trans_state,
+        var_state=var_state,
         fun_obs=fun_obs, trans_obs=trans_obs, y_obs=y_obs,
         interrogate=interrogate
     )
@@ -1127,10 +989,11 @@ def loglikehood_nn(key, fun, W, x0, theta,
     )
 
     # logp(y | x)
-    def vmap_fun(t):
-        Cx = jax.vmap(lambda b: trans_obs[b].dot(mean_state_smooth[t][b]))(jnp.arange(n_block))
-        return fun_obs(Cx, y_obs[t])
-    logy_x = jnp.sum(jax.vmap(vmap_fun)(jnp.arange(0, n_steps+1, n_res)))
+    def vmap_fun(i):
+        t = i*n_res
+        Cx = jax.vmap(lambda b: trans_obs[i][b].dot(mean_state_smooth[t][b]))(jnp.arange(n_block))
+        return fun_obs(Cx, y_obs[i], theta, i)
+    logy_x = jnp.sum(jax.vmap(vmap_fun)(jnp.arange(0, n_obs+1)))
 
     # logp(x | z)
     # first do forward pass without obs
@@ -1139,7 +1002,7 @@ def loglikehood_nn(key, fun, W, x0, theta,
         fun=fun, W=W, x0=x0, theta=theta,
         tmin=tmin, tmax=tmax, 
         n_steps=n_steps, trans_state=trans_state,
-        mean_state=mean_state, var_state=var_state,
+        var_state=var_state,
         interrogate=interrogate
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]

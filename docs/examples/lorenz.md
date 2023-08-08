@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.14.1
+    jupytext_version: 1.14.7
 kernelspec:
   display_name: Python 3 (ipykernel)
   language: python
@@ -34,7 +34,7 @@ import jax.numpy as jnp
 from scipy.integrate import odeint
 
 from rodeo.ibm import ibm_init
-from rodeo.ode import interrogate_tronarp
+from rodeo.ode import interrogate_kramer
 import rodeo.ode as ro
 import rodeo.fenrir as rf
 import rodeo.dalton as rd
@@ -132,29 +132,29 @@ This translates to the following set of definitions for this 3-state ODE.
 ```{code-cell} ipython3
 y_obs = jnp.expand_dims(obs, -1) 
 mean_obs = jnp.zeros((n_var, 1))
-trans_obs = np.zeros((n_var, 1, n_deriv))
-trans_obs[:, :, 0] = 1
+trans_obs = np.zeros((len(y_obs), n_var, 1, n_deriv))
+trans_obs[:, :, :, 0] = 1
 trans_obs = jnp.array(trans_obs)
 var_obs = gamma**2*jnp.ones((n_var, 1, 1))
 ```
 
-We explore a different interrogation method in this example. Our default is `interrogate_rodeo` which is a mix of the zeroth-order Taylor approximation proposed by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7) and the interrogation of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259). We instead use `interrogate_tronarp` which is the first-order Taylor approximation proposed by [Tronarp et al (2018)](http://arxiv.org/abs/1810.03440) which is more accurate at the cost of computation speed.
+We explore a different interrogation method in this example. Our default is `interrogate_rodeo` which is a mix of the zeroth-order Taylor approximation proposed by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7) and the interrogation of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259). We instead use `interrogate_kramer` which is the first-order Taylor approximation proposed by [Kramer et al (2021)](https://arxiv.org/pdf/2110.11812.pdf) which is more accurate at the cost of computation speed.
 
 ```{code-cell} ipython3
 # rodeo
 rodeo, _ = ro.solve_mv(key, lorenz, W, x0, theta, tmin, tmax, n_steps,
-                       ode_init['trans_state'], ode_init['mean_state'], ode_init['var_state'],
-                       interrogate_tronarp)
+                       ode_init['trans_state'], ode_init['var_state'],
+                       interrogate_kramer)
 
 # dalton
 dalton, _ = rd.solve_mv(key, lorenz, W, x0, theta, tmin, tmax, n_res,
-                        ode_init['trans_state'], ode_init['mean_state'], ode_init['var_state'],
-                        trans_obs, mean_obs, var_obs, y_obs, interrogate_tronarp)
+                        ode_init['trans_state'], ode_init['var_state'],
+                        trans_obs, var_obs, y_obs, interrogate_kramer)
 
 # fenrir
 fenrir, _ = rf.fenrir_mv(key, lorenz, W, x0, theta, tmin, tmax, n_res,
-                        ode_init['trans_state'], ode_init['mean_state'], ode_init['var_state'],
-                        trans_obs, mean_obs, var_obs, y_obs, interrogate_tronarp)
+                        ode_init['trans_state'], ode_init['var_state'],
+                        trans_obs, var_obs, y_obs, interrogate_kramer)
 ```
 
 ```{code-cell} ipython3

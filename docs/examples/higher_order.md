@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.14.1
+    jupytext_version: 1.14.7
 kernelspec:
   display_name: Python 3 (ipykernel)
   language: python
@@ -77,7 +77,7 @@ ode_init = ibm_init(dt, n_order, sigma)
 # Jit solver
 key = jax.random.PRNGKey(0)
 sim_jit = jax.jit(solve_sim, static_argnums=(1, 7))
-xt = sim_jit(key=key, fun=ode_fun,
+xt = sim_jit(key, ode_fun,
              W=W_block, x0=x0_block, theta=None,
              tmin=tmin, tmax=tmax, n_steps=n_steps, **ode_init)
 ```

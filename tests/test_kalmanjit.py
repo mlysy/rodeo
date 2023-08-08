@@ -53,18 +53,18 @@ class TestKalmanTVJit(unittest.TestCase):
         var_state_pred = var_state_pred.dot(var_state_pred.T)
         # without jit
         mean_state_filt1, var_state_filt1 = \
-             ktv.update(mean_state_pred, var_state_pred, self.trans_meas[0],
+             ktv.update(mean_state_pred, var_state_pred,
                         self.x_meas[0], self.mean_meas[0], self.trans_meas[0], self.var_meas[0])
         # with jit
         update_jit = jax.jit(ktv.update)
         mean_state_filt2, var_state_filt2 = \
-            update_jit(mean_state_pred, var_state_pred, self.trans_meas[0],
+            update_jit(mean_state_pred, var_state_pred,
                        self.x_meas[0], self.mean_meas[0], self.trans_meas[0], self.var_meas[0])
         # objective function for gradient
         def obj_fun(mean_state_pred, var_state_pred,
                     x_meas, mean_meas, trans_meas, var_meas):
             return jnp.mean(
-                ktv.update(mean_state_pred, var_state_pred, self.trans_meas[0],
+                ktv.update(mean_state_pred, var_state_pred,
                            x_meas, mean_meas, trans_meas, var_meas)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(
@@ -295,12 +295,12 @@ class TestKalmanTVJit(unittest.TestCase):
         var_state_pred = var_state_pred.dot(var_state_pred.T)
         # without jit
         mean_fore1, var_fore1 = \
-            ktv.forecast(mean_state_pred, var_state_pred, self.trans_meas[0],
+            ktv.forecast(mean_state_pred, var_state_pred,
                          self.mean_meas[0], self.trans_meas[0], self.var_meas[0])
         # with jit
         fore_jit = jax.jit(ktv.forecast)
         mean_fore2, var_fore2 = \
-            fore_jit(mean_state_pred, var_state_pred, self.trans_meas[0],
+            fore_jit(mean_state_pred, var_state_pred,
                      self.mean_meas[0], self.trans_meas[0], self.var_meas[0])
         # objective function for gradient
         def obj_fun(mean_state_pred, var_state_pred, W,
