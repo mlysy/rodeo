@@ -44,23 +44,23 @@ def ibm_init(dt, n_deriv, sigma):
         
     Returns:
         (dict):
-        - **trans_state** (ndarray(n_block, p, p)) Transition matrix defining the solution prior; :math:`Q_n`.
+        - **wgt_state** (ndarray(n_block, p, p)) Transition matrix defining the solution prior; :math:`Q_n`.
         - **mean_state** (ndarray(n_block, p)): Transition_offsets defining the solution prior; denoted by :math:`c_n`.
         - **var_state** (ndarray(n_block, p, p)) Variance matrix defining the solution prior; :math:`R_n`.
 
     """
     n_block = len(n_deriv)
     p = max(n_deriv)
-    trans_state = [None]*n_block
+    wgt_state = [None]*n_block
     var_state = [None]*n_block
     for i in range(n_block):
-        trans_state[i], var_state[i] = ibm_state(dt, n_deriv[i]-1, sigma[i])
+        wgt_state[i], var_state[i] = ibm_state(dt, n_deriv[i]-1, sigma[i])
     
     #if n_var == 1:
-    #    trans_state = trans_state[0]
+    #    wgt_state = wgt_state[0]
     #    var_state = var_state[0]
     
-    init = {"trans_state":trans_state, "var_state":var_state}
+    init = {"wgt_state":wgt_state, "var_state":var_state}
     return init
 
 
@@ -77,18 +77,18 @@ def indep_init(init, n_deriv):
         - **kinit** (dict): Dictionary holding the computed initial parameters for the
           Kalman solver.
     """
-    trans_state_i = init['trans_state']
+    wgt_state_i = init['wgt_state']
     var_state_i = init['var_state']
 
     n_var = len(var_state_i)
     p = sum(n_deriv)
-    trans_state = np.zeros((p, p), order='F')
+    wgt_state = np.zeros((p, p), order='F')
     var_state = np.zeros((p, p), order='F')
     ind = 0
     for i in range(n_var):
-        trans_state[ind:ind+n_deriv[i], ind:ind+n_deriv[i]] = trans_state_i[i]
+        wgt_state[ind:ind+n_deriv[i], ind:ind+n_deriv[i]] = wgt_state_i[i]
         var_state[ind:ind+n_deriv[i], ind:ind+n_deriv[i]] = var_state_i[i]
         ind += n_deriv[i]
-    kinit = {"trans_state":trans_state, "var_state":var_state}
+    kinit = {"wgt_state":wgt_state, "var_state":var_state}
     
     return kinit

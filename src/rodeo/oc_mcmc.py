@@ -144,22 +144,6 @@ class oc_mcmc:
         ll_prev = state['ll']
         n_sam = state['n_sam']
         acc = state['acc']
-
-        # def _at100():
-        #     def _double():
-        #         return 2.0
-        #     def _half():
-        #         return 0.5
-        #     def _one():
-        #         return 1.0
-        #     scale1 = jax.lax.cond(acc/100 < 0.2, _half, _one)
-        #     scale2 = jax.lax.cond(acc/100 > 0.3, _double, _one)
-        #     return scale1*scale2, acc
-        # def _notat100():
-        #     return 1.0, acc
-        # boolt = n_sam % 100 == 0 and n_sam > 0 and n_sam < 1100
-        # scale, acc = jax.lax.cond(boolt, _at100, _notat100)
-        # self.param = scale*self.param
         theta_prop = self.prop_sample(keys[0], theta_prev, self.param)
         X_prop = self.solve(keys[1], theta_prop)
         ll_prop = self.loglik(X_prop) + self.logprior(theta_prop)

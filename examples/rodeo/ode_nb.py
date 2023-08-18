@@ -41,7 +41,7 @@ def interrogate_rodeo(key, fun, W, t, theta,
 
     Returns:
         (tuple):
-        - **trans_meas** (ndarray(n_meas, n_state)): Interrogation transition matrix.
+        - **wgt_meas** (ndarray(n_meas, n_state)): Interrogation transition matrix.
         - **mean_meas** (ndarray(n_meas)): Interrogation offset.
         - **var_meas** (ndarray(n_meas, n_meas)): Interrogation variance.
 
@@ -95,20 +95,20 @@ def interrogate_kramer(key, fun, W, t, theta,
     p = int(n_state/n_meas)
     fun_meas = -fun(mean_state_pred, t, theta)
     jac = jax.jacfwd(fun)(mean_state_pred, t, theta)
-    trans_meas = -jac
+    wgt_meas = -jac
     mean_meas = fun_meas + jac.dot(mean_state_pred)
     # var_meas = jax.vmap(lambda wm, vsp:
     #                     jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
-    #     trans_meas, var_state_pred
+    #     wgt_meas, var_state_pred
     # )
     var_meas = jnp.zeros((n_meas, n_meas))
-    return trans_meas, mean_meas, var_meas
+    return wgt_meas, mean_meas, var_meas
 
 
 
 def _solve_filter(key, fun, W, x0, theta,
                   tmin, tmax, n_steps,
-                  trans_state, var_state,
+                  wgt_state, var_state,
                   interrogate=interrogate_rodeo):
     r"""
     Forward pass of the ODE solver.
@@ -122,7 +122,7 @@ def _solve_filter(key, fun, W, x0, theta,
         tmin (float): First time point of the time interval to be evaluated; :math:`a`.
         tmax (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
-        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`Q`.
+        wgt_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`Q`.
         var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
         interrogate (function): Function defining the interrogation method.
 
@@ -153,11 +153,11 @@ def _solve_filter(key, fun, W, x0, theta,
             mean_state_past=mean_state_filt,
             var_state_past=var_state_filt,
             mean_state=mean_state,
-            trans_state=trans_state,
+            wgt_state=wgt_state,
             var_state=var_state
         )
         # model interrogation
-        trans_meas, mean_meas, var_meas = interrogate(
+        wgt_meas, mean_meas, var_meas = interrogate(
             key=subkey,
             fun=fun,
             t=tmin + (tmax-tmin)*(t+1)/n_steps,
@@ -166,14 +166,14 @@ def _solve_filter(key, fun, W, x0, theta,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred
         )
-        W_meas = W + trans_meas
+        W_meas = W + wgt_meas
         # kalman update
         mean_state_next, var_state_next = update(
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
             x_meas=x_meas,
             mean_meas=mean_meas,
-            trans_meas=W_meas,
+            wgt_meas=W_meas,
             var_meas=var_meas
         )
         # output
@@ -207,7 +207,7 @@ def _solve_filter(key, fun, W, x0, theta,
 
 def solve_sim(key, fun, W, x0, theta,
               tmin, tmax, n_steps,
-              trans_state, var_state,
+              wgt_state, var_state,
               interrogate=interrogate_rodeo):
     r"""
     Random draw from the stochastic ODE solver.
@@ -220,7 +220,7 @@ def solve_sim(key, fun, W, x0, theta,
         tmin (int): First time point of the time interval to be evaluated; :math:`a`.
         tmax (int): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`T`.
+        wgt_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`T`.
         var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
         W (ndarray(n_state)): Transition matrix defining the measure prior; :math:`W`.
         interrogate: Function defining the interrogation method.
@@ -229,7 +229,7 @@ def solve_sim(key, fun, W, x0, theta,
         **x_state_smooth** (ndarray(n_steps, n_state)): Sample solution at time t given observations from times [0...N] for :math:`t = 0,1/N,\ldots,1`.
 
     """
-    n_state = trans_state.shape[0]
+    n_state = wgt_state.shape[0]
     key, *subkeys = jax.random.split(key, num=n_steps+1)
     subkeys = jnp.array(subkeys)
     # z_state = jax.random.normal(subkey, (n_steps, n_state))
@@ -239,7 +239,7 @@ def solve_sim(key, fun, W, x0, theta,
         key=key,
         fun=fun, theta=theta, x0=x0,
         tmin=tmin, tmax=tmax, n_steps=n_steps,
-        W=W, trans_state=trans_state,
+        W=W, wgt_state=wgt_state,
         var_state=var_state,
         interrogate=interrogate
     )
@@ -257,7 +257,7 @@ def solve_sim(key, fun, W, x0, theta,
 
         mean_state_sim, var_state_sim = smooth_sim(
             x_state_next=x_state_next,
-            trans_state=trans_state,
+            wgt_state=wgt_state,
             mean_state_filt=mean_state_filt,
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
@@ -302,7 +302,7 @@ def solve_sim(key, fun, W, x0, theta,
 
 def solve_mv(key, fun, W, x0, theta,
              tmin, tmax, n_steps,
-             trans_state, var_state,
+             wgt_state, var_state,
              interrogate=interrogate_rodeo):
     r"""
     Mean and variance of the stochastic ODE solver.
@@ -315,7 +315,7 @@ def solve_mv(key, fun, W, x0, theta,
         tmin (int): First time point of the time interval to be evaluated; :math:`a`.
         tmax (int): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`T`.
+        wgt_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`T`.
         var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
         W (ndarray(n_state)): Transition matrix defining the measure prior; :math:`W`.
         interrogate: Function defining the interrogation method.
@@ -328,14 +328,14 @@ def solve_mv(key, fun, W, x0, theta,
           times :math:`t = 0,1/N,\ldots,1`.
 
     """
-    n_state = trans_state.shape[0]
+    n_state = wgt_state.shape[0]
     # forward pass
     # key, subkey = jax.random.split(key)
     filt_out = _solve_filter(
         key=key,
         fun=fun, theta=theta, x0=x0,
         tmin=tmin, tmax=tmax, n_steps=n_steps,
-        W=W, trans_state=trans_state,
+        W=W, wgt_state=wgt_state,
         var_state=var_state,
         interrogate=interrogate
     )
@@ -348,13 +348,13 @@ def solve_mv(key, fun, W, x0, theta,
         mean_state_curr, var_state_curr = smooth_mv(
             mean_state_next=state_next["mu"],
             var_state_next=state_next["var"],
-            trans_state=trans_state,
+            wgt_state=wgt_state,
             **smooth_kwargs
             # mean_state_filt=mean_state_filt[t],
             # var_state_filt=var_state_filt[t],
             # mean_state_pred=var_state_pred[t+1],
             # var_state_pred=var_state_pred[t+1],
-            # trans_state=trans_state
+            # wgt_state=wgt_state
         )
         state_curr = {
             "mu": mean_state_curr,
@@ -390,7 +390,7 @@ def solve_mv(key, fun, W, x0, theta,
 
 def solve(key, fun, W, x0, theta,
           tmin, tmax, n_steps,
-          trans_state, var_state,
+          wgt_state, var_state,
           interrogate=interrogate_rodeo):
     r"""
     Both random draw and mean/variance of the stochastic ODE solver. 
@@ -403,7 +403,7 @@ def solve(key, fun, W, x0, theta,
         tmin (int): First time point of the time interval to be evaluated; :math:`a`.
         tmax (int): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = b/N`.
-        trans_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`T`.
+        wgt_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; :math:`T`.
         var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; :math:`R`.
         W (ndarray(n_state)): Transition matrix defining the measure prior; :math:`W`.
         interrogate: Function defining the interrogation method.
@@ -413,7 +413,7 @@ def solve(key, fun, W, x0, theta,
           :math:`t = 0,1/N,\ldots,1`.
 
     """
-    n_state = trans_state.shape[0]
+    n_state = wgt_state.shape[0]
     key, *subkeys = jax.random.split(key, num=n_steps+1)
     subkeys = jnp.array(subkeys)
 
@@ -423,7 +423,7 @@ def solve(key, fun, W, x0, theta,
         key=key,
         fun=fun, theta=theta, x0=x0,
         tmin=tmin, tmax=tmax, n_steps=n_steps,
-        W=W, trans_state=trans_state,
+        W=W, wgt_state=wgt_state,
         var_state=var_state,
         interrogate=interrogate
     )
@@ -442,7 +442,7 @@ def solve(key, fun, W, x0, theta,
             x_state_next=state_next["x"],
             mean_state_next=state_next["mu"],
             var_state_next=state_next["var"],
-            trans_state=trans_state,
+            wgt_state=wgt_state,
             mean_state_filt=mean_state_filt,
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,

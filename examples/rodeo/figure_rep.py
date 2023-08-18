@@ -338,7 +338,7 @@ def bna_fit(key, fun, n_samples, phi_init, x0):
 #         tmax=tmax,
 #         interrogate=interrogate_kramer,
 #         n_steps=n_steps,
-#         trans_state=prior_pars['trans_state'],
+#         wgt_state=prior_pars['wgt_state'],
 #         var_state=var_state
 #     )
 #     # compute the loglikelihood and the log-prior
@@ -390,7 +390,7 @@ def bna_fit(key, fun, n_samples, phi_init, x0):
 #         tmax=tmax,
 #         interrogate=interrogate_kramer,
 #         n_res=n_res,
-#         trans_state=prior_pars['trans_state'],
+#         wgt_state=prior_pars['wgt_state'],
 #         var_state=var_state,
 #         trans_obs=trans_obs,
 #         var_obs=var_obs,
@@ -419,7 +419,7 @@ def bna_fit(key, fun, n_samples, phi_init, x0):
 #         tmax=tmax,
 #         interrogate=interrogate_kramer,
 #         n_res=n_res,
-#         trans_state=prior_pars['trans_state'],
+#         wgt_state=prior_pars['wgt_state'],
 #         var_state=var_state,
 #         # var_state=prior_pars['var_state'],
 #         trans_obs=trans_obs,
@@ -464,7 +464,7 @@ def bna_fit(key, fun, n_samples, phi_init, x0):
 #             tmax=tmax,
 #             interrogate=interrogate_chkrebtii,
 #             n_steps=n_steps,
-#             trans_state=prior_pars['trans_state'],
+#             wgt_state=prior_pars['wgt_state'],
 #             var_state=var_state
 #         )
 #         Xt = Xt[::self.n_res, :, 0]
@@ -775,7 +775,7 @@ def bna_fit(key, fun, n_samples, phi_init, x0):
 #         tmax=tmax,
 #         interrogate=interrogate_kramer,
 #         n_steps=n_steps,
-#         trans_state=prior_pars['trans_state'],
+#         wgt_state=prior_pars['wgt_state'],
 #         # var_state=prior_pars['var_state']
 #         var_state=var_state
 #     )
@@ -826,7 +826,7 @@ def bna_fit(key, fun, n_samples, phi_init, x0):
 #         tmax=tmax,
 #         interrogate=interrogate_kramer,
 #         n_res=n_res,
-#         trans_state=prior_pars['trans_state'],
+#         wgt_state=prior_pars['wgt_state'],
 #         var_state=var_state,
 #         trans_obs=trans_obs,
 #         var_obs=var_obs,
@@ -1037,7 +1037,7 @@ def seirah_logpost_basic(phi, x0):
         tmax=tmax,
         interrogate=interrogate_kramer,
         n_steps=n_steps,
-        trans_state=prior_pars['trans_state'],
+        wgt_state=prior_pars['wgt_state'],
         var_state=var_state
     )
     # compute the loglikelihood and the log-prior
@@ -1092,7 +1092,7 @@ def seirah_logpost_dalton(phi, x0):
         tmax=tmax,
         interrogate=interrogate_kramer,
         n_res=n_res,
-        trans_state=prior_pars['trans_state'],
+        wgt_state=prior_pars['wgt_state'],
         # var_state=prior_pars['var_state'],
         var_state =var_state,
         fun_obs=fun_obs,

@@ -132,9 +132,9 @@ This translates to the following set of definitions for this 3-state ODE.
 ```{code-cell} ipython3
 y_obs = jnp.expand_dims(obs, -1) 
 mean_obs = jnp.zeros((n_var, 1))
-trans_obs = np.zeros((len(y_obs), n_var, 1, n_deriv))
-trans_obs[:, :, :, 0] = 1
-trans_obs = jnp.array(trans_obs)
+wgt_obs = np.zeros((len(y_obs), n_var, 1, n_deriv))
+wgt_obs[:, :, :, 0] = 1
+wgt_obs = jnp.array(wgt_obs)
 var_obs = gamma**2*jnp.ones((n_var, 1, 1))
 ```
 
@@ -143,18 +143,18 @@ We explore a different interrogation method in this example. Our default is `int
 ```{code-cell} ipython3
 # rodeo
 rodeo, _ = ro.solve_mv(key, lorenz, W, x0, theta, tmin, tmax, n_steps,
-                       ode_init['trans_state'], ode_init['var_state'],
+                       ode_init['wgt_state'], ode_init['var_state'],
                        interrogate_kramer)
 
 # dalton
 dalton, _ = rd.solve_mv(key, lorenz, W, x0, theta, tmin, tmax, n_res,
-                        ode_init['trans_state'], ode_init['var_state'],
-                        trans_obs, var_obs, y_obs, interrogate_kramer)
+                        ode_init['wgt_state'], ode_init['var_state'],
+                        wgt_obs, var_obs, y_obs, interrogate_kramer)
 
 # fenrir
 fenrir, _ = rf.fenrir_mv(key, lorenz, W, x0, theta, tmin, tmax, n_res,
-                        ode_init['trans_state'], ode_init['var_state'],
-                        trans_obs, var_obs, y_obs, interrogate_kramer)
+                        ode_init['wgt_state'], ode_init['var_state'],
+                        wgt_obs, var_obs, y_obs, interrogate_kramer)
 ```
 
 ```{code-cell} ipython3

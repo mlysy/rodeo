@@ -14,7 +14,7 @@ class TestrodeoFor(unittest.TestCase):
     setUp = utils.fitz_setup 
 
     def test_interrogate_rodeo(self):
-        trans_meas1, mean_meas1, var_meas1 = interrogate_rodeo(
+        wgt_meas1, mean_meas1, var_meas1 = interrogate_rodeo(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -24,7 +24,7 @@ class TestrodeoFor(unittest.TestCase):
             var_state_pred=self.var_block
         )
         # for
-        trans_meas2, mean_meas2, var_meas2 = bfor.interrogate_rodeo(
+        wgt_meas2, mean_meas2, var_meas2 = bfor.interrogate_rodeo(
             key=self.key,
             fun=self.fitz_jax,
             W = self.W_block,
@@ -34,12 +34,12 @@ class TestrodeoFor(unittest.TestCase):
             var_state_pred=self.var_block
         )
         
-        self.assertAlmostEqual(utils.rel_err(trans_meas1, trans_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(wgt_meas1, wgt_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(mean_meas1, mean_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var_meas1, var_meas2), 0.0)
     
     def test_interrogate_chkrebtii(self):
-        trans_meas1, mean_meas1, var_meas1 = interrogate_chkrebtii(
+        wgt_meas1, mean_meas1, var_meas1 = interrogate_chkrebtii(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -49,7 +49,7 @@ class TestrodeoFor(unittest.TestCase):
             var_state_pred=self.var_block
         )
         # for
-        trans_meas2, mean_meas2, var_meas2 = bfor.interrogate_chkrebtii(
+        wgt_meas2, mean_meas2, var_meas2 = bfor.interrogate_chkrebtii(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -59,12 +59,12 @@ class TestrodeoFor(unittest.TestCase):
             var_state_pred=self.var_block
         )
         
-        self.assertAlmostEqual(utils.rel_err(trans_meas1, trans_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(wgt_meas1, wgt_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(mean_meas1, mean_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var_meas1, var_meas2), 0.0)
 
     def test_interrogate_kramer(self):
-        trans_meas1, mean_meas1, var_meas1 = interrogate_kramer(
+        wgt_meas1, mean_meas1, var_meas1 = interrogate_kramer(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -74,7 +74,7 @@ class TestrodeoFor(unittest.TestCase):
             var_state_pred=self.var_block
         )
         # for
-        trans_meas2, mean_meas2, var_meas2 = bfor.interrogate_kramer(
+        wgt_meas2, mean_meas2, var_meas2 = bfor.interrogate_kramer(
             key=self.key,
             fun=self.fitz_jax,
             W=self.W_block,
@@ -84,7 +84,7 @@ class TestrodeoFor(unittest.TestCase):
             var_state_pred=self.var_block
         )
         
-        self.assertAlmostEqual(utils.rel_err(trans_meas1, trans_meas2), 0.0)
+        self.assertAlmostEqual(utils.rel_err(wgt_meas1, wgt_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(mean_meas1, mean_meas2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var_meas1, var_meas2), 0.0)
 

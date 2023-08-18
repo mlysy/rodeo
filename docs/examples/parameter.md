@@ -236,7 +236,7 @@ def logpost_basic(phi):
         tmax=tmax,
         interrogate=interrogate_kramer,
         n_steps=n_steps,
-        trans_state=prior_pars['trans_state'],
+        wgt_state=prior_pars['wgt_state'],
         var_state=var_state
     )
     # compute the loglikelihood and the log-prior
@@ -332,8 +332,8 @@ This translates to the following set of definitions for this 2-state ODE.
 ```{code-cell} ipython3
 # format observations to be taken by fenrir
 y_obs = jnp.expand_dims(Yt, -1) 
-trans_obs = jnp.zeros((len(y_obs), n_vars, 1, n_deriv[0]))
-trans_obs = trans_obs.at[:].set(jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]]))
+wgt_obs = jnp.zeros((len(y_obs), n_vars, 1, n_deriv[0]))
+wgt_obs = wgt_obs.at[:].set(jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]]))
 var_obs = noise_sd**2*jnp.array([[[1.]],[[1.]]])
 ```
 
@@ -359,9 +359,9 @@ def logpost_fenrir(phi):
         tmax=tmax,
         interrogate=interrogate_kramer,
         n_res=n_res,
-        trans_state=prior_pars['trans_state'],
+        wgt_state=prior_pars['wgt_state'],
         var_state=var_state,
-        trans_obs=trans_obs,
+        wgt_obs=wgt_obs,
         var_obs=var_obs,
         y_obs=jnp.expand_dims(Yt, -1)
 
@@ -410,9 +410,9 @@ def logpost_dalton(phi):
         tmax=tmax,
         interrogate=interrogate_kramer,
         n_res=n_res,
-        trans_state=prior_pars['trans_state'],
+        wgt_state=prior_pars['wgt_state'],
         var_state=var_state,
-        trans_obs=trans_obs,
+        wgt_obs=wgt_obs,
         var_obs=var_obs,
         y_obs=jnp.expand_dims(Yt, -1)
 
@@ -463,8 +463,8 @@ where $b_0 = 0.1$ and $b_1 = 0.5$.
 b0 = 0.1
 b1 = 0.5
 Yt = np.random.default_rng(0).poisson(lam = jnp.exp(b0+b1*exact))
-trans_obs = jnp.zeros((len(y_obs), n_vars, 1, n_deriv[0]))
-trans_obs = trans_obs.at[:].set(jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]]))
+wgt_obs = jnp.zeros((len(y_obs), n_vars, 1, n_deriv[0]))
+wgt_obs = wgt_obs.at[:].set(jnp.array([[[1., 0., 0.]], [[1., 0., 0.]]]))
 y_obs = jnp.expand_dims(Yt, -1)
 ```
 
@@ -497,10 +497,10 @@ def logpost_dalton(phi):
         tmax=tmax,
         interrogate=interrogate_kramer,
         n_res=n_res,
-        trans_state=prior_pars['trans_state'],
+        wgt_state=prior_pars['wgt_state'],
         var_state=var_state,
         fun_obs=fun_obs,
-        trans_obs=trans_obs,
+        wgt_obs=wgt_obs,
         y_obs=jnp.expand_dims(Yt, -1)
 
     )

@@ -134,22 +134,22 @@ def kalman_setup(self):
     self.mean_state = random.normal(subkeys[0], (self.n_tot, self.n_state))
     self.var_state = random.normal(subkeys[1], (self.n_tot, self.n_state, self.n_state))
     self.var_state = jax.vmap(lambda vs: vs.dot(vs.T))(self.var_state)
-    self.trans_state = 0.01*random.normal(subkeys[2], (self.n_tot-1, self.n_state, self.n_state))
-    # trans_state = jnp.zeros((n_tot-1, self.n_state, self.n_state))
+    self.wgt_state = 0.01*random.normal(subkeys[2], (self.n_tot-1, self.n_state, self.n_state))
+    # wgt_state = jnp.zeros((n_tot-1, self.n_state, self.n_state))
     self.mean_meas = random.normal(subkeys[3], (self.n_tot, self.n_meas,))
     self.var_meas = random.normal(subkeys[4], (self.n_tot, self.n_meas, self.n_meas))
     self.var_meas = jax.vmap(lambda vs: vs.dot(vs.T))(self.var_meas)
-    self.trans_meas = random.normal(subkeys[5], (self.n_tot, self.n_meas, self.n_state))
-    # trans_meas = jnp.zeros((n_tot, n_meas, self.n_state))
+    self.wgt_meas = random.normal(subkeys[5], (self.n_tot, self.n_meas, self.n_state))
+    # wgt_meas = jnp.zeros((n_tot, n_meas, self.n_state))
     self.x_meas = random.normal(subkeys[6], (self.n_tot, self.n_meas))
     self.x_state_next = random.normal(subkeys[7], (self.n_state,))
     self.z_state = random.normal(subkeys[8], (self.n_state,))
 
     A_gm, b_gm, C_gm = gm.kalman2gm(
-        trans_state=self.trans_state,
+        wgt_state=self.wgt_state,
         mean_state=self.mean_state,
         var_state=self.var_state,
-        trans_meas=self.trans_meas,
+        wgt_meas=self.wgt_meas,
         mean_meas=self.mean_meas,
         var_meas=self.var_meas
     )
