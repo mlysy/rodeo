@@ -44,7 +44,7 @@ def ibm_state(dt, q, sigma):
     """
     Calculate the state transition matrix and variance matrix of q-times integrated Brownian motion.
 
-    The q-times integrated Brownian motion process :math:`X_t` is such that its q-th order derivative :math:`X^{q}_t = d^q/dt^q X_t` is :math:`\sigma B_t`, i.e., Brownian motion scaled by :math:`\sigma`.
+    The q-times integrated Brownian motion process :math:`X_t` is such that its (q+1)-th order derivative :math:`X^{q+1}_t = d^q/dt^(q+1) X_t` is :math:`\sigma B_t`, i.e., Brownian motion scaled by :math:`\sigma`.
 
     Args:
         dt (float): The step size between simulation points.

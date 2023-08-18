@@ -35,6 +35,7 @@ class oc_mcmc:
         self.n_res = n_res
         self.prior_pars = prior_pars
         self.y_obs = y_obs
+        self.param = None
 
     def prop_lpdf(self, theta, theta_prime, param):
         r"""
@@ -118,7 +119,9 @@ class oc_mcmc:
         return {
             "theta": theta_init,
             "X_t": X_init,
-            "ll": ll_init
+            "ll": ll_init,
+            "acc": 0,
+            "n_sam": 0
         }
 
     def step(self, key, state, param):
@@ -139,26 +142,46 @@ class oc_mcmc:
         theta_prev = state['theta']
         X_prev = state['X_t']
         ll_prev = state['ll']
-        theta_prop = self.prop_sample(keys[0], theta_prev, param)
+        n_sam = state['n_sam']
+        acc = state['acc']
+
+        # def _at100():
+        #     def _double():
+        #         return 2.0
+        #     def _half():
+        #         return 0.5
+        #     def _one():
+        #         return 1.0
+        #     scale1 = jax.lax.cond(acc/100 < 0.2, _half, _one)
+        #     scale2 = jax.lax.cond(acc/100 > 0.3, _double, _one)
+        #     return scale1*scale2, acc
+        # def _notat100():
+        #     return 1.0, acc
+        # boolt = n_sam % 100 == 0 and n_sam > 0 and n_sam < 1100
+        # scale, acc = jax.lax.cond(boolt, _at100, _notat100)
+        # self.param = scale*self.param
+        theta_prop = self.prop_sample(keys[0], theta_prev, self.param)
         X_prop = self.solve(keys[1], theta_prop)
         ll_prop = self.loglik(X_prop) + self.logprior(theta_prop)
-        lacc_prop = ll_prop - self.prop_lpdf(theta_prop, theta_prev, param)
-        lacc_prev = ll_prev - self.prop_lpdf(theta_prev, theta_prop, param)
+        lacc_prop = ll_prop - self.prop_lpdf(theta_prop, theta_prev, self.param)
+        lacc_prev = ll_prev - self.prop_lpdf(theta_prev, theta_prop, self.param)
         mh_acc = jnp.exp(lacc_prop - lacc_prev)
         U = jax.random.uniform(keys[2])
 
         def _true_fun():
-            return theta_prop, X_prop, ll_prop
+            return theta_prop, X_prop, ll_prop, 1
             
         def _false_fun():
-            return theta_prev, X_prev, ll_prev
+            return theta_prev, X_prev, ll_prev, 0
 
-        theta_curr, X_curr, ll_curr = jax.lax.cond(U<=mh_acc, _true_fun, _false_fun)
+        theta_curr, X_curr, ll_curr, ar = jax.lax.cond(U<=mh_acc, _true_fun, _false_fun)
         
         state = {
             "theta": theta_curr,
             "X_t": X_curr,
-            "ll": ll_curr
+            "ll": ll_curr,
+            "acc": acc + ar,
+            "n_sam": n_sam + 1
         }
         sample = {
             "theta": theta_curr
