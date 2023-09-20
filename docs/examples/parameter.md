@@ -292,11 +292,11 @@ class fitz_ocmcmc(rc.oc_mcmc):
         return Xt
     
     def mcmc_sample(self, key, phi_init, n_samples):
-        param = jnp.diag(jnp.array([0.0001, 0.01, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]))
+        self.param = jnp.diag(jnp.array([0.0001, 0.01, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]))
         key, subkey = jax.random.split(key)
         initial_state = self.init(subkey, phi_init)
         def one_step(state, key):
-            state, sample = self.step(key, state, param)
+            state, sample = self.step(key, state, self.param)
             return state, sample
 
         keys = jax.jax.random.split(key, n_samples)

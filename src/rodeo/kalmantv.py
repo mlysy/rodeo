@@ -225,7 +225,7 @@ def smooth_sim(x_state_next,
     r"""
     Perform one step of the Kalman sampling smoother.
 
-    Calculates a draw :math:`x_{n|N}` from :math:`x_{n+1|N}`, :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
+    Calculates :math:`\tilde theta_{n|N}` from :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`, i.e., :math:`x_{n | N} | x_{n+1 | N} \sim N(\tilde \mu_{n | N}, \tilde \Sigma_{n | N})`.
 
     Args:
         x_state_next(ndarray(n_state)): Simulated state at time n+1 given observations from times[0...N]; denoted by :math:`x_{n+1 | N}`.
@@ -236,7 +236,9 @@ def smooth_sim(x_state_next,
         wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q_{n+1}`.
 
     Returns:
-        (ndarray(n_state)): Sample solution at time n given observations from times[0...N]; denoted by :math:`X_{n | N}`.
+        (tuple):
+        - **mean_state_sim** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N] and :math:`x_{n+1 | N}`; denoted by :math:`\tilde \mu_{n | N}`.
+        - **var_state_sim** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N] and :math:`x_{n+1 | N}`; denoted by :math;`\tilde \Sigma_{n | N}`.
 
     """
     var_state_temp, var_state_temp_tilde = _smooth(
@@ -260,7 +262,7 @@ def smooth(x_state_next,
     r"""
     Perform one step of both Kalman mean/variance and sampling smoothers.
 
-    Combines :func:`kalmantv.smooth_mv` and :func:`kalmantv.smooth_sim` steps to get :math:`x_{n|N}` and :math:`\theta_{n|N}` from :math:`\theta_{n+1|N}`, :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
+    Combines :func:`kalmantv.smooth_mv` and :func:`kalmantv.smooth_sim` steps to get the mean and variance of :math:`x_{n|N}` and :math:`\theta_{n|N}` from :math:`\theta_{n+1|N}`, :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`.
 
     Args:
         x_state_next(ndarray(n_state)): Simulated state at time n+1 given observations from times[0...N]; denoted by :math:`x_{n+1 | N}`.
@@ -274,7 +276,8 @@ def smooth(x_state_next,
         
     Returns:
         (tuple):
-        - **x_state_smooth** (ndarray(n_state)): Sample solution at time n given observations from times[0...N]; denoted by :math:`X_{n | N}`.
+        - **mean_state_sim** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N] and :math:`x_{n+1 | N}`; denoted by :math:`\tilde \mu_{n | N}`.
+        - **var_state_sim** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N] and :math:`x_{n+1 | N}`; denoted by :math;`\tilde \Sigma_{n | N}`.
         - **mean_state_smooth** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N]; denoted by :math:`\mu_{n | N}`.
         - **var_state_smooth** (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...N]; denoted by :math:`\Sigma_{n | N}`.
 

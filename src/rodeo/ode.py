@@ -278,7 +278,7 @@ def solve_sim(key, fun, W, x0, theta,
                 mean_state_pred=mean_state_pred[b],
                 var_state_pred=var_state_pred[b]
             )
-            return jax.random.multivariate_normal(key[b], mean_state_sim, var_state_sim)
+            return jax.random.multivariate_normal(key[b], mean_state_sim, var_state_sim, method='svd')
 
         x_state_curr = jax.vmap(lambda b:
             vmap_fun(b)
@@ -289,7 +289,8 @@ def solve_sim(key, fun, W, x0, theta,
                          jax.random.multivariate_normal(
                              subkeys[n_steps-1, b], 
                              mean_state_filt[n_steps, b],
-                             var_state_filt[n_steps, b]))(jnp.arange(n_block))
+                             var_state_filt[n_steps, b],
+                             method='svd'))(jnp.arange(n_block))
     # scan arguments
     scan_kwargs = {
         'mean_state_filt': mean_state_filt[1:n_steps],
