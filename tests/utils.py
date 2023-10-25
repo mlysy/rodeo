@@ -69,7 +69,7 @@ def fitz_setup(self):
     # it is assumed that the solution is sought on the interval [t_min, t_max].
     self.t_min = 0.
     self.t_max = 10.
-    h = .1
+    h = .05
     self.n_steps = int((self.t_max-self.t_min)/h)
     self.t = jnp.array(.25)  # time
     self.tseq = np.linspace(self.t_min, self.t_max, self.n_steps+1)

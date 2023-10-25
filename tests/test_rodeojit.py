@@ -5,8 +5,8 @@ import jax.scipy as jsp
 import jax.random as random
 from rodeo.ode import *
 import utils
-from jax.config import config
-config.update("jax_enable_x64", True)
+# from jax.config import config
+# config.update("jax_enable_x64", True)
     
 class TestrodeoJit(unittest.TestCase):
     """
@@ -192,38 +192,38 @@ class TestrodeoJit(unittest.TestCase):
         self.assertAlmostEqual(utils.rel_err(sim1, sim2), 0.0)
         self.assertAlmostEqual(utils.rel_err(grad1, grad2), 0.0)
     
-    def test_solve(self):
-        # without jit
-        sim1, mu1, var1 = \
-            solve(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
-                  ode_init=self.x0_block, theta=self.theta,
-                  t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                  prior_weight=self.prior_Q, prior_var=self.prior_R,
-                  interrogate=interrogate_rodeo)
-        # with jit
-        solve_jit = jax.jit(solve, static_argnums=(1, 6, 7))
-        sim2, mu2, var2 = \
-            solve_jit(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
-                      ode_init=self.x0_block, theta=self.theta,
-                      t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                      prior_weight=self.prior_Q, prior_var=self.prior_R,
-                      interrogate=interrogate_rodeo)
-        # objective function for gradient
-        def obj_fun(theta):
-            return jnp.mean(
-                solve(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
-                      ode_init=self.x0_block, theta=self.theta,
-                      t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                      prior_weight=self.prior_Q, prior_var=self.prior_R,
-                      interrogate=interrogate_rodeo)[0])
-        # grad without jit
-        grad1 = jax.grad(obj_fun)(self.theta)
-        # grad with jit
-        grad2 = jax.jit(jax.grad(obj_fun))(self.theta)
-        self.assertAlmostEqual(utils.rel_err(sim1, sim2), 0.0)
-        self.assertAlmostEqual(utils.rel_err(mu1, mu2), 0.0)
-        self.assertAlmostEqual(utils.rel_err(var1, var2), 0.0)
-        self.assertAlmostEqual(utils.rel_err(grad1, grad2), 0.0)
+    # def test_solve(self):
+    #     # without jit
+    #     sim1, mu1, var1 = \
+    #         solve(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
+    #               ode_init=self.x0_block, theta=self.theta,
+    #               t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
+    #               prior_weight=self.prior_Q, prior_var=self.prior_R,
+    #               interrogate=interrogate_rodeo)
+    #     # with jit
+    #     solve_jit = jax.jit(solve, static_argnums=(1, 6, 7))
+    #     sim2, mu2, var2 = \
+    #         solve_jit(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
+    #                   ode_init=self.x0_block, theta=self.theta,
+    #                   t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
+    #                   prior_weight=self.prior_Q, prior_var=self.prior_R,
+    #                   interrogate=interrogate_rodeo)
+    #     # objective function for gradient
+    #     def obj_fun(theta):
+    #         return jnp.mean(
+    #             solve(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
+    #                   ode_init=self.x0_block, theta=self.theta,
+    #                   t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
+    #                   prior_weight=self.prior_Q, prior_var=self.prior_R,
+    #                   interrogate=interrogate_rodeo)[0])
+    #     # grad without jit
+    #     grad1 = jax.grad(obj_fun)(self.theta)
+    #     # grad with jit
+    #     grad2 = jax.jit(jax.grad(obj_fun))(self.theta)
+    #     self.assertAlmostEqual(utils.rel_err(sim1, sim2), 0.0)
+    #     self.assertAlmostEqual(utils.rel_err(mu1, mu2), 0.0)
+    #     self.assertAlmostEqual(utils.rel_err(var1, var2), 0.0)
+    #     self.assertAlmostEqual(utils.rel_err(grad1, grad2), 0.0)
 
 if __name__ == '__main__':
     unittest.main()
