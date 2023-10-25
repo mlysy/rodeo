@@ -63,51 +63,42 @@ def kalman_theta(m, y, mu, Sigma):
     return mu_mn, V_mn
 
 def fitz_setup(self):
-    n_deriv = 1  # Total state
-    n_obs = 2  # Total measures
-    n_deriv_prior = 3
+    n_vars = 2  # Number of variables
+    n_deriv = 3
 
-    # it is assumed that the solution is sought on the interval [tmin, tmax].
-    self.tmin = 0.
-    self.tmax = 10.
-    h = .05
-    self.n_steps = int((self.tmax-self.tmin)/h)
+    # it is assumed that the solution is sought on the interval [t_min, t_max].
+    self.t_min = 0.
+    self.t_max = 10.
+    h = .1
+    self.n_steps = int((self.t_max-self.t_min)/h)
     self.t = jnp.array(.25)  # time
-    self.tseq = np.linspace(self.tmin, self.tmax, self.n_steps+1)
+    self.tseq = np.linspace(self.t_min, self.t_max, self.n_steps+1)
 
     # The rest of the parameters can be tuned according to ODE
     # For this problem, we will use
-    sigma = .1
+    sigma = .001
 
     # Initial value, x0, for the IVP
     self.x0 = np.array([-1., 1.])
-    X0 = jnp.array([[-1., 1], [1., 1/3]])
-    pad_dim = n_deriv_prior - n_deriv - 1
-    self.x0_block = jnp.pad(X0, [(0, 0), (0, pad_dim)])
+    self.x0_block = jnp.array([[-1., 1, 0], [1., 1/3, 0]])
 
     # function parameter
     self.theta = jnp.array([0.2, 0.2, 3])  # True theta
-    n_order = jnp.array([n_deriv_prior]*n_obs)
-    sigma = jnp.array([sigma]*n_obs)
-    self.ode_init = ibm_init(h, n_order, sigma)
-    self.var_block = self.ode_init['var_state']
-    # x0_state = jnp.array(zero_pad(X0, [n_deriv]*n_obs, [n_deriv_prior]*n_obs))
+    sigma = jnp.array([sigma]*n_vars)
+    self.prior_Q, self.prior_R = ibm_init(h, n_deriv, sigma)
 
     # block
     n_bmeas = 1
-    n_bstate = n_deriv_prior
+    n_bstate = 3
 
-    W_block = np.zeros((n_obs, n_bmeas, n_bstate))
+    W_block = np.zeros((n_vars, n_bmeas, n_bstate))
     W_block[:, :, 1] = 1
-    #W_block = jnp.array([W[0, 0:n_bstate],
-    #                    W[1, n_bstate:2*n_bstate]])
-    #self.W_block = jnp.reshape(W_block, newshape=(2,1,3))
     self.W_block = jnp.array(W_block)
-    # self.x0_block = jnp.reshape(x0_state, (n_obs, n_bstate))
     self.key = jax.random.PRNGKey(0)
 
-    def fitz_jax(X_t, t, theta):
+    def fitz_jax(X_t, t, **params):
         "FitzHugh-Nagumo ODE."
+        theta = params['theta']
         a, b, c = theta
         V, R = X_t[0, 0], X_t[1,0]
         return jnp.array([[c*(V - V*V*V/3 + R)],
