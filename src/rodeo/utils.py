@@ -1,5 +1,5 @@
 r"""
-Util functions for Jax kalmantv.
+Util functions for rodeo.
 
 """
 import jax
@@ -7,39 +7,6 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import jax.scipy.linalg as jsl
 
-# def block_diag(X):
-#     r"""
-#     Convert an array with blocks to a block diagonal matrix.
-
-#     Args:
-#         X (ndarray(n_eval, n_block, n_dim, n_dim)): Array containing blocks of matrices.
-    
-#     Returns:
-#         (ndarray(n_eval, n_block * n_dim, n_block * n_dim)): Block diagonal matrix created from the blocks.
-
-#     """
-#     n_eval = X.shape[0]
-#     mat = jax.vmap(lambda t:
-#                    jsp.linalg.block_diag(*X[t]))(jnp.arange(n_eval))
-        
-#     return mat
-
-def indep_init(wgt_state, var_state):
-    """
-    Combine blocks of prior parameters into dense matrices.
-
-    Args:
-        wgt_state (ndarray(n_block, p, p)) Blocks of transition matrices defining the solution prior; :math:`Q`.
-        var_state (ndarray(n_block, p, p)) Blocks of variance matrices defining the solution prior; :math:`R`.
-
-    Returns:
-        (tuple):
-        - **wgt_state** (ndarray(n_block * p, n_block * p)) Transition matrix defining the solution prior; :math:`Q`.
-        - **var_state** (ndarray(n_block * p, n_block * p)) Variance matrix defining the solution prior; :math:`R`.
-    """
-    wgt_state = jsl.block_diag(*wgt_state)
-    var_state = jsl.block_diag(*var_state)
-    return wgt_state, var_state
 
 def mvncond(mu, Sigma, icond):
     """

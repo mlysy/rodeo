@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import jax.random as random
 from rodeo.ibm import ibm_init
-import rodeo.gauss_markov as gm
+import gauss_markov as gm
 from rodeo.utils import mvncond
 
 def rel_err(X1, X2):

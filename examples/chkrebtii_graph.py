@@ -9,8 +9,8 @@ from jax import random
 from jax.config import config
 import matplotlib.pyplot as plt
 
-from rodeo.ibm import ibm_init
-from rodeo.ode import *
+from rodeo.prior import ibm_init
+from rodeo.solve import *
 from euler import *
 config.update("jax_enable_x64", True)
 plt.rcParams.update({'font.size': 20})
@@ -68,10 +68,11 @@ def solve(W, x0, t_min, t_max, n_steps, n_deriv, sigma, draws):
     )
     # Run the solver which gives the posterior mean and variance
     key = jax.random.PRNGKey(0)  # PRNG key for JAX
+    key, subkey = random.split(key)
     Xm, _ = jit_mv(
-        key,
+        key=subkey,
         # define ode
-        ode_rodeo,
+        ode_fun=ode_rodeo,
         ode_weight=W,
         ode_init=x0,
         t_min=t_min,
@@ -89,9 +90,9 @@ def solve(W, x0, t_min, t_max, n_steps, n_deriv, sigma, draws):
         # Run the solver which gives a draw
         key, subkey = random.split(key)
         x_sol = jit_sim(
-            subkey,
+            key=subkey,
             # define ode
-            ode_rodeo,
+            ode_fun=ode_rodeo,
             ode_weight=W,
             ode_init=x0,
             t_min=t_min,

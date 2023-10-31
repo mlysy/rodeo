@@ -1,5 +1,5 @@
 r"""
-Time-varying Kalman filtering and smoothing algorithms. 
+Time-varying Kalman filtering and smoothing algorithms.
 
 The Gaussian state space model underlying the algorithms is
 
@@ -17,7 +17,7 @@ where :math:`\epsilon_n \stackrel{\text{iid}}{\sim} \mathcal{N}(0, I_p)` and ind
 
     \Sigma_{m|n} = \text{var}(x_m \mid y_{0:n}),
 
-for different combinations of :math:`m` and :math:`n`.  
+for different combinations of :math:`m` and :math:`n`.
 
 """
 import jax
@@ -25,7 +25,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 
 
-# --- helper functions ---------------------------------------------------------
+# --- helper functions ---------------------------------------------------
 def _solveV(V, B):
     r"""
     Computes :math:`X = V^{-1}B` where V is a variance matrix.
@@ -41,8 +41,9 @@ def _solveV(V, B):
     # L, low = jsp.linalg.cho_factor(V)
     # return jsp.linalg.cho_solve((L, low), B)
     return jsp.linalg.solve(V, B)
-    
-# --- core functions -----------------------------------------------------------
+
+# --- core functions -----------------------------------------------------
+
 
 def predict(mean_state_past, var_state_past,
             mean_state, wgt_state,
@@ -273,7 +274,7 @@ def smooth(x_state_next,
         mean_state_pred(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\mu_{n+1 | n}`.
         var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
         wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q_{n+1}`.
-        
+
     Returns:
         (tuple):
         - **mean_state_sim** (ndarray(n_state)): Mean estimate for state at time n given observations from times[0...N] and :math:`x_{n+1 | N}`; denoted by :math:`\tilde \mu_{n | N}`.
@@ -286,7 +287,7 @@ def smooth(x_state_next,
         var_state_filt, var_state_pred, wgt_state
     )
     mean_state_temp = jnp.concatenate([x_state_next[None],
-                                     mean_state_next[None]])
+                                       mean_state_next[None]])
     mean_state_temp = mean_state_filt + \
         var_state_temp_tilde.dot((mean_state_temp - mean_state_pred).T).T
     mean_state_sim = mean_state_temp[0]
@@ -298,6 +299,7 @@ def smooth(x_state_next,
             [var_state_temp_tilde, (var_state_next - var_state_pred),
              var_state_temp_tilde.T])
     return mean_state_sim, var_state_sim, mean_state_smooth, var_state_smooth,
+
 
 def forecast(mean_state_pred,
              var_state_pred,
@@ -354,4 +356,3 @@ def smooth_cond(mean_state_filt,
     mean_state_cond = mean_state_filt - wgt_state_cond.dot(mean_state_pred)
     var_state_cond = var_state_filt - wgt_state_cond.dot(var_state_temp.T)
     return wgt_state_cond, mean_state_cond, var_state_cond
-

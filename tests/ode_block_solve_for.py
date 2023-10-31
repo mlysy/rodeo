@@ -23,10 +23,8 @@ This module optimizes the calculations when :math:`Q`, :math:`R`, and :math:`W`,
 
 """
 
-# import numpy as np
 import jax
 import jax.numpy as jnp
-# import numpy as np
 from rodeo.kalmantv import *
 from rodeo.utils import *
 
@@ -231,58 +229,3 @@ def solve_mv(key, ode_fun,  ode_weight, ode_init,
 
     return mean_state_smooth, var_state_smooth
 
-
-# def solve(key, ode_fun,  ode_weight, ode_init,
-#           t_min, t_max, n_steps,
-#           interrogate,
-#           prior_weight, prior_var,
-#           **params):
-
-#     n_block, n_bstate, _ = prior_weight.shape
-#     key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
-#     subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
-#     x_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
-#     x_state_smooth[0] = ode_init
-#     mean_state_smooth = np.zeros((n_steps+1, n_block, n_bstate))
-#     mean_state_smooth[0] = ode_init
-#     var_state_smooth = np.zeros((n_steps+1, n_block, n_bstate, n_bstate))
-
-#     # forward pass
-#     mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = \
-#         _solve_filter(
-#             key=key,
-#             ode_fun=ode_fun, ode_weight=ode_weight, ode_init=ode_init,
-#             t_min=t_min, t_max=t_max, n_steps=n_steps, 
-#             interrogate=interrogate,
-#             prior_weight=prior_weight, prior_var=prior_var,
-#             **params   
-#     )
-
-#     mean_state_smooth[-1] = mean_state_filt[-1]
-#     var_state_smooth[-1] = var_state_filt[-1]
-
-#     for b in range(n_block):
-#         x_state_smooth[n_steps, b] = \
-#             jax.random.multivariate_normal(
-#                 subkeys[n_steps-1, b],
-#                 mean_state_filt[n_steps, b],
-#                 var_state_filt[n_steps, b],
-#                 method='svd')
-
-#     # backward pass
-#     for t in range(n_steps-1, 0, -1):
-#         for b in range(n_block):
-#             mean_state_sim, var_state_sim, mean_state_smooth[t, b], var_state_smooth[t, b] = \
-#                 smooth(
-#                     x_state_next=x_state_smooth[t+1, b],
-#                     mean_state_next=mean_state_smooth[t+1, b],
-#                     var_state_next=var_state_smooth[t+1, b],
-#                     wgt_state=prior_weight[b],
-#                     mean_state_filt=mean_state_filt[t, b],
-#                     var_state_filt=var_state_filt[t, b],
-#                     mean_state_pred=mean_state_pred[t+1, b],
-#                     var_state_pred=var_state_pred[t+1, b]
-#                 )
-#             x_state_smooth[t, b] = jax.random.multivariate_normal(subkeys[t-1, b], mean_state_sim, var_state_sim, method='svd')
-
-#     return jnp.array(x_state_smooth), jnp.array(mean_state_smooth), jnp.array(var_state_smooth)

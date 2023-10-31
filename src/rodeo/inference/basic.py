@@ -1,14 +1,14 @@
 r"""
-This module implements the Basic method for computing the approximate loglikelihood of :math:`\log p(y_{0:M} \mid Z_{1:N})`.
+This module implements the Basic method for computing the approximate loglikelihood of :math:`\log p(Y_{0:M} \mid Z_{1:N})`.
 
 Using :math:`\mu_{0:N|N} = E(x{0:N} \mid Z_{1:N})` from the rodeo solver, the approximate likelihood is computed as
 
-.. math:: p(y_{0:M} \mid Z_{1:N}) = \sum_{i=0}^M \log p(y_i \mid x_{n(i)} = \mu_{n(i)|N})
+.. math:: p(y_{0:M} \mid Z_{1:N}) = \sum_{i=0}^M \log p(Y_i \mid x_{n(i)} = \mu_{n(i)|N})
 
 """
 import jax
 import jax.numpy as jnp
-from rodeo.ode import solve_mv
+from rodeo.solve import solve_mv
 
 
 def basic(key, ode_fun, ode_weight, ode_init, 
@@ -19,7 +19,7 @@ def basic(key, ode_fun, ode_weight, ode_init,
           **params):
     
     r"""
-    Basic algorithm to compute the approximate loglikelihood of :math:`p(y_{0:M} \mid Z_{1:N})`.
+    Basic algorithm to compute the approximate loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
     Args:
         key (PRNGKey): PRNG key.
@@ -32,13 +32,13 @@ def basic(key, ode_fun, ode_weight, ode_init,
         interrogate (function): Function defining the interrogation method.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        obs_data (ndarray(n_obs, n_bobs)): Observed data; :math:`y_{0:M}`.
+        obs_data (ndarray(n_obs, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_loglik (fun): Observation loglikelihood function.
         params (kwargs): Optional model parameters.
 
     Returns:
-        (float) : The loglikelihood of :math:`p(y_{0:M} \mid Z_{1:N})`.
+        (float) : The loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
     """
 
