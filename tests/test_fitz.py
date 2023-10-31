@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import jax.random as random
 
-from rodeo.ode import *
+from rodeo.solve import *
 import utils
 
 class TestFitzOdeint(unittest.TestCase):
