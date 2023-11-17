@@ -1,21 +1,21 @@
 r"""
-Computes the initial parameters for the process prior using the p-1 times integrated Brownian motion (IBM)
+Computes the initial parameters for the process prior using the q times integrated Brownian motion (IBM)
 
 .. math::
 
-    x^{(p-1)}(t) = \sigma B(t).
+    x^q(t) = \sigma B(t).
 
 Note that the IBM process is a particularly simple continuous autoregressive process of the form
 
 .. math::
 
-    x^{(p-1)}(t) + \alpha_1 x^{(p-2)}(t) + \ldots + \alpha_{p-1} x(t) = \sigma B(t),
+    x^q(t) + \alpha_1 x^{(q-2)}(t) + \ldots + \alpha_q x(t) = \sigma B(t),
 
-where :math:`\alpha_1 = \ldots = \alpha_{p-1} = 0`. It has the analytical formulas for the parameters
+where :math:`\alpha_1 = \ldots = \alpha_q = 0`. It has the analytical formulas for the parameters
 
 .. math::
 
-    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-1)!}, \qquad R_{ij} = \sigma^2 \frac{(\Delta t)^{2p+1-i-j}}{(2p+1-i-j)(p-i)!(p-j)!}.
+    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-1)!}, \qquad R_{ij} = \sigma^2 \frac{(\Delta t)^{2q+1-i-j}}{(2q+1-i-j)(q-i)!(q-j)!}.
 
 """
 
@@ -44,8 +44,6 @@ def ibm_state(dt, q, sigma):
     """
     Calculate the state weight matrix and variance matrix of q-times integrated Brownian motion.
 
-    The q-times integrated Brownian motion process :math:`X_t` is such that its (q+1)-th order derivative :math:`X^{q+1}_t = d^q/dt^(q+1) X_t` is :math:`\sigma B_t`, i.e., Brownian motion scaled by :math:`\sigma`.
-
     Args:
         dt (float): The step size between simulation points.
         q (int): The number of times to integrate the underlying Brownian motion.
@@ -73,7 +71,7 @@ def ibm_state(dt, q, sigma):
 def ibm_init(dt, n_deriv, sigma):
     """
     Calculates the initial parameters necessary for the Kalman solver with the p-1 times
-    integrated Brownian Motion.
+    integrated Brownian Motion, where the ODE is up to the p-1th derivative.
 
     Args:
         dt (float): The step size between simulation points.

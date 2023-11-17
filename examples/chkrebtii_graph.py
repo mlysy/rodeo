@@ -9,8 +9,9 @@ from jax import random
 from jax.config import config
 import matplotlib.pyplot as plt
 
+from rodeo import solve_sim, solve_mv
 from rodeo.prior import ibm_init
-from rodeo.solve import *
+from rodeo.interrogate import interrogate_chkrebtii
 from euler import *
 config.update("jax_enable_x64", True)
 plt.rcParams.update({'font.size': 20})

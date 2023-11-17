@@ -1,6 +1,7 @@
 import unittest
 import jax
 from rodeo.solve import *
+from rodeo.interrogate import *
 import ode_block_solve_for as bfor
 import utils
 # from jax.config import config
