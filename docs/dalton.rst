@@ -1,4 +1,4 @@
-DALTON Solver
+DALTON Method
 =============
-.. automodule:: rodeo.dalton
+.. automodule:: rodeo.inference.dalton
     :members:

@@ -81,9 +81,9 @@ def _forecast_update(mean_state_pred, var_state_pred,
 # --- loglikelihood -----------------------------------------------------------
 
 
-def backward_param(mean_state_filt, var_state_filt,
-                   mean_state_pred, var_state_pred,
-                   prior_weight):
+def _backward_param(mean_state_filt, var_state_filt,
+                    mean_state_pred, var_state_pred,
+                    prior_weight):
     r"""
     Compute the backward Markov chain parameters.
 
@@ -139,10 +139,10 @@ def backward_param(mean_state_filt, var_state_filt,
     return wgt_state_cond, mean_state_cond, var_state_cond
 
 
-def backward(t_min, t_max, n_steps,
-             wgt_state, mean_state, var_state,
-             obs_data, obs_times,
-             obs_weight, obs_var):
+def _backward(t_min, t_max, n_steps,
+              wgt_state, mean_state, var_state,
+              obs_data, obs_times,
+              obs_weight, obs_var):
     r"""
     Backward pass of Fenrir algorithm where observations are used.
 
@@ -304,7 +304,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
     mean_state_filt, var_state_filt = filt_out["state_filt"]
 
     # backward pass
-    wgt_state_cond, mean_state_cond, var_state_cond = backward_param(
+    wgt_state_cond, mean_state_cond, var_state_cond = _backward_param(
         mean_state_filt=mean_state_filt,
         var_state_filt=var_state_filt,
         mean_state_pred=mean_state_pred,
@@ -313,7 +313,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
     )
 
     # reverse pass
-    logdens, _ = backward(
+    logdens, _ = _backward(
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         wgt_state=wgt_state_cond, mean_state=mean_state_cond,
         var_state=var_state_cond,
@@ -423,7 +423,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
     mean_state_filt, var_state_filt = filt_out["state_filt"]
 
     # backward pass
-    wgt_state_cond, mean_state_cond, var_state_cond = backward_param(
+    wgt_state_cond, mean_state_cond, var_state_cond = _backward_param(
         mean_state_filt=mean_state_filt,
         var_state_filt=var_state_filt,
         mean_state_pred=mean_state_pred,
@@ -432,7 +432,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
     )
 
     # reverse pass
-    _, state_par = backward(
+    _, state_par = _backward(
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         wgt_state=wgt_state_cond, mean_state=mean_state_cond,
         var_state=var_state_cond,

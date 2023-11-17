@@ -33,11 +33,11 @@ import jax
 import jax.numpy as jnp
 from scipy.integrate import odeint
 
-from rodeo.ibm import ibm_init
-from rodeo.ode import interrogate_kramer
-import rodeo.ode as ro
-import rodeo.fenrir as rf
-import rodeo.dalton as rd
+from rodeo import solve_mv
+from rodeo.prior import ibm_init
+from rodeo.interrogate import interrogate_kramer
+from rodeo.inference.fenrir import solve_mv as fsolve
+from rodeo.inference.dalton import solve_mv as dsolve
 from jax.config import config
 config.update("jax_enable_x64", True)
 ```
@@ -60,7 +60,7 @@ def lorenz0(X_t, t, theta):
     dz = -beta*z + x*y
     return np.array([dx, dy, dz])
 
-# it is assumed that the solution is sought on the interval [tmin, tmax].
+# it is assumed that the solution is sought on the interval [tmin, tmax]. 
 tmin = 0.
 tmax = 20.
 theta = np.array([28, 10, 8/3])
@@ -70,8 +70,8 @@ ode0 = np.array([-12., -5., 38.])
 
 # observations
 n_obs = 20
-tseq = np.linspace(tmin, tmax, n_obs+1)
-exact = odeint(lorenz0, ode0, tseq, args=(theta,), rtol=1e-20)
+obs_times = jnp.linspace(tmin, tmax, n_obs+1)
+exact = odeint(lorenz0, ode0, obs_times, args=(theta,), rtol=1e-20)
 gamma = np.sqrt(.005)
 e_t = np.random.default_rng(0).normal(loc=0.0, scale=1, size=exact.shape)
 obs = exact + gamma*e_t
@@ -81,8 +81,8 @@ To avoid confusion, we will refer to the probabilistic solver as `rodeo` and the
 
 ```{code-cell} ipython3
 # ODE function
-def lorenz(X_t, t, theta):
-    rho, sigma, beta = theta
+def lorenz(X_t, t, **params):
+    rho, sigma, beta = params["theta"]
     x, y, z = X_t[:,0]
     dx = -sigma*x + sigma*y
     dy = rho*x - y -x*z
@@ -92,8 +92,7 @@ def lorenz(X_t, t, theta):
 
 # problem setup and intialization
 n_deriv = 3  # Total state; q
-n_var = 3  # Total variables
-n_order = jnp.array([n_deriv]*n_var) # p
+n_vars = 3  # Total variables
 
 # Time interval on which a solution is sought.
 tmin = 0.
@@ -102,10 +101,10 @@ theta = jnp.array([28, 10, 8/3])
 
 # The rest of the parameters can be tuned according to ODE
 # For this problem, we will use
-sigma = jnp.array([5e7]*n_var)
+sigma = jnp.array([5e7]*n_vars)
 
 # Initial W for jax block
-W_mat = np.zeros((n_var, 1, n_deriv))
+W_mat = np.zeros((n_vars, 1, n_deriv))
 W_mat[:, :, 1] = 1
 W = jnp.array(W_mat)
 
@@ -116,7 +115,7 @@ x0 = jnp.array([[-12., 70., 0.], [-5., 125, 0.], [38., -124/3, 0.]])
 n_res = 200
 n_steps = n_obs*n_res
 dt = (tmax-tmin)/n_steps  # step size
-ode_init = ibm_init(dt, n_order, sigma)
+prior_weight, prior_var = ibm_init(dt, n_deriv, sigma)
 
 # prng key
 key = jax.random.PRNGKey(0)
@@ -130,31 +129,36 @@ Next we define specifications required for `dalton` and `fenrir`. In particular,
 This translates to the following set of definitions for this 3-state ODE.
 
 ```{code-cell} ipython3
-y_obs = jnp.expand_dims(obs, -1) 
-mean_obs = jnp.zeros((n_var, 1))
-wgt_obs = np.zeros((len(y_obs), n_var, 1, n_deriv))
-wgt_obs[:, :, :, 0] = 1
-wgt_obs = jnp.array(wgt_obs)
-var_obs = gamma**2*jnp.ones((n_var, 1, 1))
+n_meas = 1  # number of measurements per variable in obs_data_i
+obs_data = jnp.expand_dims(obs, -1) 
+obs_weight = jnp.zeros((len(obs_data), n_vars, n_meas, n_deriv))
+obs_weight = obs_weight.at[:, :, :, 0].set(1)
+obs_var = jnp.zeros((len(obs_data), n_vars, n_meas, n_meas))
+obs_var = obs_var.at[:, :, :, 0].set(gamma**2)
 ```
 
 We explore a different interrogation method in this example. Our default is `interrogate_rodeo` which is a mix of the zeroth-order Taylor approximation proposed by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7) and the interrogation of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259). We instead use `interrogate_kramer` which is the first-order Taylor approximation proposed by [Kramer et al (2021)](https://arxiv.org/pdf/2110.11812.pdf) which is more accurate at the cost of computation speed.
 
 ```{code-cell} ipython3
 # rodeo
-rodeo, _ = ro.solve_mv(key, lorenz, W, x0, theta, tmin, tmax, n_steps,
-                       ode_init['wgt_state'], ode_init['var_state'],
-                       interrogate_kramer)
+rsol, _ = solve_mv(key, lorenz, W, x0, tmin, tmax, n_steps,
+                   interrogate_kramer,
+                   prior_weight, prior_var,
+                   theta=theta)
 
 # dalton
-dalton, _ = rd.solve_mv(key, lorenz, W, x0, theta, tmin, tmax, n_res,
-                        ode_init['wgt_state'], ode_init['var_state'],
-                        wgt_obs, var_obs, y_obs, interrogate_kramer)
+dsol, _ = dsolve(key, lorenz, W, x0, tmin, tmax, n_steps,
+                 interrogate_kramer,
+                 prior_weight, prior_var,
+                 obs_data, obs_times, obs_weight, obs_var,
+                 theta=theta)
 
 # fenrir
-fenrir, _ = rf.fenrir_mv(key, lorenz, W, x0, theta, tmin, tmax, n_res,
-                        ode_init['wgt_state'], ode_init['var_state'],
-                        wgt_obs, var_obs, y_obs, interrogate_kramer)
+fsol, _ = fsolve(key, lorenz, W, x0, tmin, tmax, n_steps,
+                 interrogate_kramer,
+                 prior_weight, prior_var,
+                 obs_data, obs_times, obs_weight, obs_var,
+                 theta=theta)
 ```
 
 ```{code-cell} ipython3
@@ -163,15 +167,15 @@ tseq_sim = np.linspace(tmin, tmax, n_steps+1)
 exact = odeint(lorenz0, ode0, tseq_sim, args=(theta,), rtol=1e-20)
 
 plt.rcParams.update({'font.size': 30})
-fig, axs = plt.subplots(n_var, figsize=(20, 10))
+fig, axs = plt.subplots(n_vars, figsize=(20, 10))
 ylabel = [r'$x(t)$', r'$y(t)$', r'$z(t)$']
 
-for i in range(n_var):
-    l0, = axs[i].plot(tseq_sim, rodeo[:, i, 0], label="rodeo", linewidth=3)
-    l1, = axs[i].plot(tseq_sim, dalton[:, i, 0], label="DALTON", linewidth=3)
-    l2, = axs[i].plot(tseq_sim, fenrir[:, i, 0], label="Fenrir", linewidth=3)
+for i in range(n_vars):
+    l0, = axs[i].plot(tseq_sim, rsol[:, i, 0], label="rodeo", linewidth=3)
+    l1, = axs[i].plot(tseq_sim, dsol[:, i, 0], label="DALTON", linewidth=3)
+    l2, = axs[i].plot(tseq_sim, fsol[:, i, 0], label="Fenrir", linewidth=3)
     l3, = axs[i].plot(tseq_sim, exact[:, i], label='True', linewidth=2, color="black")
-    l4 = axs[i].scatter(tseq, obs[:, i], label='Obs', color='red', s=40, zorder=3)
+    l4 = axs[i].scatter(obs_times, obs[:, i], label='Obs', color='red', s=40, zorder=3)
     axs[i].set(ylabel=ylabel[i])
 handles = [l0, l1, l2, l3, l4]
 fig.subplots_adjust(bottom=0.1, wspace=0.33)

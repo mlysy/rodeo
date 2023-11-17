@@ -12,12 +12,12 @@
 
 **rodeo** is a fast and flexible Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of size $\delta$.  As $\delta$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers such as **rodeo** also output a solution an a grid of size $\delta$; however, the solution is random.  Still, as $\delta$ goes to zero, the probabilistic numerical approximation converges to the true solution. 
 
-**rodeo** provides several probabilistic ODE solvers with a Bayesian filtering paradigm common to many probabilistic solvers [Tronarp et al (2018)](http://arxiv.org/abs/1810.03440). This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid. **rodeo** is built on **jax** which allows for just-in-time compilation and auto-differentiation. The API of **jax** is almost equivalent to that of **numpy**. A brief summary of the solvers available in this library:
+**rodeo** provides a lightweight and extensible family of approximations to a nonlinear Bayesian filtering paradigm common to many probabilistic solvers [Tronarp et al (2018)](http://arxiv.org/abs/1810.03440). This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid. **rodeo** is built on **jax** which allows for just-in-time compilation and auto-differentiation. The API of **jax** is almost equivalent to that of **numpy**. A brief summary of the methods available in this library:
 
 - `rodeo`: Implementations of our ODE solver.
 - `fenrir`: Implementations of Fenrir [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html).
-- `oc_mcmc`: MCMC implementation of Chkrebtii's solver [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259).
-- `dalton`: Implementation of our data-adaptive ODE solver.
+- `marginal_mcmc`: MCMC implementation of Chkrebtii's method [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259).
+- `dalton`: Implementation of our data-adaptive ODE likelihood approximation [Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566).
 
 Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
 
@@ -66,7 +66,7 @@ This will create the documentation in `docs/build`.
 
 ## Walkthrough
 
-To illustrate the set-up, let's consider the following ODE example (**FitzHugh-Nagumo** model) where the number of derivatives is $q=1$ for both variables:
+To illustrate the set-up, let's consider the following ODE example (**FitzHugh-Nagumo** model) where the number of derivatives is $p-1=1$ for both variables:
 
 $$
 \begin{align*}
@@ -79,80 +79,83 @@ $$
 where the solution $X(t)$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$.  
 
 To approximate the solution with the probabilistic solver, the Gaussian process prior we will use is a so-called 
-[Continuous Autoregressive Process](https://CRAN.R-project.org/package=cts/vignettes/kf.pdf) of order $p$. 
-A particularly simple $\mathrm{CAR}(p)$ proposed by [Schober](http://link.springer.com/10.1007/s11222-017-9798-7) is the 
-$p-1$ times integrated Brownian motion, 
+[Continuous Autoregressive Process](https://CRAN.R-project.org/package=cts/vignettes/kf.pdf) of order $q$. 
+A particularly simple $\mathrm{CAR}(q)$ proposed by [Schober](http://link.springer.com/10.1007/s11222-017-9798-7) is the 
+$q-1$ times integrated Brownian motion, 
 
 $$
 \begin{equation*}
-\boldsymbol{X(t)} \sim \mathrm{IBM}(p).
+\boldsymbol{X(t)} \sim \mathrm{IBM}(q).
 \end{equation*}
 $$
 
-Here $\boldsymbol{X(t)} = \big(X(t)^{(0)}, \ldots, X(t)^{(p-1)}\big)$ consists of $x(t)$ and its first $p-1$ derivatives. 
-The $\mathrm{IBM}(p)$ model specifies that each of these is continuous, but $X^{(p)}(t)$ is not. 
-Therefore, we need to pick $p > q$. It's usually a good idea to have $p$ a bit larger than $q$, especially when 
-we think that the true solution $X(t)$ is smooth. However, increasing $p$ also increases the computational burden, 
-and doesn't necessarily have to be large for the solver to work.  For this example, we will use $p=3$. 
+Here $\boldsymbol{X(t)} = \big(X(t)^{(0)}, \ldots, X(t)^{(q-1)}\big)$ consists of $x(t)$ and its first $q-1$ derivatives. 
+The $\mathrm{IBM}(q)$ model specifies that each of these is continuous, but $X^{(q)}(t)$ is not. 
+Therefore, we need to pick $q \geq p$. It's usually a good idea to have $q$ a bit larger than $p$, especially when 
+we think that the true solution $X(t)$ is smooth. However, increasing $q$ also increases the computational burden, 
+and doesn't necessarily have to be large for the solver to work.  For this example, we will use $q=3$. 
 To initialize, we simply set $\boldsymbol{X(0)} = (X(0), 0)$. The Python code to implement all this is as follows.
 
 ```python
 import jax
 import jax.numpy as jnp
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.integrate import odeint
+import rodeo
 
-from rodeo.ibm import ibm_init
-from rodeo.ode import *
-from jax.config import config
-config.update("jax_enable_x64", True)
+def fitz_fun(X, t, **params):
+    "FitzHugh-Nagumo ODE in rodeo format."
+    a, b, c = params["theta"]
+    V, R = X[:, 0]
+    return jnp.array(
+        [[c * (V - V * V * V / 3 + R)],
+         [-1 / c * (V - a + b * R)]]
+    )
 
-# RHS of ODE
-from math import sin, cos
-def fitz(X_t, t, theta):
-    "FitzHugh-Nagumo ODE."
-    a, b, c = theta
-    V, R = X_t[:,0]
-    return jnp.array([[c*(V - V*V*V/3 + R)],
-                    [-1/c*(V - a + b*R)]])
+W = jnp.array([[[0., 1., 0.]], [[0., 1., 0.]]])  # LHS matrix of ODE
+x0 = jnp.array([-1., 1.])  # initial value for the ODE-IVP
+theta = jnp.array([.2, .2, 3])  # ODE parameters
+X0 = fitz_init(x0, theta)  # initial value in rodeo format
 
-# problem setup and intialization
-n_deriv = 1  # Total state
-n_obs = 2  # Total observations
-n_deriv_prior = 3
+# Time interval on which a solution is sought.
+t_min = 0.
+t_max = 40.
 
-# it is assumed that the solution is sought on the interval [tmin, tmax].
-n_eval = 800
-tmin = 0.
-tmax = 40.
-theta = jnp.array([0.2, 0.2, 3])
+# --- Define the prior process -------------------------------------------
 
-# The rest of the parameters can be tuned according to ODE
-# For this problem, we will use
-sigma = .01
-sigma = jnp.array([sigma]*n_obs)
+n_vars = 2                        # number of variables in the ODE
+n_deriv = 3  # max number of derivatives
+sigma = jnp.array([.1] * n_vars)  # IBM process scale factor
 
-# Initial W for jax block
-W_mat = np.zeros((n_obs, 1, n_deriv_prior))
-W_mat[:, :, 1] = 1
-W_block = jnp.array(W_mat)
 
-# Initial x0 for jax block
-x0_block = jnp.array([[-1., 1., 0.], [1., 1/3, 0.]])
+# --- data simulation ------------------------------------------------------
 
-# Get parameters needed to run the solver
-dt = (tmax-tmin)/n_eval
-n_order = jnp.array([n_deriv_prior]*n_obs)
-ode_init = ibm_init(dt, n_order, sigma)
+n_steps = 800                  # number of evaluations steps
+dt = (t_max - t_min) / n_steps  # step size
 
-# Jit solver
+# generate the Kalman parameters corresponding to the prior
+prior_Q, prior_R = rodeo.prior.ibm_init(
+    dt=dt_sim,
+    n_deriv=n_deriv,
+    sigma=sigma
+)
+
+# Produce a Pseudo-RNG key
 key = jax.random.PRNGKey(0)
-mv_jit = jax.jit(solve_mv, static_argnums=(1, 6))
-xt, _ = mv_jit(key=key, fun=fitz,
-               x0=x0_block, theta=theta,
-               tmin=tmin, tmax=tmax, n_eval=n_eval,
-               wgt_meas=W_block, **ode_init)
+
+Xt, _ = rodeo.solve_mv(
+    key=key,
+    # define ode
+    ode_fun=fitz_fun,
+    ode_weight=W,
+    ode_init=X0,
+    t_min=t_min,
+    t_max=t_max,
+    theta=theta,  # ODE parameters added here
+    # solver parameters
+    n_steps=n_steps,
+    interrogate=rodeo.interrogate.interrogate_kramer,
+    prior_weight=prior_Q,
+    prior_var=prior_R
+)
 ```
 
 We compare the solution from the solver to the deterministic solution provided by `odeint` in the **scipy** library. 
@@ -171,25 +174,94 @@ where $t=0, 1, \ldots, 40$ and $\phi^2 = 0.005$. For simplicity, we choose a fla
 
 ```python
 # Suppose Y_t is simulated from the observation model above.
-def loglikelihood(Theta):
-    r"Compute the negative loglikihood of :math:`Y_t`."
-    # get initial value and theta from Theta
-    x0 = Theta[3:].reshape((2,1))
-    theta = Theta[:3]
-    # compute initial dR(0), and dV(0)
-    v0 = fitz(x0, 0, theta)
-    # zero pad as above
-    x0 = jnp.hstack([x0, v0, jnp.zeros(shape=(x0.shape))])
-    # compute solution
-    xt, _ = solve_mv(key=key, fun=fitz,
-                     x0=x0, theta=theta,
-                     tmin=tmin, tmax=tmax, n_eval=n_eval,
-                     wgt_meas=W_block, **ode_init)
-    # keep only the points where Y_t exists
-    X_t = X_t[::20, :, 0] 
-    # compute loglikelihood
-    lp = jnp.sum(jsp.stats.norm.logpdf(x=Y_t, loc=X_t, scale=jnp.sqrt(0.005)))
-    return lp
+
+def fitz_init(x0, theta):
+    "FitzHugh-Nagumo initial values in rodeo format."
+    x0 = x0[:, None]
+    return jnp.hstack([
+        x0,
+        fitz_fun(X=x0, t=0., theta=theta),
+        jnp.zeros_like(x0)
+    ])
+
+def fitz_logprior(upars):
+    "Logprior on unconstrained model parameters."
+    n_theta = 5  # number of ODE + IV parameters
+    lpi = jax.scipy.stats.norm.logpdf(
+        x=upars[:n_theta],
+        loc=0.,
+        scale=10.
+    )
+    return jnp.sum(lpi)
+
+
+def fitz_loglik(obs_data, ode_data, **params):
+    """
+    Loglikelihood for measurement model.
+
+    Args:
+        obs_data (ndarray(n_obs, n_vars)): Observations data.
+        ode_data (ndarray(n_obs, n_vars, n_deriv)): ODE solution.
+    """
+    ll = jax.scipy.stats.norm.logpdf(
+        x=obs_data,
+        loc=ode_data[:, :, 0],
+        scale=noise_sd
+    )
+    return jnp.sum(ll)
+
+
+def constrain_pars(upars, dt):
+    """
+    Convert unconstrained optimization parameters into rodeo inputs.
+
+    Args:
+        upars : Parameters vector on unconstrainted scale.
+        dt : Discretization grid size.
+
+    Returns:
+        tuple with elements:
+        - theta : ODE parameters.
+        - X0 : Initial values in rodeo format.
+        - Q, R : Prior matrices.
+    """
+    theta = jnp.exp(upars[:3])
+    x0 = upars[3:5]
+    X0 = fitz_init(x0, theta)
+    sigma = upars[5:]
+    Q, R = rodeo.prior.ibm_init(
+        dt=dt,
+        n_deriv=n_deriv,
+        sigma=sigma
+    )
+    return theta, X0, Q, R
+
+
+def neglogpost_basic(upars):
+    "Negative logposterior for basic approximation."
+    # solve ODE
+    theta, X0, prior_Q, prior_R = constrain_pars(upars, dt_sim)
+    # basic loglikelihood
+    ll = rodeo.inference.basic(
+        key=key, 
+        # ode specification
+        ode_fun=fitz_fun,
+        ode_weight=W,
+        ode_init=X0,
+        t_min=t_min,
+        t_max=t_max,
+        theta=theta,
+        # solver parameters
+        n_steps=n_steps,
+        interrogate=rodeo.interrogate.interrogate_kramer,
+        prior_weight=prior_Q,
+        prior_var=prior_R,
+        # observations
+        obs_data=Y,
+        obs_times=obs_times,
+        obs_loglik=fitz_loglik
+    )
+    return -(ll + fitz_logprior(upars))
 ```
 
 This is a basic example to demonstrate usage. we suggest more sophisticated likelihood approximations which propagate the solution uncertainty to the likelihood approximation such as `fenrir`, `oc_mcmc` and `dalton`. Please refer to the [parameter inference tutorial](docs/examples/parameter.md) for more details.
