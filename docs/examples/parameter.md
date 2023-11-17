@@ -567,6 +567,7 @@ where $b_0 = 0.1$ and $b_1 = 0.5$.
 
 ```{code-cell} ipython3
 # simulate data
+key = jax.random.PRNGKey(100)
 b0 = 0.1
 b1 = 0.5
 Yt = jax.random.poisson(key,lam= jnp.exp(b0+b1*x))
