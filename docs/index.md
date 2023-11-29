@@ -17,7 +17,7 @@ interrogate.rst
 basic.rst
 fenrir.rst
 dalton.rst
-marginalmcmc.rst
+marginal_mcmc.rst
 utils.rst
 ```
 

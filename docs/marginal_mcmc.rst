@@ -1,5 +1,5 @@
-Chkrebtii MCMC
+Marginal MCMC
 ==============
-.. autoclass:: rodeo.oc_mcmc.oc_mcmc
+.. autoclass:: rodeo.inference.marginal_mcmc
     :members:
     :special-members: __init__
