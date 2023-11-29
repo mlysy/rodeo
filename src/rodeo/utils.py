@@ -1,5 +1,5 @@
 r"""
-Util functions for Jax kalmantv.
+Util functions for rodeo.
 
 """
 import jax
@@ -7,22 +7,6 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import jax.scipy.linalg as jsl
 
-def block_diag(X):
-    r"""
-    Convert an array with blocks to a block diagonal matrix.
-
-    Args:
-        X (ndarray(n_eval, n_block, n_dim, n_dim)): Array containing blocks of matrices.
-    
-    Returns:
-        (ndarray(n_eval, n_block * n_dim, n_block * n_dim)): Block diagonal matrix created from the blocks.
-
-    """
-    n_eval = X.shape[0]
-    mat = jax.vmap(lambda t:
-                   jsp.linalg.block_diag(*X[t]))(jnp.arange(n_eval))
-        
-    return mat
 
 def mvncond(mu, Sigma, icond):
     """
@@ -51,3 +35,23 @@ def mvncond(mu, Sigma, icond):
     b = mu[~icond] - jnp.dot(A, mu[icond])  # mu1 - A * mu2
     V = Sigma[jnp.ix_(ficond[0], ficond[0])] - jnp.dot(A, Sigma[jnp.ix_(ticond[0], ficond[0])])  # Sigma11 - A * Sigma21
     return A, b, V
+
+def multivariate_normal_logpdf(x, mean, cov):
+    r"""Using eigendecomposition to compute multivariate normal logpdf.
+    
+    Args:
+        x (ndarray(p)): Observations.
+        mean (ndarray(p)): Mean of the distribution.
+        cov (ndarray(p, p)): Symmetric positive (semi)definite covariance matrix of the distribution.
+    
+    Returns:
+        (float): The logpdf of the multivariate normal.
+    """
+    w, v = jnp.linalg.eigh(cov)
+    z = jnp.dot(v.T, x - mean)
+    z2 = z**2
+    iw = ~jnp.isclose(w, 0, rtol=1e-300)
+    w = jnp.where(iw, w, 1.) # remove possibility of nan
+    val = z2/w + jnp.log(w)
+    val = -.5 * jnp.sum(jnp.where(iw, val, 0.)) - jnp.sum(iw)*.5*jnp.log(2*jnp.pi) 
+    return val

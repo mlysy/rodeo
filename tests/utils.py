@@ -4,9 +4,9 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import jax.random as random
-from rodeo.ibm import ibm_init
-import rodeo.gauss_markov as gm
+from rodeo.prior import ibm_init
 from rodeo.utils import mvncond
+import gauss_markov as gm
 
 def rel_err(X1, X2):
     """
@@ -63,51 +63,42 @@ def kalman_theta(m, y, mu, Sigma):
     return mu_mn, V_mn
 
 def fitz_setup(self):
-    n_deriv = 1  # Total state
-    n_obs = 2  # Total measures
-    n_deriv_prior = 3
+    n_vars = 2  # Number of variables
+    n_deriv = 3
 
-    # it is assumed that the solution is sought on the interval [tmin, tmax].
-    self.tmin = 0.
-    self.tmax = 10.
+    # it is assumed that the solution is sought on the interval [t_min, t_max].
+    self.t_min = 0.
+    self.t_max = 10.
     h = .05
-    self.n_steps = int((self.tmax-self.tmin)/h)
+    self.n_steps = int((self.t_max-self.t_min)/h)
     self.t = jnp.array(.25)  # time
-    self.tseq = np.linspace(self.tmin, self.tmax, self.n_steps+1)
+    self.tseq = np.linspace(self.t_min, self.t_max, self.n_steps+1)
 
     # The rest of the parameters can be tuned according to ODE
     # For this problem, we will use
-    sigma = .1
+    sigma = .001
 
     # Initial value, x0, for the IVP
     self.x0 = np.array([-1., 1.])
-    X0 = jnp.array([[-1., 1], [1., 1/3]])
-    pad_dim = n_deriv_prior - n_deriv - 1
-    self.x0_block = jnp.pad(X0, [(0, 0), (0, pad_dim)])
+    self.x0_block = jnp.array([[-1., 1, 0], [1., 1/3, 0]])
 
     # function parameter
     self.theta = jnp.array([0.2, 0.2, 3])  # True theta
-    n_order = jnp.array([n_deriv_prior]*n_obs)
-    sigma = jnp.array([sigma]*n_obs)
-    self.ode_init = ibm_init(h, n_order, sigma)
-    self.var_block = self.ode_init['var_state']
-    # x0_state = jnp.array(zero_pad(X0, [n_deriv]*n_obs, [n_deriv_prior]*n_obs))
+    sigma = jnp.array([sigma]*n_vars)
+    self.prior_Q, self.prior_R = ibm_init(h, n_deriv, sigma)
 
     # block
     n_bmeas = 1
-    n_bstate = n_deriv_prior
+    n_bstate = 3
 
-    W_block = np.zeros((n_obs, n_bmeas, n_bstate))
+    W_block = np.zeros((n_vars, n_bmeas, n_bstate))
     W_block[:, :, 1] = 1
-    #W_block = jnp.array([W[0, 0:n_bstate],
-    #                    W[1, n_bstate:2*n_bstate]])
-    #self.W_block = jnp.reshape(W_block, newshape=(2,1,3))
     self.W_block = jnp.array(W_block)
-    # self.x0_block = jnp.reshape(x0_state, (n_obs, n_bstate))
     self.key = jax.random.PRNGKey(0)
 
-    def fitz_jax(X_t, t, theta):
+    def fitz_jax(X_t, t, **params):
         "FitzHugh-Nagumo ODE."
+        theta = params['theta']
         a, b, c = theta
         V, R = X_t[0, 0], X_t[1,0]
         return jnp.array([[c*(V - V*V*V/3 + R)],
@@ -134,22 +125,22 @@ def kalman_setup(self):
     self.mean_state = random.normal(subkeys[0], (self.n_tot, self.n_state))
     self.var_state = random.normal(subkeys[1], (self.n_tot, self.n_state, self.n_state))
     self.var_state = jax.vmap(lambda vs: vs.dot(vs.T))(self.var_state)
-    self.trans_state = 0.01*random.normal(subkeys[2], (self.n_tot-1, self.n_state, self.n_state))
-    # trans_state = jnp.zeros((n_tot-1, self.n_state, self.n_state))
+    self.wgt_state = 0.01*random.normal(subkeys[2], (self.n_tot-1, self.n_state, self.n_state))
+    # wgt_state = jnp.zeros((n_tot-1, self.n_state, self.n_state))
     self.mean_meas = random.normal(subkeys[3], (self.n_tot, self.n_meas,))
     self.var_meas = random.normal(subkeys[4], (self.n_tot, self.n_meas, self.n_meas))
     self.var_meas = jax.vmap(lambda vs: vs.dot(vs.T))(self.var_meas)
-    self.trans_meas = random.normal(subkeys[5], (self.n_tot, self.n_meas, self.n_state))
-    # trans_meas = jnp.zeros((n_tot, n_meas, self.n_state))
+    self.wgt_meas = random.normal(subkeys[5], (self.n_tot, self.n_meas, self.n_state))
+    # wgt_meas = jnp.zeros((n_tot, n_meas, self.n_state))
     self.x_meas = random.normal(subkeys[6], (self.n_tot, self.n_meas))
     self.x_state_next = random.normal(subkeys[7], (self.n_state,))
     self.z_state = random.normal(subkeys[8], (self.n_state,))
 
     A_gm, b_gm, C_gm = gm.kalman2gm(
-        trans_state=self.trans_state,
+        wgt_state=self.wgt_state,
         mean_state=self.mean_state,
         var_state=self.var_state,
-        trans_meas=self.trans_meas,
+        wgt_meas=self.wgt_meas,
         mean_meas=self.mean_meas,
         var_meas=self.var_meas
     )

@@ -9,8 +9,9 @@ from jax import random
 from jax.config import config
 import matplotlib.pyplot as plt
 
-from rodeo.ibm import ibm_init
-from rodeo.ode import *
+from rodeo import solve_sim, solve_mv
+from rodeo.prior import ibm_init
+from rodeo.interrogate import interrogate_chkrebtii
 from euler import *
 config.update("jax_enable_x64", True)
 plt.rcParams.update({'font.size': 20})
@@ -32,10 +33,10 @@ def ode_rodeo(X_t, t, theta=None):
     return jnp.array([[jnp.sin(2*t) - X_t[0, 0]]])
 
 # jit functions
-jit_mv = jax.jit(solve_mv, static_argnums=(1, 7))
-jit_sim = jax.jit(solve_sim, static_argnums=(1, 7))
+jit_mv = jax.jit(solve_mv, static_argnums=(1, 6, 7))
+jit_sim = jax.jit(solve_sim, static_argnums=(1, 6, 7))
 
-def solve(W, x0, tmin, tmax, n_steps, n_deriv, sigma, draws):
+def solve(W, x0, t_min, t_max, n_steps, n_deriv, sigma, draws):
     """
     Calculates rodeo, euler, and exact solutions on the given grid for the chkrebtii ode.
 
@@ -60,50 +61,54 @@ def solve(W, x0, tmin, tmax, n_steps, n_deriv, sigma, draws):
         - **x_exact** (ndarray(n_steps+1, 2)): Exact solution at times :math:`t = a,\ldots,b`
 
     """
-    dt = (tmax-tmin)/n_steps  # step size
-    prior_pars = ibm_init(
+    dt = (t_max-t_min)/n_steps  # step size
+    prior_Q, prior_R = ibm_init(
         dt=dt,
         n_deriv=n_deriv,
         sigma=sigma
     )
     # Run the solver which gives the posterior mean and variance
     key = jax.random.PRNGKey(0)  # PRNG key for JAX
+    key, subkey = random.split(key)
     Xm, _ = jit_mv(
-        key=key,
+        key=subkey,
         # define ode
-        fun=ode_rodeo,
-        W=W,
-        x0=x0,
-        theta=None,
-        tmin=tmin,
-        tmax=tmax,
+        ode_fun=ode_rodeo,
+        ode_weight=W,
+        ode_init=x0,
+        t_min=t_min,
+        t_max=t_max,
         # solver parameters
         n_steps=n_steps,
-        **prior_pars
+        interrogate=interrogate_chkrebtii,
+        prior_weight=prior_Q,
+        prior_var=prior_R
+        
     )
     
-    Xt = np.zeros((draws, n_steps+1, n_deriv[0]))
+    Xt = np.zeros((draws, n_steps+1, n_deriv))
     for i in range(draws):
         # Run the solver which gives a draw
         key, subkey = random.split(key)
         x_sol = jit_sim(
             key=subkey,
             # define ode
-            fun=ode_rodeo,
-            W=W,
-            x0=x0,
-            theta=None,
-            tmin=tmin,
-            tmax=tmax,
+            ode_fun=ode_rodeo,
+            ode_weight=W,
+            ode_init=x0,
+            t_min=t_min,
+            t_max=t_max,
             # solver parameters
             n_steps=n_steps,
-            **prior_pars
+            interrogate=interrogate_chkrebtii,
+            prior_weight=prior_Q,
+            prior_var=prior_R
         )
         Xt[i] = x_sol[:, 0]
     x0_euler = x0.flatten()[:-2]
-    x_euler = euler(ode_euler, x0_euler, None, tmin, tmax, n_steps)
+    x_euler = euler(ode_euler, x0_euler, None, t_min, t_max, n_steps)
     x_exact = np.zeros((n_steps+1, 2))
-    tseq = np.linspace(tmin, tmax, n_steps+1)
+    tseq = np.linspace(t_min, t_max, n_steps+1)
     for i,t in enumerate(tseq):
         x_exact[i, 0] = ode_exact_x(t)
         x_exact[i, 1] = ode_exact_x1(t)
@@ -120,14 +125,14 @@ def graph():
     x0 = jnp.array([[-1., 0., 1., 0.0]])  # IVP initial value
 
     # time interval on which solution is sought
-    tmin = 0.
-    tmax = 10.
+    t_min = 0.
+    t_max = 10.
 
     # Define the solution prior process
 
     n_vars = 1  # number of system variables
     # number of continuous derivatives per variable
-    n_deriv = jnp.array([4] * n_vars)
+    n_deriv = 4
     sigma = jnp.array([.1] * n_vars)  # IBM process scale factor per variable
 
     # the prior parameters to the rodeo solver depend on solver step size
@@ -146,8 +151,8 @@ def graph():
     for i in range(dim_example):
         tseq[i], Xn[i], x_euler[i], x_exact[i], Xmean[i] = solve(W=W,
                                                                 x0=x0,
-                                                                tmin=tmin, 
-                                                                tmax=tmax, 
+                                                                t_min=t_min, 
+                                                                t_max=t_max, 
                                                                 n_steps=N[i],
                                                                 n_deriv=n_deriv,
                                                                 sigma=sigma, 
@@ -180,6 +185,8 @@ def graph():
     axs[0, -1].legend(loc='upper left', bbox_to_anchor=[1, 1])
     
     fig.tight_layout()
-    fig.savefig('figures/chkrebtiifigure.pdf')
+    # fig.savefig('figures/chkrebtiifigure.pdf')
     plt.show()
     return fig
+
+graph()

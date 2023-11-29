@@ -1,4 +1,4 @@
-Fenrir Solver
+Fenrir Method
 =============
-.. automodule:: rodeo.fenrir
+.. automodule:: rodeo.inference.fenrir
     :members:

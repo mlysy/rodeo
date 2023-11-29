@@ -11,11 +11,13 @@ API Documentation
 
 kalmantv.rst
 ibm.rst
-ode.rst
-oc_mcmc.rst
+indep_init.rst
+solve.rst
+interrogate.rst
+basic.rst
 fenrir.rst
 dalton.rst
-gauss_markov.rst
+marginalmcmc.rst
 utils.rst
 ```
 

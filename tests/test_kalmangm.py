@@ -3,8 +3,8 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 import rodeo.kalmantv as ktv
-import utils
 from rodeo.utils import mvncond
+import utils
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 # --- kalmantv.predict ---------------------------------------------------------
@@ -29,7 +29,7 @@ class TestKalmanTVGM(unittest.TestCase):
             mean_state_past=mean_state_past,
             var_state_past=var_state_past,
             mean_state=self.mean_state[1],
-            trans_state=self.trans_state[0],
+            wgt_state=self.wgt_state[0],
             var_state=self.var_state[1]
         )
 
@@ -48,10 +48,9 @@ class TestKalmanTVGM(unittest.TestCase):
         mean_state_filt2, var_state_filt2 = ktv.update(
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
-            W=self.trans_meas[1],
             x_meas=self.x_meas[1],
             mean_meas=self.mean_meas[1],
-            trans_meas=self.trans_meas[1],
+            wgt_meas=self.wgt_meas[1],
             var_meas=self.var_meas[1]
         )
 
@@ -76,11 +75,11 @@ class TestKalmanTVGM(unittest.TestCase):
                 mean_state_past=mean_state_past,
                 var_state_past=var_state_past,
                 mean_state=self.mean_state[1],
-                trans_state=self.trans_state[0],
+                wgt_state=self.wgt_state[0],
                 var_state=self.var_state[1],
                 x_meas=self.x_meas[1],
                 mean_meas=self.mean_meas[1],
-                trans_meas=self.trans_meas[1],
+                wgt_meas=self.wgt_meas[1],
                 var_meas=self.var_meas[1]
             )
 
@@ -107,11 +106,11 @@ class TestKalmanTVGM(unittest.TestCase):
                 mean_state_past=mean_state_past,
                 var_state_past=var_state_past,
                 mean_state=self.mean_state[2],
-                trans_state=self.trans_state[1],
+                wgt_state=self.wgt_state[1],
                 var_state=self.var_state[2],
                 x_meas=self.x_meas[2],
                 mean_meas=self.mean_meas[2],
-                trans_meas=self.trans_meas[2],
+                wgt_meas=self.wgt_meas[2],
                 var_meas=self.var_meas[2]
             )
 
@@ -145,7 +144,7 @@ class TestKalmanTVGM(unittest.TestCase):
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
-            trans_state=self.trans_state[0]
+            wgt_state=self.wgt_state[0]
         )
 
         self.assertAlmostEqual(utils.rel_err(mean_state_smooth1, mean_state_smooth2), 0.0)
@@ -183,7 +182,7 @@ class TestKalmanTVGM(unittest.TestCase):
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
-            trans_state=self.trans_state[0]
+            wgt_state=self.wgt_state[0]
         )
 
         self.assertAlmostEqual(utils.rel_err(mean_state_sim1, mean_state_sim2), 0.0)
@@ -227,7 +226,7 @@ class TestKalmanTVGM(unittest.TestCase):
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
-            trans_state=self.trans_state[0],
+            wgt_state=self.wgt_state[0],
         )
         self.assertAlmostEqual(utils.rel_err(mean_state_sim1, mean_state_sim2), 0.0)
         self.assertAlmostEqual(utils.rel_err(V, var_state_sim2), 0.0)
@@ -265,7 +264,7 @@ class TestKalmanTVGM(unittest.TestCase):
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
-            trans_state=self.trans_state[0]
+            wgt_state=self.wgt_state[0]
         )
 
         self.assertAlmostEqual(utils.rel_err(A, A2), 0.0)

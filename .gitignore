@@ -13,3 +13,4 @@ src/rodeo.egg-info/
 figures/
 saves/
 *.ipynb
+/examples/dalton
