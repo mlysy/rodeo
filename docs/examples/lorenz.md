@@ -38,7 +38,7 @@ from rodeo.prior import ibm_init
 from rodeo.interrogate import interrogate_kramer
 from rodeo.inference.fenrir import solve_mv as fsolve
 from rodeo.inference.dalton import solve_mv as dsolve
-from jax.config import config
+from jax import config
 config.update("jax_enable_x64", True)
 ```
 

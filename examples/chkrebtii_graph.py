@@ -6,7 +6,7 @@ from math import sin, cos
 import jax
 import jax.numpy as jnp
 from jax import random
-from jax.config import config
+from jax import config
 import matplotlib.pyplot as plt
 
 from rodeo import solve_sim, solve_mv
@@ -25,11 +25,11 @@ def ode_exact_x1(t):
     return (-2*cos(2*t) + 3*sin(t) + 2*cos(t))/3
 
 # Example ode written for Euler Approximation
-def ode_euler(x, t, theta=None):
+def ode_euler(x, t):
     return jnp.array([x[1], jnp.sin(2*t) -x[0]])
 
 # Setup the IVP problem in rodeo block form
-def ode_rodeo(X_t, t, theta=None):
+def ode_rodeo(X_t, t):
     return jnp.array([[jnp.sin(2*t) - X_t[0, 0]]])
 
 # jit functions

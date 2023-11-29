@@ -40,7 +40,7 @@ from scipy.integrate import odeint
 from rodeo.prior import ibm_init
 from rodeo.interrogate import *
 from rodeo import solve_mv, solve_sim
-from jax.config import config
+from jax import config
 config.update("jax_enable_x64", True)
 ```
 

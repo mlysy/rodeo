@@ -31,7 +31,7 @@ import rodeo.prior
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from jax.config import config
+from jax import config
 config.update("jax_enable_x64", True)
 ```
 
@@ -328,40 +328,40 @@ The structure of this method is different than the other solvers presented here.
 
 ```{code-cell} ipython3
 class fitz_mcmc(rodeo.inference.MarginalMCMC):
-    def __init__(self, obs_data, obs_times,
-                 t_min, t_max, n_steps):
-        self._W = W
-        super().__init__(
-            obs_data=obs_data,
-            obs_times=obs_times,
-            t_min=t_min,
-            t_max=t_max,
-            n_steps=n_steps
-        )
 
     def logprior(self, upars):
+        "Need to implement this to define the prior"
         return fitz_logprior(upars)
 
     def obs_loglik(self, obs_data, ode_data, **params):
+        "Need to implement this to define the observation likelihood"
         return fitz_loglik(obs_data, ode_data, **params)
 
-    def solve(self, key, upars, t_min, t_max, n_steps):
-        dt = (t_max - t_min) / n_steps
-        theta, X0, prior_Q, prior_R = constrain_pars(upars, dt)
+    def parse_pars(self, upars, dt):
+        "Need to implement this to parse the parameters"
+        theta, X0, prior_Q, prior_R, = constrain_pars(upars, dt)
+        params ={
+            "theta": theta
+        }
+        return W, X0, prior_Q, prior_R, params
+
+    # you can define your solve function like this or use the default
+    def solve(self, key, ode_weight, ode_init, prior_weight, prior_var, **params):
+        "You can define your solve function like this or use the base class solve."
         Xt = rodeo.solve_sim(
             key=key,
             # define ode
-            ode_fun=fitz_fun,
-            ode_weight=self._W,
-            ode_init=X0,
-            t_min=t_min,
-            t_max=t_max,
-            theta=theta,
+            ode_fun=self._ode_fun,
+            ode_weight=ode_weight,
+            ode_init=ode_init,
+            t_min=self._t_min,
+            t_max=self._t_max,
             # solver parameters
-            n_steps=n_steps,
+            n_steps=self._n_steps,
             interrogate=rodeo.interrogate.interrogate_kramer,
-            prior_weight=prior_Q,
-            prior_var=prior_R
+            prior_weight=prior_weight,
+            prior_var=prior_var,
+            **params
         )
         return Xt
 
@@ -387,6 +387,7 @@ def fitz_chmcmc(key, n_samples, upars_init):
 
     # initial the fitz_mcmc class
     fitz_ch = fitz_mcmc(
+        ode_fun=fitz_fun,
         obs_data=Y,
         obs_times=obs_times,
         t_min=t_min,
