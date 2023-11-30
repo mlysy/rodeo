@@ -81,31 +81,31 @@ def dalton(key, ode_fun, ode_weight, ode_init,
     key1, key2 = jax.random.split(key)
 
     # compute p(Z_{1:N}, Y_{0:M})
-    def scan_zy(carry, t):
-        mean_state_filt, var_state_filt = carry["state_filt"]
-        logdens = carry["logdens"]
-        key, subkey = jax.random.split(carry["key"])
+    def scan(carry, t):
+        mean_state_filt_zy, var_state_filt_zy = carry["state_filt_joint"]
+        mean_state_filt_z, var_state_filt_z = carry["state_filt_marg"]
+        logdens_zy = carry["logdens_joint"]
+        logdens_z = carry["logdens_marg"]
+        key, *subkey = jax.random.split(carry["key"], num=3)
         i = carry["i"]
         ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
         
-        # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(
-            lambda b: predict(
-                mean_state_past=mean_state_filt[b],
-                var_state_past=var_state_filt[b],
-                mean_state=mean_state[b],
-                wgt_state=prior_weight[b],
-                var_state=prior_var[b]
-            )
-        )(jnp.arange(n_block))
+        # compute joint logpdf
+        mean_state_pred_zy, var_state_pred_zy = jax.vmap(predict)(
+                mean_state_past=mean_state_filt_zy,
+                var_state_past=var_state_filt_zy,
+                mean_state=mean_state,
+                wgt_state=prior_weight,
+                var_state=prior_var
+        )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
             key=subkey,
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
-            mean_state_pred=mean_state_pred,
-            var_state_pred=var_state_pred,
+            mean_state_pred=mean_state_pred_zy,
+            var_state_pred=var_state_pred_zy,
             **params
         )
         W_meas = ode_weight + wgt_meas
@@ -116,87 +116,69 @@ def dalton(key, ode_fun, ode_weight, ode_init,
             mean_meas_obs = jnp.concatenate([mean_meas, obs_mean], axis=1)
             var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], obs_var[i, b]))(jnp.arange(n_block))
             x_meas_obs = jnp.concatenate([x_meas, obs_data[i]], axis=1)
-            logp, mean_state_next, var_state_next = jax.vmap(
-                lambda b: _forecast_update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=x_meas_obs[b],
-                    mean_meas=mean_meas_obs[b],
-                    wgt_meas=wgt_meas_obs[b],
-                    var_meas=var_meas_obs[b]
-                )                                                
-            )(jnp.arange(n_block))
+            logp, mean_state_next, var_state_next = jax.vmap(_forecast_update)(
+                    mean_state_pred=mean_state_pred_zy,
+                    var_state_pred=var_state_pred_zy,
+                    x_meas=x_meas_obs,
+                    mean_meas=mean_meas_obs,
+                    wgt_meas=wgt_meas_obs,
+                    var_meas=var_meas_obs
+            )                     
             return mean_state_next, var_state_next, jnp.sum(logp), i+1
 
         # only z is observed
         def z_update():
-            logp, mean_state_next, var_state_next = jax.vmap(
-                lambda b: _forecast_update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=x_meas[b],
-                    mean_meas=mean_meas[b],
-                    wgt_meas=W_meas[b],
-                    var_meas=var_meas[b]
-                )                                                
-            )(jnp.arange(n_block))
+            logp, mean_state_next, var_state_next = jax.vmap(_forecast_update)(
+                    mean_state_pred=mean_state_pred_zy,
+                    var_state_pred=var_state_pred_zy,
+                    x_meas=x_meas,
+                    mean_meas=mean_meas,
+                    wgt_meas=W_meas,
+                    var_meas=var_meas                                               
+            )
             return mean_state_next, var_state_next, jnp.sum(logp), i
 
-        mean_state_next, var_state_next, logp, i = jax.lax.cond(ode_time == obs_times[i], zy_update, z_update)
-        logdens += logp
-        # output
-        carry = {
-            "state_filt": (mean_state_next, var_state_next),
-            "logdens": logdens,
-            "key": key,
-            "i": i
-        }
-        return carry, None
-    
-    # compute p(Z_{1:N})
-    def scan_z(carry, t):
-        mean_state_filt, var_state_filt = carry["state_filt"]
-        logdens = carry["logdens"]
-        key, subkey = jax.random.split(carry["key"])
-        ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
-        # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(
-            lambda b: predict(
-                mean_state_past=mean_state_filt[b],
-                var_state_past=var_state_filt[b],
-                mean_state=mean_state[b],
-                wgt_state=prior_weight[b],
-                var_state=prior_var[b]
-            )
-        )(jnp.arange(n_block))
+        mean_state_next_zy, var_state_next_zy, logp, i = jax.lax.cond(ode_time == obs_times[i], zy_update, z_update)
+        logdens_zy += logp
+        
+
+        # compute marginal logpdf
+        mean_state_pred_z, var_state_pred_z = jax.vmap(predict)(
+                mean_state_past=mean_state_filt_z,
+                var_state_past=var_state_filt_z,
+                mean_state=mean_state,
+                wgt_state=prior_weight,
+                var_state=prior_var
+        )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
             key=subkey,
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
-            mean_state_pred=mean_state_pred,
-            var_state_pred=var_state_pred,
+            mean_state_pred=mean_state_pred_z,
+            var_state_pred=var_state_pred_z,
             **params
         )
         W_meas = ode_weight + wgt_meas
         # kalman forecast and update
-        logp, mean_state_next, var_state_next = jax.vmap(
-            lambda b: _forecast_update(
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                x_meas=x_meas[b],
-                mean_meas=mean_meas[b],
-                wgt_meas=W_meas[b],
-                var_meas=var_meas[b]
-            )                                                
-        )(jnp.arange(n_block))
-        logdens += jnp.sum(logp)
-        # output
+        logp, mean_state_next_z, var_state_next_z = jax.vmap(_forecast_update)(
+                mean_state_pred=mean_state_pred_z,
+                var_state_pred=var_state_pred_z,
+                x_meas=x_meas,
+                mean_meas=mean_meas,
+                wgt_meas=W_meas,
+                var_meas=var_meas
+        )                       
+        logdens_z += jnp.sum(logp)
+        # carry over state
         carry = {
-            "state_filt": (mean_state_next, var_state_next),
-            "logdens": logdens,
-            "key": key
+            "state_filt_joint": (mean_state_next_zy, var_state_next_zy),
+            "state_filt_marg": (mean_state_next_z, var_state_next_z),
+            "logdens_joint": logdens_zy,
+            "logdens_marg": logdens_z,
+            "key": key,
+            "i": i
         }
         return carry, None
     
@@ -211,24 +193,16 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         return 0.0, 0
     logdens_zy, i = jax.lax.cond(obs_times[0]==0, _logy0, _no_logy0)
     
-    # scan initial value for computing p(Y_{0:M}, Z_{1:N})
-    scan_init_zy = {
-        "state_filt": (mean_state_init, var_state_init),
-        "logdens": logdens_zy,
+    scan_init = {
+        "state_filt_joint": (mean_state_init, var_state_init),
+        "state_filt_marg": (mean_state_init, var_state_init),
+        "logdens_joint": logdens_zy,
+        "logdens_marg": 0.0,
         "key": key1,
         "i": i
     }
-    zy_out, _ = jax.lax.scan(scan_zy, scan_init_zy, jnp.arange(n_steps))
-    
-    # scan initial value for computing p(Z_{1:N})
-    scan_init_z= {
-        "state_filt": (mean_state_init, var_state_init),
-        "logdens": 0.0,
-        "key": key2
-    }
-    # scan itself
-    z_out, _ = jax.lax.scan(scan_z, scan_init_z, jnp.arange(n_steps))
-    return zy_out["logdens"] - z_out["logdens"]
+    out, _ = jax.lax.scan(scan, scan_init, jnp.arange(n_steps))
+    return out["logdens_joint"] - out["logdens_marg"]
 
 
 # --- ODE solver --------------------------------------------------------------
@@ -272,15 +246,13 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
         
         # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(
-            lambda b: predict(
-                mean_state_past=mean_state_filt[b],
-                var_state_past=var_state_filt[b],
-                mean_state=mean_state[b],
-                wgt_state=prior_weight[b],
-                var_state=prior_var[b]
-            )
-        )(jnp.arange(n_block))
+        mean_state_pred, var_state_pred = jax.vmap(predict)(
+                mean_state_past=mean_state_filt,
+                var_state_past=var_state_filt,
+                mean_state=mean_state,
+                wgt_state=prior_weight,
+                var_state=prior_var
+        )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
             key=subkey,
@@ -299,30 +271,26 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
             mean_meas_obs = jnp.concatenate([mean_meas, obs_mean], axis=1)
             var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], obs_var[i, b]))(jnp.arange(n_block))
             x_meas_obs = jnp.concatenate([x_meas, obs_data[i]], axis=1)
-            mean_state_next, var_state_next = jax.vmap(
-                lambda b: update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=x_meas_obs[b],
-                    mean_meas=mean_meas_obs[b],
-                    wgt_meas=wgt_meas_obs[b],
-                    var_meas=var_meas_obs[b]
-                )                                                
-            )(jnp.arange(n_block))
+            mean_state_next, var_state_next = jax.vmap(update)(
+                    mean_state_pred=mean_state_pred,
+                    var_state_pred=var_state_pred,
+                    x_meas=x_meas_obs,
+                    mean_meas=mean_meas_obs,
+                    wgt_meas=wgt_meas_obs,
+                    var_meas=var_meas_obs
+            )                        
             return mean_state_next, var_state_next, i+1
 
         # only z is observed
         def z_update():
-            mean_state_next, var_state_next = jax.vmap(
-                lambda b: update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=x_meas[b],
-                    mean_meas=mean_meas[b],
-                    wgt_meas=W_meas[b],
-                    var_meas=var_meas[b]
-                )                                                
-            )(jnp.arange(n_block))
+            mean_state_next, var_state_next = jax.vmap(update)(
+                    mean_state_pred=mean_state_pred,
+                    var_state_pred=var_state_pred,
+                    x_meas=x_meas,
+                    mean_meas=mean_meas,
+                    wgt_meas=W_meas,
+                    var_meas=var_meas
+            )                            
             return mean_state_next, var_state_next, i
 
         mean_state_next, var_state_next, i = jax.lax.cond(ode_time == obs_times[i], zy_update, z_update)
@@ -397,17 +365,15 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         var_state_filt = smooth_kwargs['var_state_filt']
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
-        mean_state_curr, var_state_curr = jax.vmap(
-            lambda b: smooth_mv(
-                mean_state_next=state_next["mean"][b],
-                var_state_next=state_next["var"][b],
-                wgt_state=prior_weight[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-            )
-        )(jnp.arange(n_block))
+        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+                mean_state_next=state_next["mean"],
+                var_state_next=state_next["var"],
+                wgt_state=prior_weight,
+                mean_state_filt=mean_state_filt,
+                var_state_filt=var_state_filt,
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+        )
         state_curr = {
             "mean": mean_state_curr,
             "var": var_state_curr

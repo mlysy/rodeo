@@ -125,26 +125,21 @@ def _backward(mean_state_filt, var_state_filt,
         t = forward_states["t"] # t_n
         ode_time = t_min + (t_max-t_min)*t/n_steps
         # get Markov params
-        wgt_state_back, mean_state_back, var_state_back = jax.vmap(
-            lambda b: smooth_cond(
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                wgt_state=prior_weight[b]
-            )
-        )(jnp.arange(n_block))
-
+        wgt_state_back, mean_state_back, var_state_back = jax.vmap(smooth_cond)(
+                mean_state_filt=mean_state_filt,
+                var_state_filt=var_state_filt,
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+                wgt_state=prior_weight
+        )
         # kalman predict
-        bmean_state_pred, bvar_state_pred = jax.vmap(
-            lambda b: predict(
-                mean_state_past=bmean_state_filt[b],
-                var_state_past=bvar_state_filt[b],
-                mean_state=mean_state_back[b],
-                wgt_state=wgt_state_back[b],
-                var_state=var_state_back[b]
-            )
-        )(jnp.arange(n_block))
+        bmean_state_pred, bvar_state_pred = jax.vmap(predict)(
+                mean_state_past=bmean_state_filt,
+                var_state_past=bvar_state_filt,
+                mean_state=mean_state_back,
+                wgt_state=wgt_state_back,
+                var_state=var_state_back
+        )
 
         # not t time point of observation
         def _no_obs():
@@ -153,16 +148,14 @@ def _backward(mean_state_filt, var_state_filt,
         # at time point of observation
         def _obs():
             # kalman forecast and update
-            logp, bmean_state_next, bvar_state_next = jax.vmap(
-                lambda b: _forecast_update(
-                    mean_state_pred=bmean_state_pred[b],
-                    var_state_pred=bvar_state_pred[b],
-                    x_meas=obs_data[i, b],
-                    mean_meas=obs_mean[b],
-                    wgt_meas=obs_weight[i, b],
-                    var_meas=obs_var[i, b]
-                )
-            )(jnp.arange(n_block))
+            logp, bmean_state_next, bvar_state_next = jax.vmap(_forecast_update)(
+                    mean_state_pred=bmean_state_pred,
+                    var_state_pred=bvar_state_pred,
+                    x_meas=obs_data[i],
+                    mean_meas=obs_mean,
+                    wgt_meas=obs_weight[i],
+                    var_meas=obs_var[i]
+            )
             return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
 
         bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(
@@ -326,7 +319,7 @@ def _smooth_mv(state_par):
     mean_state_pred, var_state_pred = state_par["state_pred"]
     mean_state_filt, var_state_filt = state_par["state_filt"]
     wgt_state = state_par["wgt_state"]
-    n_tot, n_block, n_bstate = mean_state_pred.shape
+    n_tot = mean_state_pred.shape[0]
     # smooth pass
     # lax.scan setup
 
@@ -336,17 +329,15 @@ def _smooth_mv(state_par):
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
         wgt_state = smooth_kwargs['wgt_state']
-        mean_state_curr, var_state_curr = jax.vmap(
-            lambda b: smooth_mv(
-                mean_state_next=state_next["mean"][b],
-                var_state_next=state_next["var"][b],
-                wgt_state=wgt_state[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-            )
-        )(jnp.arange(n_block))
+        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+                mean_state_next=state_next["mean"],
+                var_state_next=state_next["var"],
+                wgt_state=wgt_state,
+                mean_state_filt=mean_state_filt,
+                var_state_filt=var_state_filt,
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+        )
         state_curr = {
             "mean": mean_state_curr,
             "var": var_state_curr

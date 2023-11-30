@@ -146,8 +146,8 @@ def solve_sim(key, ode_fun,  ode_weight, ode_init,
               **params):
     
     n_block, n_bstate, _ = prior_weight.shape
-    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
+    key, *subkeys = jax.random.split(key, num=n_steps+1)
+    subkeys = jnp.array(subkeys)
     x_state_smooth = jnp.zeros((n_steps+1, n_block, n_bstate))
     x_state_smooth = x_state_smooth.at[0].set(ode_init)
 
@@ -162,16 +162,17 @@ def solve_sim(key, ode_fun,  ode_weight, ode_init,
             **params   
     )
 
-    for b in range(n_block):
-        x_state_smooth = x_state_smooth.at[n_steps, b].set(
-            jax.random.multivariate_normal(
-                subkeys[n_steps-1, b],
-                mean_state_filt[n_steps, b],
-                var_state_filt[n_steps, b],
-                method='svd')
+    x_state_smooth = x_state_smooth.at[n_steps].set(
+        jax.random.multivariate_normal(
+            subkeys[n_steps-1],
+            mean_state_filt[n_steps],
+            var_state_filt[n_steps],
+            method='svd')
         )
 
     for t in range(n_steps-1, 0, -1):
+        mean_state_temp = jnp.zeros((n_block, n_bstate))
+        var_state_temp = jnp.zeros((n_block, n_bstate, n_bstate))
         for b in range(n_block):
             mean_state_sim, var_state_sim = smooth_sim(
                     x_state_next=x_state_smooth[t+1, b],
@@ -181,8 +182,10 @@ def solve_sim(key, ode_fun,  ode_weight, ode_init,
                     mean_state_pred=mean_state_pred[t+1, b],
                     var_state_pred=var_state_pred[t+1, b]
                 )
-            x_state_smooth = x_state_smooth.at[t, b].set(
-                jax.random.multivariate_normal(subkeys[t-1, b], mean_state_sim, var_state_sim, method='svd'))
+            mean_state_temp = mean_state_temp.at[b].set(mean_state_sim)
+            var_state_temp = var_state_temp.at[b].set(var_state_sim)
+        x_state_smooth = x_state_smooth.at[t].set(
+            jax.random.multivariate_normal(subkeys[t-1], mean_state_temp , var_state_temp, method='svd'))
     
     # x_state_smooth = jnp.reshape(x_state_smooth, newshape=(-1, n_block*n_bstate))
     return x_state_smooth
