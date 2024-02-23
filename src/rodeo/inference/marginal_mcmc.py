@@ -32,39 +32,39 @@ class MarginalMCMC(object):
         self._sim_times = jnp.linspace(t_min, t_max, n_steps + 1)
         self._obs_ind = jnp.searchsorted(self._sim_times, self._obs_times)
 
-    def prop_lpdf(self, all_pars_new, all_pars_old, **prop_params):
+    def prop_lpdf(self, upars_prop, upars_curr, **prop_params):
         r"""
-        Computes the log-density of the proposal distribution ``q(all_pars_new | all_pars_old)``.
+        Computes the log-density of the proposal distribution ``q(upars_prop | upars_curr)``.
 
-        The base class assumes that ``all_pars_new`` is a JAX array and that proposal is ``all_pars_new ~ind Normal(all_pars_old, prop_params["scale"]^2)``.
+        The base class assumes that ``upars_prop`` is a JAX array and that proposal is ``upars_prop ~ind Normal(upars_curr, prop_params["scale"]^2)``.
 
         Args:
-            all_pars_new (JAX pytree): New model parameters.
-            all_pars_old (JAX pytree): Old model parameters.
+            upars_prop (JAX pytree): Proposal model parameters.
+            upars_curr (JAX pytree): Current model parameters.
             prop_params (optional): Parameters used in the proposal distribution.
 
         Return:
             (float): Log-density of proposal distribution.
         """
         lp = jsp.stats.norm.logpdf(
-            x=all_pars_new,
-            loc=all_pars_old,
+            x=upars_prop,
+            loc=upars_curr,
             scale=prop_params["scale"]
         )
         return jnp.sum(lp)
 
-    def prop_sim(self, key, all_pars_old, **prop_params):
+    def prop_sim(self, key, upars_curr, **prop_params):
         r"""
         Simulate a draw from the proposal distribution.
         """
-        eps = jax.random.normal(key, shape=all_pars_old.shape)
-        all_pars_new = all_pars_old + prop_params["scale"] * eps
-        return all_pars_new
+        eps = jax.random.normal(key, shape=upars_curr.shape)
+        upars_prop = upars_curr + prop_params["scale"] * eps
+        return upars_prop
 
     @abstractmethod
-    def parse_pars(self, all_pars, dt):
+    def parse_pars(self, upars, dt):
         r"""
-        Parse the parameters from ``all_pars`` such that the output contains a tuple which contains the elements:
+        Parse the parameters from ``upars`` such that the output contains a tuple which contains the elements:
             
             1. The weight matrix defining the ODE; :math:`W`.
             2. The initial value to the IVP (i.e., ``ode_init``).
@@ -77,12 +77,12 @@ class MarginalMCMC(object):
         pass
 
     @abstractmethod
-    def logprior(self, all_pars):
+    def logprior(self, upars):
         r"""
-        The logprior for ``all_pars``. Dependent on example. Please implement this.
+        The logprior for ``upars``. Dependent on example. Please implement this.
 
         Args:
-            all_pars: All the parameters in the inference problem.
+            upars: All the parameters in the inference problem.
         """
         pass
 
@@ -94,13 +94,13 @@ class MarginalMCMC(object):
         """
         pass
 
-    def _logpost(self, ode_data, all_pars, **params):
+    def _logpost(self, ode_data, upars, **params):
         "Calculate logposterior."
         ll = self.obs_loglik(self._obs_data, ode_data[self._obs_ind], **params)
-        lpi = self.logprior(all_pars)
+        lpi = self.logprior(upars)
         return ll + lpi
 
-    def solve(self, key, ode_weight, ode_init, prior_weight, prior_var, **params):
+    def _solve(self, key, ode_weight, ode_init, prior_weight, prior_var, **params):
         r"""
         Solve the ODE using the Chkrebtii solver given the input arguments.
 
@@ -133,32 +133,31 @@ class MarginalMCMC(object):
         )
         return Xt
 
-    def initialize(self, key, all_pars_init):
+    def initialize(self, key, upars_init):
         r"""
-        Compute the initial loglikelihood of ``all_pars``.
+        Compute the initial loglikelihood of ``upars``.
 
         Args:
             key (PRNGKey): PRNG key.
-            all_pars_init (JAX Pytree): Initial parameters for the inference problem.
+            upars_init (JAX Pytree): Initial parameters for the inference problem.
 
         Return:
             (tuple):
-            - **all_pars_init** (n_theta): Initial parameters for the inference problem.
-            - **Xt_init** (ndarray(n_block, n_bstate, n_bmeas)): Solution for given ``all_pars_init`` using the Chkrebtii solver.
-            - **lp_init** (float): Loglikelihood of the ``all_pars_init``.
+            - **upars_init** (n_theta): Initial parameters for the inference problem.
+            - **Xt_init** (ndarray(n_block, n_bstate, n_bmeas)): Solution for given ``upars_init`` using the Chkrebtii solver.
+            - **lp_init** (float): Loglikelihood of the ``upars_init``.
 
         """
         dt = (self._t_max - self._t_min)/self._n_steps
-        ode_weight, ode_init, prior_weight, prior_var, params = self.parse_pars(all_pars_init, dt)
-        Xt_init = self.solve(key=key, 
-                             all_pars=all_pars_init,
-                             ode_weight=ode_weight, 
-                             ode_init=ode_init, 
-                             prior_weight=prior_weight,
-                             prior_var=prior_var,
-                             **params)
-        lp_init = self._logpost(Xt_init, all_pars_init, **params)
-        return (all_pars_init, Xt_init, lp_init)
+        ode_weight, ode_init, prior_weight, prior_var, params = self.parse_pars(upars_init, dt)
+        Xt_init = self._solve(key=key,
+                              ode_weight=ode_weight, 
+                              ode_init=ode_init, 
+                              prior_weight=prior_weight,
+                              prior_var=prior_var,
+                              **params)
+        lp_init = self._logpost(Xt_init, upars_init, **params)
+        return (upars_init, Xt_init, lp_init)
 
     def step(self, key, state, **prop_params):
         r"""
@@ -166,25 +165,25 @@ class MarginalMCMC(object):
 
         Args:
             key (PRNGKey): PRNG key.
-            state (tuple): Current state which constains the current parameter ``all_pars``, ODE solution and loglikelihood.
+            state (tuple): Current state which constains the current parameter ``upars``, ODE solution and loglikelihood.
             prop_params (optioanl): Parameters used in the proposal distribution.
 
         Return:
             (tuple):
             - **state** (tuple): Next state.
-            - **sample** (tuple): A sample of ``all_pars`` using the MCMC algorithm.
+            - **sample** (tuple): A sample of ``upars`` using the MCMC algorithm.
         """
         keys = jax.random.split(key, num=3)
-        all_pars_curr, Xt_curr, lp_curr = state
-        all_pars_prop = self.prop_sim(keys[0], all_pars_curr, **prop_params)
-        _, Xt_prop, lp_prop = self.initialize(keys[1], all_pars_prop)
-        lacc_prop = lp_prop - self.prop_lpdf(all_pars_prop, all_pars_curr, **prop_params)
-        lacc_curr = lp_curr - self.prop_lpdf(all_pars_curr, all_pars_prop, **prop_params)
+        upars_curr, Xt_curr, lp_curr = state
+        upars_prop = self.prop_sim(keys[0], upars_curr, **prop_params)
+        _, Xt_prop, lp_prop = self.initialize(keys[1], upars_prop)
+        lacc_prop = lp_prop - self.prop_lpdf(upars_prop, upars_curr, **prop_params)
+        lacc_curr = lp_curr - self.prop_lpdf(upars_curr, upars_prop, **prop_params)
         mh_acc = jnp.exp(lacc_prop - lacc_curr)
         U = jax.random.uniform(keys[2])
 
         def _true_fun():
-            return all_pars_prop, Xt_prop, lp_prop
+            return upars_prop, Xt_prop, lp_prop
 
         def _false_fun():
             return state

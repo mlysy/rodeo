@@ -188,16 +188,14 @@ def _backward(mean_state_filt, var_state_filt,
     # observation
     def _obs():
         # kalman forecast and update
-        logp, bmean_state_next, bvar_state_next = jax.vmap(
-            lambda b: _forecast_update(
-                mean_state_pred=mean_state_term[b],
-                var_state_pred=var_state_term[b],
-                x_meas=obs_data[i, b],
-                mean_meas=obs_mean[b],
-                wgt_meas=obs_weight[i, b],
-                var_meas=obs_var[i, b]
-            )
-        )(jnp.arange(n_block))
+        logp, bmean_state_next, bvar_state_next = jax.vmap(_forecast_update)(
+                mean_state_pred=mean_state_term,
+                var_state_pred=var_state_term,
+                x_meas=obs_data[i],
+                mean_meas=obs_mean,
+                wgt_meas=obs_weight[i],
+                var_meas=obs_var[i]
+        )
         return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
 
     bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(

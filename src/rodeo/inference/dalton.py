@@ -114,7 +114,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         def zy_update():
             wgt_meas_obs = jnp.concatenate([W_meas, obs_weight[i]], axis=1)
             mean_meas_obs = jnp.concatenate([mean_meas, obs_mean], axis=1)
-            var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], obs_var[i, b]))(jnp.arange(n_block))
+            var_meas_obs = jax.vmap(jsp.linalg.block_diag)(var_meas, obs_var[i])
             x_meas_obs = jnp.concatenate([x_meas, obs_data[i]], axis=1)
             logp, mean_state_next, var_state_next = jax.vmap(_forecast_update)(
                     mean_state_pred=mean_state_pred_zy,
@@ -269,7 +269,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         def zy_update():
             wgt_meas_obs = jnp.concatenate([W_meas, obs_weight[i]], axis=1)
             mean_meas_obs = jnp.concatenate([mean_meas, obs_mean], axis=1)
-            var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], obs_var[i, b]))(jnp.arange(n_block))
+            var_meas_obs = jax.vmap(jsp.linalg.block_diag)(var_meas, obs_var[i])
             x_meas_obs = jnp.concatenate([x_meas, obs_data[i]], axis=1)
             mean_state_next, var_state_next = jax.vmap(update)(
                     mean_state_pred=mean_state_pred,
@@ -405,6 +405,81 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
     )
     return mean_state_smooth, var_state_smooth
 
+
+def solve_sim(key, ode_fun, ode_weight, ode_init, 
+              t_min, t_max, n_steps,
+              interrogate,
+              prior_weight, prior_var,
+              obs_data, obs_times, obs_weight, obs_var,
+              **params):
+    r"""
+    DALTON algorithm to sample from :math:`p(X_{0:N} \mid Y_{0:M}, Z_{1:N})` assuming Gaussian observations.
+    Same arguments as :func:`~dalton.dalton`.
+
+    Returns:
+        (tuple):
+        - **mean_state_smooth** (ndarray(n_steps+1, n_block, n_bstate)): Posterior mean of the solution process :math:`X_t` at times :math:`t \in [a, b]`.
+        - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
+
+    """
+    n_block, n_bstate, _ = prior_weight.shape
+    key, *subkeys = jax.random.split(key, num=n_steps+1)
+    # forward pass
+    filt_out = _solve_filter(
+        key=key,
+        ode_fun=ode_fun, ode_weight=ode_weight, ode_init=ode_init,
+        t_min=t_min, t_max=t_max, n_steps=n_steps, 
+        interrogate=interrogate,
+        prior_weight=prior_weight, prior_var=prior_var,
+        obs_data=obs_data, obs_times=obs_times,
+        obs_weight=obs_weight, obs_var=obs_var,
+        **params   
+    )
+    mean_state_pred, var_state_pred = filt_out["state_pred"]
+    mean_state_filt, var_state_filt = filt_out["state_filt"]
+
+    # backward pass
+    def scan_fun(x_state_next, smooth_kwargs):
+        mean_state_filt = smooth_kwargs['mean_state_filt']
+        var_state_filt = smooth_kwargs['var_state_filt']
+        mean_state_pred = smooth_kwargs['mean_state_pred']
+        var_state_pred = smooth_kwargs['var_state_pred']
+
+        key = smooth_kwargs['key']
+
+        mean_state_sim, var_state_sim = jax.vmap(smooth_sim)(
+            x_state_next=x_state_next,
+            wgt_state=prior_weight,
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred
+        )
+        x_state_curr = jax.random.multivariate_normal(key, mean_state_sim, var_state_sim, method='svd')
+        return x_state_curr, x_state_curr
+    # initialize
+    scan_init = jax.random.multivariate_normal(
+        subkeys[n_steps-1],
+        mean_state_filt[n_steps],
+        var_state_filt[n_steps],
+        method='svd')
+    # scan arguments
+    scan_kwargs = {
+        'mean_state_filt': mean_state_filt[1:n_steps],
+        'var_state_filt': var_state_filt[1:n_steps],
+        'mean_state_pred': mean_state_pred[2:n_steps+1],
+        'var_state_pred': var_state_pred[2:n_steps+1],
+        'key': jnp.array(subkeys[:n_steps-1])
+    }
+    # Note: initial value x0 is assumed to be known, so no need to smooth it
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
+                               reverse=True)
+
+    # append initial values to front and back
+    x_state_smooth = jnp.concatenate(
+        [ode_init[None], scan_out, scan_init[None]]
+    )
+    return x_state_smooth
 
 # --- non-Gaussian loglikelihood -------------------------------------------------
 
