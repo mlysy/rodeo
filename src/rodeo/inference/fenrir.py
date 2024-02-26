@@ -159,7 +159,7 @@ def _backward(mean_state_filt, var_state_filt,
             return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
 
         bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(
-            ode_time == obs_times[i], _obs, _no_obs)
+            jnp.isclose(ode_time, obs_times[i]), _obs, _no_obs)
         logdens += logp
 
         # output
@@ -199,7 +199,7 @@ def _backward(mean_state_filt, var_state_filt,
         return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
 
     bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(
-        t_max == obs_times[i], _obs, _no_obs)
+        jnp.isclose(t_max, obs_times[i]), _obs, _no_obs)
     logdens += logp
 
     # start at N 

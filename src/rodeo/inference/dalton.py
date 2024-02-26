@@ -138,7 +138,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
             )
             return mean_state_next, var_state_next, jnp.sum(logp), i
 
-        mean_state_next_zy, var_state_next_zy, logp, i = jax.lax.cond(ode_time == obs_times[i], zy_update, z_update)
+        mean_state_next_zy, var_state_next_zy, logp, i = jax.lax.cond(jnp.isclose(ode_time, obs_times[i]), zy_update, z_update)
         logdens_zy += logp
         
 
@@ -191,7 +191,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         return logdens_zy, 1
     def _no_logy0():
         return 0.0, 0
-    logdens_zy, i = jax.lax.cond(obs_times[0]==0, _logy0, _no_logy0)
+    logdens_zy, i = jax.lax.cond(jnp.isclose(obs_times[0], 0), _logy0, _no_logy0)
     
     scan_init = {
         "state_filt_joint": (mean_state_init, var_state_init),
@@ -293,7 +293,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
             )                            
             return mean_state_next, var_state_next, i
 
-        mean_state_next, var_state_next, i = jax.lax.cond(ode_time == obs_times[i], zy_update, z_update)
+        mean_state_next, var_state_next, i = jax.lax.cond(jnp.isclose(ode_time, obs_times[i]), zy_update, z_update)
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
@@ -307,7 +307,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         return carry, stack
 
     # check if observations start at 0
-    i = jax.lax.cond(obs_times[0]==0, lambda: 1, lambda: 0)
+    i = jax.lax.cond(jnp.isclose(obs_times[0], 0), lambda: 1, lambda: 0)
 
     # scan initial value for computing p(X_{0:n} | Y_{0:m}, Z_{1:n})
     scan_init = {
@@ -593,7 +593,7 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
             )(jnp.arange(n_block))
             return mean_state_next, var_state_next, i
 
-        mean_state_next, var_state_next, i = jax.lax.cond(ode_time == obs_times[i], zy_update, z_update)
+        mean_state_next, var_state_next, i = jax.lax.cond(jnp.isclose(ode_time, obs_times[i]), zy_update, z_update)
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
@@ -607,7 +607,7 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
         return carry, stack
 
     # check if observations start at 0
-    i = jax.lax.cond(obs_times[0]==0, lambda: 1, lambda: 0)
+    i = jax.lax.cond(jnp.isclose(obs_times[0], 0), lambda: 1, lambda: 0)
 
     # scan initial value for computing p(X_{0:n} | \hat Y_{0:m}, Z_{1:n})
     scan_init = {
