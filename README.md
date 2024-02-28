@@ -74,7 +74,7 @@ x^{(q)}(t) = \sigma_x B(t)
 $$
 
 for $x=V, R$. The result is a $q$-dimensional continuous Gaussian Markov process $\boldsymbol{x(t)} = \big(x^{(0)}(t), x^{(1)}(t), \ldots, x^{(q-1)}(t)\big)$
-for each variable $x=V, R$. The IBM model specifies that each of these is continuous, but $x^{(q)}(t)$ is not. 
+for each variable $x=V, R$. Here $x^{(i)}(t)$ denotes the $i$-th derivative of $x(t)$. The IBM model specifies that each of these is continuous, but $x^{(q)}(t)$ is not. 
 Therefore, we need to pick $q \geq p$. It's usually a good idea to have $q$ a bit larger than $p$, especially when 
 we think that the true solution $X(t)$ is smooth. However, increasing $q$ also increases the computational burden, 
 and doesn't necessarily have to be large for the solver to work.  For this example, we will use $q=3$. 
