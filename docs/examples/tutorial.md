@@ -12,15 +12,15 @@ kernelspec:
   name: python3
 ---
 
-# Introduction to RODEO: pRobabilistic ODE sOlver
+# Quickstart Tutorial
 
 +++
 
 ## Description
 
-**rodeo** is a Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of size $\delta$.  As $\delta$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers also output a solution an a grid of size $\delta$; however, the solution is random.  Still, as $\delta$ goes to zero we get the correct answer.
+**rodeo** is a fast Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of size $\Delta t$.  As $\Delta t$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers also output a solution an a grid of size $\Delta t$; however, the solution is random.  Still, as $\Delta t$ goes to zero, the probabilistic numerical approximation converges to the true solution. 
 
-For the basic task of solving ODEs, **rodeo** provides a probabilistic solver, `rodeo`, for univariate process x(t) of the form
+For the basic task of solving ODEs, **rodeo** provides a probabilistic solver, `rodeo`, for univariate process $x(t)$ of the form
 
 \begin{equation*}
   \WW \xx(t) = f(\xx(t), t), \qquad t \in [a, b], \quad \xx(0) = \vv,
@@ -38,7 +38,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 
 from rodeo.prior import ibm_init
-from rodeo.interrogate import *
+import rodeo.interrogate
 from rodeo import solve_mv, solve_sim
 from jax import config
 config.update("jax_enable_x64", True)
@@ -46,25 +46,33 @@ config.update("jax_enable_x64", True)
 
 ## Walkthrough
 
-
 To illustrate the set-up, let's consider the following ODE example (**FitzHugh-Nagumo** model) where $p=2$ for both variables:
 
 \begin{align*}
 \frac{dV}{dt} &= c(V - \frac{V^3}{3} + R), \\
 \frac{dR}{dt} &= -\frac{(V - a - bR)}{c}, \\
-\xx_0 &= (V(0), R(0)) = (-1,1).
+X(0) &= (V(0), R(0)) = (-1,1).
 \end{align*}
 
-where the solution $x(t)$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$.  
+where the solution $X(t)$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$.  
 
-To approximate the solution with the probabilistic solver, the Gaussian process prior we will use is a so-called [Continuous Autoregressive Process](https://CRAN.R-project.org/package=cts/vignettes/kf.pdf) of order $q$. A particularly simple $\car(q)$ proposed by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7) is the $q-1$ times integrated Brownian motion, 
+To approximate the solution with the probabilistic solver, 
+we use a simple Gaussian process prior proposed by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7); namely, that $V(t)$ and $R(t)$ are 
+independent $q-1$ times integrated Brownian motion, such that 
 
+$$
 \begin{equation*}
-\xx(t) \sim \ibm(p).
+x^{(q)}(t) = \sigma_x B(t)
 \end{equation*}
+$$
 
-Here $\xx(t)  = (x^{(0)}(t), ..., x^{(p-1)}(t))$ consists of $x(t)$ and its first $q-1$ derivatives.
-The $\ibm$ model specifies that each of $\xx(t)  = (x^{(0)}(t), ..., x^{(q-1)}(t))$ is continuous, but $x^{(q)}(t)$ is not. Therefore, we need to pick $q \geq p$. It's usually a good idea to have $q$ a bit larger than $p$, especially when we think that the true solution $x(t)$ is smooth. However, increasing $q$ also increases the computational burden, and doesn't necessarily have to be large for the solver to work.  For this example, we will use $q=3$. To initialize, we simply set $\xx(0) = (\xx_0, 0)$. It is also possible to initialize $\xx(0)$ by computing the higher derivatives but our experiments show that this does not make much of a difference. In this example, there are two variates so $\xx(t)$ is stacked creating a matrix with dimensions $2 \times p$. In a similar fashion, $\WW$ needs to be stacked to create a 3d array of dimension $2 \times 1 \times p$ where $2$ is from the number of variables and $1$ is from the size of the output of $f$ for each variable. The Python code to implement all this is as follows.
+for $x=V, R$. The result is a $q$-dimensional continuous Gaussian Markov process $\boldsymbol{x(t)} = \big(x^{(0)}(t), x^{(1)}(t), \ldots, x^{(q-1)}(t)\big)$
+for each variable $x=V, R$. The IBM model specifies that each of these is continuous, but $x^{(q)}(t)$ is not. 
+Therefore, we need to pick $q \geq p$. It's usually a good idea to have $q$ a bit larger than $p$, especially when 
+we think that the true solution $X(t)$ is smooth. However, increasing $q$ also increases the computational burden, 
+and doesn't necessarily have to be large for the solver to work.  For this example, we will use $q=3$. 
+To initialize, we simply set $\boldsymbol{X(0)} = (V^{(0)}(0), V^{(1)}(0), 0, R^{(0)}(0), R^{(1)}(0), 0)$ where we padded the initial value with zeros for the higher derivative. 
+The Python code to implement all this is as follows.
 
 ```{code-cell} ipython3
 def ode_fun_jax(X_t, t, **params):
@@ -80,7 +88,7 @@ n_obs = 2  # Total observations
 n_deriv_prior = 3 # q
 
 # it is assumed that the solution is sought on the interval [tmin, tmax].
-n_steps = 800
+n_steps = 400
 t_min = 0.
 t_max = 40.
 theta = jnp.array([0.2, 0.2, 3])
@@ -103,15 +111,13 @@ dt = (t_max-t_min)/n_steps
 prior_weight, prior_var = ibm_init(dt, n_deriv_prior, sigma)
 ```
 
-One of the key steps in the probabilisitc solver is the interrogation step. We offer several choices for this task: `interrogate_schober` by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7), `interrogate_chkrebtii` by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259), `interrogate_rodeo` which is a mix of the two, and `interrogate_tronarp` by [Tronarp et al (2018)](http://arxiv.org/abs/1810.03440). 
-
+One of the key steps in the probabilisitc solver is the interrogation step. We offer several choices for this task: `interrogate_schober` by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7), `interrogate_chkrebtii` by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259), `interrogate_rodeo` which is a mix of the two, and `interrogate_kramer` by [Kramer et al (2021)](https://doi.org/10.48550/arXiv.2110.11812). 
 
 - `interrogate_schober` is the simplest and fastest.
 - `interrogate_chkrebtii` is a Monte Carlo method that returns a non-deterministic output which does not assume zero variance like [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7) and [Tronarp et al (2018)](http://arxiv.org/abs/1810.03440).
-- `interrogate_rodeo` combines the zeroth order Taylor expansion of [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7) and the variance of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259).
-- `interrogate_tronarp` is an extension to `interrogate_schober` where a first order Taylor approximation is used which has shown to have better numerical stability.
+- `interrogate_kramer` is an extension to `interrogate_schober` where a first order Taylor approximation is used which has shown to have better numerical stability.
 
-For simple problems such as this one, we recommend `interrogate_rodeo` because it is fast and accurate. For more complex ODEs, we recommend `interrogate_tronarp`. However, the best interrogation method may depend on your specific problem.
+We recommend `interrogate_kramer` for general problems.
 
 +++
 
@@ -126,12 +132,12 @@ mv_jit = jax.jit(solve_mv, static_argnums=(1, 6, 7))
 xt = sim_jit(key=key, ode_fun=ode_fun_jax,
              ode_weight=W, ode_init=X0, theta=theta,
              t_min=t_min, t_max=t_max, n_steps=n_steps,
-             interrogate=interrogate_rodeo,
+             interrogate=rodeo.interrogate.interrogate_kramer,
              prior_weight=prior_weight, prior_var=prior_var)
 mut, _ = mv_jit(key=key, ode_fun=ode_fun_jax,
              ode_weight=W, ode_init=X0, theta=theta,
              t_min=t_min, t_max=t_max, n_steps=n_steps,
-             interrogate=interrogate_rodeo,
+             interrogate=rodeo.interrogate.interrogate_kramer,
              prior_weight=prior_weight, prior_var=prior_var)
 ```
 

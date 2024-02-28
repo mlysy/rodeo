@@ -19,7 +19,7 @@ kernelspec:
 In this notebook, we consider a second-ordered ODE:
 
 \begin{equation*}
-x^{(2)}(t) = \sin(2t) − x^{(0)}(t), \qquad \xx_0 = (-1, 0, 1),
+x^{(2)}(t) = \sin(2t) − x^{(0)}(t), \qquad \xx(0) = (-1, 0, 1),
 \end{equation*}
 
 where the solution $x(t)$ is sought on the interval $t \in [0, 10]$.  In this case, the ODE has an analytic solution,
@@ -42,7 +42,7 @@ from jax import config
 config.update("jax_enable_x64", True)
 ```
 
-The setup is almost identical to that of the example in the Introduction to **RODEO** notebook. The major difference is to set `n_deriv=4`$(q=4)$ in this example since we are considering an 2nd order ODE.
+The setup is almost identical to that of the example in the Quickstart Tutorial notebook. The major difference is to set `n_deriv=4`, $(q=4)$, in this example since we are considering an 2nd order ODE.
 
 ```{code-cell} ipython3
 def higher_fun(x, t, **params):
@@ -76,7 +76,7 @@ sigma = jnp.array([.1] * n_vars)  # IBM process scale factor
 
 # ---  Evaluate the ODE solution --------------------------------------
 
-n_steps = 80                  # number of evaluations steps
+n_steps = 100                  # number of evaluations steps
 dt = (t_max - t_min) / n_steps  # step size
 
 # generate the Kalman parameters corresponding to the prior
@@ -91,22 +91,6 @@ key = jax.random.PRNGKey(0)  # JAX pseudo-RNG key
 
 # deterministic ODE solver: posterior mean
 Xt, _ = rodeo.solve_mv(
-    key=key,
-    # define ode
-    ode_fun=higher_fun,
-    ode_weight=W,
-    ode_init=x0,
-    t_min=t_min,
-    t_max=t_max,
-    # solver parameters
-    n_steps=n_steps,
-    interrogate=rodeo.interrogate.interrogate_chkrebtii,
-    prior_weight=prior_Q,
-    prior_var=prior_R
-)
-
-# probabilistic ODE solver: draw from posterior
-Xt = rodeo.solve_sim(
     key=key,
     # define ode
     ode_fun=higher_fun,
