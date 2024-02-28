@@ -1,4 +1,4 @@
-Basic Method
-============
+Basic
+=====
 .. automodule:: rodeo.inference.basic
     :members:

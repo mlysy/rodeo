@@ -13,7 +13,7 @@ kernelspec:
 ---
 
 # Parameter Inference
-In this notebook, we demonstrate the steps to conduct parameter inference using various ODE solvers in **rodeo**.
+In this notebook, we demonstrate the steps to conduct parameter inference using various likelihood approximation methods in **rodeo**.
 
 ```{code-cell} ipython3
 # --- 0. Import libraries and modules ------------------------------------
@@ -22,7 +22,6 @@ In this notebook, we demonstrate the steps to conduct parameter inference using 
 import jax
 import jax.numpy as jnp
 import jaxopt
-import blackjax
 import rodeo
 import rodeo.interrogate
 import rodeo.inference
@@ -31,7 +30,7 @@ import rodeo.prior
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from jax.config import config
+from jax import config
 config.update("jax_enable_x64", True)
 ```
 
@@ -50,7 +49,7 @@ The model parameters are $\tth = (a,b,c,V(0),R(0))$, with $a,b,c > 0$ which are 
 \YY_i \sim \N(\xx(t_i), \phi^2 \Id_{2 \times 2})
 \end{align*}
 
-where $t_i = i$ and $i=0,1,\ldots 40$ and $\phi^2 = 0.005$. We will first simulate some noisy data using an highly accurate ODE solver (`odeint`).
+where $t_i = i$ and $i=0,1,\ldots 40$ and $\phi^2 = .04$. We will first simulate some noisy data using an highly accurate ODE solver (`odeint`).
 
 ```{code-cell} ipython3
 # --- 1. Define the ODE-IVP ----------------------------------------------
@@ -119,7 +118,7 @@ prior_Q, prior_R = rodeo.prior.ibm_init(
 )
 
 # Produce a Pseudo-RNG key
-key = jax.random.PRNGKey(0)
+key = jax.random.PRNGKey(100)
 
 
 # calculate ODE via deterministic output
@@ -141,7 +140,7 @@ Xt, _ = rodeo.solve_mv(
 )
 
 # generate observations
-noise_sd = 0.005  # Standard deviation in noise model
+noise_sd = jnp.sqrt(0.005)  # Standard deviation in noise model
 key, subkey = jax.random.split(key)
 eps = jax.random.normal(
     key=subkey,
@@ -152,6 +151,8 @@ obs_ind = jnp.searchsorted(sim_times, obs_times)
 x = Xt[obs_ind, :, 0]
 Y = x + noise_sd * eps
 ```
+
+Observations are available at $t=0,1,\ldots, 40$. However, the ODE solver requires a higher resolution than $\Delta t = 1$ to give a good approximation. Here we use `n_res=20` which means $\Delta t = 1/20$.
 
 ```{code-cell} ipython3
 # plot one graph
@@ -167,20 +168,16 @@ axs[1].legend(loc=1)
 fig1.tight_layout()
 ```
 
-We define the Gaussian Markov process prior using the IBM. Other choices are possible, however, we have made this simple prior available in the library. The rest of the inputs are the standard inputs to `rodeo` as described in the Introduction notebook. In addition, we define `n_res` as the resolution of the solution based on the observations. For example, `n_res=10` in this ODE would give `n_step = 10 * 40 = 400`.
-
-+++
-
 We proceed with a Bayesian approach by postulating a prior distribution $\pi(\tth)$ which combined with the likelihood gives the posterior
-\begin{equation}\label{eq:likelihood}
+\begin{equation}
     p(\tth \mid \YY_{0:M}) \propto \pi(\tth) \times p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)
 \end{equation}
-where $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$ is computed with different methods.
+where $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$ is approximated with different methods.
 Parameter inference is then accomplished by way of a Laplace approximation, for which we have
 \begin{equation*}
     \tth \mid \YY_{0:M} \approx \N(\hat \tth, \hat \VV_{\tth}),
 \end{equation*}
-where $\hat \tth = \argmax_{\tth} \log p(\tth \mid \YY_{0:M})$ and $\hat \VV_{\tth} = -\big[\frac{\partial^2}{\partial \tth \partial \tth'} \log p(\hat \tth \mid \YY_{0:M})\big]^{-1}$. For the prior, we assume independent $\N(0, 10^2)$ priors on $\log a, \log b, \log c$ and $V(0), R(0)$.
+where $\hat \tth = \argmax_{\tth} \log p(\tth \mid \YY_{0:M})$ and $\hat \VV_{\tth} = -\big[\frac{\partial^2}{\partial \tth \partial \tth'} \log p(\hat \tth \mid \YY_{0:M})\big]^{-1}$. For the prior, we assume independent $\N(0, 10^2)$ priors on $\log a, \log b, \log c$ and $V(0), R(0)$. The likelihood is defined according to the measurement model above. Here we define the helper function `constrain_pars` to help initialize the process prior and the initial value needed for the underlying ODE solver. Finally `fitz_laplace` draws samples via the Laplace approximation.
 
 ```{code-cell} ipython3
 # --- parameter inference: basic + laplace -------------------------------
@@ -280,9 +277,7 @@ def fitz_laplace(key, neglogpost, n_samples, upars_init):
 
 ### Basic Likelihood
 
-To start, we use a standard probabilistic ODE solver, `rodeo`, to construct a likelihood. An appropriate estimation to $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$ in (1) is $\prod_{i=0}^M p(\YY_i \mid \XX(t_i) = \mmu_{n(i)|N}, \tth)$ where $n(i)$ maps the corresponding time points of the solver to the data. 
-
-We define the prior and posterior functions necessary to conduct parameter inference. The key function to focus is `basic_nlpost` which takes in `phi = (log a, log b, log c, V(0), R(0))`. It uses the ODE and the $V(0), R(0)$ to compute the  $dV(0), dR(0)$ required for `rodeo` and then zero pad it an extra dimension which helps with accuracy as explained in the Introduction notebook. The other three parameters $\log a, \log b, \log c$ needs to be exponentiated first because `rodeo` assumes they are on the regular scale. The function `phi_fit` essentially computes the Laplace approximation detailed above. We use the **jaxopt** library as it supports optimization using **jax**. We choose `Newton-CG` as our optimization algorithm but there are many other possible choices. Consult the **jaxopt** documentation if you are interested in this library.
+To start, we use the `basic` method to construct a likelihood approximation. In this method, we approximate $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$ in (1) with $\prod_{i=0}^M p(\YY_i \mid \XX(t_i) = \mmu_{n(i)|N}, \tth)$ where $n(i)$ maps the corresponding time points of the solver to the data and $\mmu_{0:N|N}$ is the ODE posterior mean from the probabilistic solver `solve`. The inputs for `basic` is very similar to the ODE solver `solve`. Additional arguments include `obs_data` which is the observations, `obs_times` which are the time points where data is observed and `obs_loglik` which is the measurement likelihood function.
 
 ```{code-cell} ipython3
 def neglogpost_basic(upars):
@@ -310,9 +305,7 @@ def neglogpost_basic(upars):
         obs_loglik=fitz_loglik
     )
     return -(ll + fitz_logprior(upars))
-```
 
-```{code-cell} ipython3
 # optimization process
 n_samples = 100000
 upars_init = jnp.append(jnp.log(theta), x0)
@@ -322,48 +315,28 @@ basic_post = fitz_laplace(key, neglogpost_basic, n_samples, upars_init)
 
 ### Chkrebtii MCMC
 
-Another method to estimate the parameter posteriors of $\tth$ is given by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) using MCMC. First, $\tth_0$ is initialized from a given prior $\pi(\tth)$. Next, a sample solution, $\xx_{0:N}$ dependent on $\tth_0$ is computed from `rodeo`. At each sampling step, $\tth' \sim q(\tth_{i-1})$ is sampled from the proposal distribution and is used to compute a new sample solution, $\xx_{0:N}'$. Finally, a rejection ratio is used to decide if $\tth_i = \tth'$ is updated or $\tth_i = \tth_{i-1}$ is kept. 
+Another method to estimate the parameter posteriors of $\tth$ is given by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) using MCMC. First, $\tth_0$ is initialized from a given prior $\pi(\tth)$. Next, a sample solution, $\xx_{0:N}$ dependent on $\tth_0$ is computed from `solve`. At each sampling step, $\tth' \sim q(\tth_{i-1})$ is sampled from the proposal distribution and is used to compute a new sample solution, $\xx_{0:N}'$. Finally, a rejection ratio is used to decide if $\tth_i = \tth'$ is updated or $\tth_i = \tth_{i-1}$ is kept. 
 
-The structure of this method is different than the other solvers presented here. That is, the MCMC method uses a base class to implement the skeleton of the algorithm with a few functions that need to be implemented by the user. First the `logprior` and `obs_loglik` methods define the log-prior and loglikelihood respectively. Next, the `solve` method allows users to define how the algorithms use the inputs to solve the ODE. We provide a simple one in the base class, however, for this example, the initial values are part of parameters so a custom `solve` is required.
+The structure of this method is different than the other solvers presented here. That is, the MCMC method uses a base class to implement the skeleton of the algorithm with a few functions that need to be implemented by the user. First the `logprior` and `obs_loglik` methods define the log-prior and loglikelihood respectively. Next, the `parse_pars` method is analogous to the `constrain_pars` function which helps with the initialization of the process prior and the initial values for the ODE solver. 
 
 ```{code-cell} ipython3
 class fitz_mcmc(rodeo.inference.MarginalMCMC):
-    def __init__(self, obs_data, obs_times,
-                 t_min, t_max, n_steps):
-        self._W = W
-        super().__init__(
-            obs_data=obs_data,
-            obs_times=obs_times,
-            t_min=t_min,
-            t_max=t_max,
-            n_steps=n_steps
-        )
 
     def logprior(self, upars):
+        "Need to implement this to define the prior"
         return fitz_logprior(upars)
 
     def obs_loglik(self, obs_data, ode_data, **params):
+        "Need to implement this to define the observation likelihood"
         return fitz_loglik(obs_data, ode_data, **params)
 
-    def solve(self, key, upars, t_min, t_max, n_steps):
-        dt = (t_max - t_min) / n_steps
-        theta, X0, prior_Q, prior_R = constrain_pars(upars, dt)
-        Xt = rodeo.solve_sim(
-            key=key,
-            # define ode
-            ode_fun=fitz_fun,
-            ode_weight=self._W,
-            ode_init=X0,
-            t_min=t_min,
-            t_max=t_max,
-            theta=theta,
-            # solver parameters
-            n_steps=n_steps,
-            interrogate=rodeo.interrogate.interrogate_kramer,
-            prior_weight=prior_Q,
-            prior_var=prior_R
-        )
-        return Xt
+    def parse_pars(self, upars, dt):
+        "Need to implement this to parse the parameters"
+        theta, X0, prior_Q, prior_R, = constrain_pars(upars, dt)
+        params ={
+            "theta": theta
+        }
+        return W, X0, prior_Q, prior_R, params
 
 
 def fitz_chmcmc(key, n_samples, upars_init):
@@ -382,11 +355,10 @@ def fitz_chmcmc(key, n_samples, upars_init):
     """
     key, *subkeys = jax.random.split(key, num=3)
     # proposal parameter
-    scale = jnp.array(
-        [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
-
+    scale = jnp.sqrt(jnp.array([1e-5]*7))
     # initial the fitz_mcmc class
     fitz_ch = fitz_mcmc(
+        ode_fun=fitz_fun,
         obs_data=Y,
         obs_times=obs_times,
         t_min=t_min,
@@ -412,9 +384,7 @@ def fitz_chmcmc(key, n_samples, upars_init):
     # convert back to original scale
     ode_sample = uode_sample.at[:, :3].set(jnp.exp(uode_sample[:, :3]))
     return ode_sample
-```
 
-```{code-cell} ipython3
 # optimization process
 n_samples = 10000
 upars_init = jnp.append(jnp.log(theta), x0)
@@ -424,8 +394,8 @@ mcmc_post = fitz_chmcmc(key, n_samples, upars_init)
 
 ### Fenrir
 
-`fenrir` is a method developed by [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html) which uses the data itself in the solution process. `fenrir` begins by using the data-free forward pass of `rodeo` to estimate $p(\XX_{0:N} \mid \ZZ_{0:N} = \bz, \tth)$. This model can be simulated from via a (non-homogeneous) Markov chain going backwards in time,
-\begin{equation}\label{eq:fenrirback}
+`fenrir` is a method developed by [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html) which uses the data itself in the solution process. `fenrir` begins by using the data-free forward pass of `solve` to estimate $p(\XX_{0:N} \mid \ZZ_{0:N} = \bz, \tth)$. This model can be simulated from via a (non-homogeneous) Markov chain going backwards in time,
+    \begin{equation}
     \begin{aligned}
         \XX_N & \sim \N(\bb_N, \CC_N) \\
         \XX_n \mid \XX_{n+1} & \sim \N(\AA_n \XX_n + \bb_n, \CC_n),
@@ -435,7 +405,7 @@ where the coefficients $\AA_{0:N-1}$, $\bb_{0:N}$, and $\CC_{0:N}$ can be derive
 
 To use `fenrir`, we first need to define the specifications. `fenrir` expects observations to be of the form
 \begin{equation*}
-\YY_i \sim \N(\DD \XX_i + \cc, \OOm).
+\YY_i \sim \N(\DD_i \XX_i, \OOm_i).
 \end{equation*}
 This translates to the following set of definitions for this 2-state ODE.
 
@@ -449,7 +419,7 @@ obs_var = jnp.zeros((len(obs_data), n_vars, n_meas, n_meas))
 obs_var = obs_var.at[:].set(noise_sd**2 * jnp.array([[[1.]], [[1.]]]))
 ```
 
-The way to construct a likelihood estimation is very similar to the basic method. The one difference is that since `fenrir` gives a direct approximation to $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$, the function `fenrir_nlpost` uses that instead.
+The way to construct a likelihood estimation is very similar to the basic method. The one difference is that `fenrir` asks for `obs_weight` and `obs_var` instead of `obs_loglik` since it assumes observations are multivariate normal.
 
 ```{code-cell} ipython3
 def neglogpost_fenrir(upars):
@@ -477,9 +447,7 @@ def neglogpost_fenrir(upars):
         obs_var=obs_var
     )
     return -(ll + fitz_logprior(upars))
-```
 
-```{code-cell} ipython3
 # optimization process
 n_samples = 100000
 upars_init = jnp.append(jnp.log(theta), x0)
@@ -497,7 +465,6 @@ Finally, we present the method, `dalton`, developed by [Wu, Lysy](https://arxiv.
         \YY_i & \sim p(\YY_i \mid \XX_{n(i)}, \pph),
     \end{aligned}
 \end{equation}
-
 where the data is used directly in the forward pass instead of just the backward pass of `fenrir`. For Gaussian observations such as this example, `dalton` is the appropriate function to use.
 
 ```{code-cell} ipython3
@@ -526,9 +493,7 @@ def neglogpost_dalton(upars):
         obs_var=obs_var
     )
     return -(ll + fitz_logprior(upars))
-```
 
-```{code-cell} ipython3
 # optimization process
 n_samples = 100000
 upars_init = jnp.append(jnp.log(theta), x0)
@@ -538,7 +503,7 @@ dalton_post = fitz_laplace(key, neglogpost_dalton, n_samples, upars_init)
 
 ## Results
 
-We compare the likelihood estimation for the four methods. Only Chrebtii MCMC algorithm differs from the rest because it uses MCMC to sample rather than the Laplacian approximation.
+We compare the likelihood estimation for the four methods. Only Chrebtii MCMC algorithm differs from the rest because it uses MCMC to sample rather than the Laplace approximation.
 
 ```{code-cell} ipython3
 plt.rcParams.update({'font.size': 15})
@@ -560,7 +525,7 @@ fig.tight_layout()
 ## Dalton Non-Gaussian Observations
 
 Now suppose that the noisy observation model is
-\begin{equation}\label{eq:fitznoiseng}
+\begin{equation}
     Y_{ij} \sim \operatorname{Poisson}(\exp{b_0 + b_1x_j(t_i)}),
 \end{equation}
 where $b_0 = 0.1$ and $b_1 = 0.5$.
@@ -618,9 +583,7 @@ def neglogpost_daltonng(upars):
         obs_loglik_i=obs_loglik_i
     )
     return -(ll + fitz_logprior(upars))
-```
 
-```{code-cell} ipython3
 # optimization process
 n_samples = 100000
 upars_init = jnp.append(jnp.log(theta), x0)

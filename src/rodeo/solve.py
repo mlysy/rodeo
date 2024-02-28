@@ -57,15 +57,13 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         mean_state_filt, var_state_filt = carry["state_filt"]
         key, subkey = jax.random.split(carry["key"])
         # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(
-            lambda b: predict(
-                mean_state_past=mean_state_filt[b],
-                var_state_past=var_state_filt[b],
-                mean_state=mean_state[b],
-                wgt_state=prior_weight[b],
-                var_state=prior_var[b]
-            )
-        )(jnp.arange(n_block))
+        mean_state_pred, var_state_pred = jax.vmap(predict)(
+                mean_state_past=mean_state_filt,
+                var_state_past=var_state_filt,
+                mean_state=mean_state,
+                wgt_state=prior_weight,
+                var_state=prior_var
+        )
         # model interrogation
         wgt_meas, mean_meas, var_meas = interrogate(
             key=subkey,
@@ -78,16 +76,14 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         )
         W_meas = ode_weight + wgt_meas
         # kalman update
-        mean_state_next, var_state_next = jax.vmap(
-            lambda b: update(
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                x_meas=x_meas[b],
-                mean_meas=mean_meas[b],
-                wgt_meas=W_meas[b],
-                var_meas=var_meas[b]
-            )
-        )(jnp.arange(n_block))
+        mean_state_next, var_state_next = jax.vmap(update)(
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+                x_meas=x_meas,
+                mean_meas=mean_meas,
+                wgt_meas=W_meas,
+                var_meas=var_meas
+        )
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
@@ -130,8 +126,8 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
 
     """
     n_block = prior_weight.shape[0]
-    key, *subkeys = jax.random.split(key, num=n_steps*n_block+1)
-    subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
+    key, *subkeys = jax.random.split(key, num=n_steps+1)
+    # subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
 
     # forward pass
     filt_out = _solve_filter(
@@ -153,35 +149,30 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
         var_state_pred = smooth_kwargs['var_state_pred']
         key = smooth_kwargs['key']
 
-        def vmap_fun(b):
-            mean_state_sim, var_state_sim = smooth_sim(
-                x_state_next=x_state_next[b],
-                wgt_state=prior_weight[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b]
-            )
-            return jax.random.multivariate_normal(key[b], mean_state_sim, var_state_sim, method='svd')
-
-        x_state_curr = jax.vmap(lambda b:
-                                vmap_fun(b)
-                                )(jnp.arange(n_block))
+        mean_state_sim, var_state_sim = jax.vmap(smooth_sim)(
+            x_state_next=x_state_next,
+            wgt_state=prior_weight,
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred
+        )
+        x_state_curr = jax.random.multivariate_normal(key, mean_state_sim, var_state_sim, method='svd')
         return x_state_curr, x_state_curr
     # initialize
-    scan_init = jax.vmap(lambda b:
-                         jax.random.multivariate_normal(
-                             subkeys[n_steps-1, b],
-                             mean_state_filt[n_steps, b],
-                             var_state_filt[n_steps, b],
-                             method='svd'))(jnp.arange(n_block))
+    scan_init = jax.random.multivariate_normal(
+        subkeys[n_steps-1],
+        mean_state_filt[n_steps],
+        var_state_filt[n_steps],
+        method='svd')
+    
     # scan arguments
     scan_kwargs = {
         'mean_state_filt': mean_state_filt[1:n_steps],
         'var_state_filt': var_state_filt[1:n_steps],
         'mean_state_pred': mean_state_pred[2:n_steps+1],
         'var_state_pred': var_state_pred[2:n_steps+1],
-        'key': subkeys[:n_steps-1]
+        'key': jnp.array(subkeys[:n_steps-1])
     }
     # Note: initial value x0 is assumed to be known, so we don't
     # sample it.  In fact, doing so would probably fail due to cholesky
@@ -242,17 +233,15 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         var_state_filt = smooth_kwargs['var_state_filt']
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
-        mean_state_curr, var_state_curr = jax.vmap(
-            lambda b: smooth_mv(
-                mean_state_next=state_next["mean"][b],
-                var_state_next=state_next["var"][b],
-                wgt_state=prior_weight[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-            )
-        )(jnp.arange(n_block))
+        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+                mean_state_next=state_next["mean"],
+                var_state_next=state_next["var"],
+                wgt_state=prior_weight,
+                mean_state_filt=mean_state_filt,
+                var_state_filt=var_state_filt,
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+        )
         state_curr = {
             "mean": mean_state_curr,
             "var": var_state_curr

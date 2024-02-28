@@ -1,4 +1,4 @@
-RODEO Solver
-============
+Solve
+=====
 .. automodule:: rodeo.solve
     :members:  

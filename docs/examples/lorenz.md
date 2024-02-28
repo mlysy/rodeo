@@ -14,7 +14,7 @@ kernelspec:
 
 # Lorenz63: Chaotic ODE
 
-In this notebook, we consider a multivariate ODE system called **Lorenz63**. This system has a chaotic regime depending on the initial values which proves to be very difficult for ODE solvers. However, using observations, `dalton` is able compute the correct solutions. The Lorenz equation is defined as follows:
+In this notebook, we consider a multivariate ODE system called **Lorenz63** given by
 
 \begin{equation*}
   \begin{aligned}
@@ -24,7 +24,7 @@ In this notebook, we consider a multivariate ODE system called **Lorenz63**. Thi
     \xx_0 &= (-12,-5,28).
   \end{aligned}
 \end{equation*}
-where $(\rho, \sigma, \beta) = (28, 10, 8/3)$.
+where $(\rho, \sigma, \beta) = (28, 10, 8/3)$. 
 
 ```{code-cell} ipython3
 import numpy as np
@@ -38,11 +38,11 @@ from rodeo.prior import ibm_init
 from rodeo.interrogate import interrogate_kramer
 from rodeo.inference.fenrir import solve_mv as fsolve
 from rodeo.inference.dalton import solve_mv as dsolve
-from jax.config import config
+from jax import config
 config.update("jax_enable_x64", True)
 ```
 
-Suppose observations are simulated using the model
+Suppose we observed data to help with solving the ODE and that they are simulated using the model
 
 \begin{align*}
 \YY_i \sim \N(\xx(t_i), \phi^2 \Id_{2 \times 2})
@@ -77,7 +77,7 @@ e_t = np.random.default_rng(0).normal(loc=0.0, scale=1, size=exact.shape)
 obs = exact + gamma*e_t
 ```
 
-To avoid confusion, we will refer to the probabilistic solver as `rodeo` and the library as **rodeo**. Now we compare three probabilistic solvers in the **rodeo** library, namely, `rodeo`, `fenrir`, and `dalton`. The first solver does not use observations in the solution process but the latter two does. First we have the common specifications for all solvers.
+We have a few different ways of solving this ODE. The first is using `solve` which do not use data at all. The other methods `fenrir.solve_mv` and `dalton.solve_mv` incorporate data to help the solution process. The setup for the three solvers are very similar:
 
 ```{code-cell} ipython3
 # ODE function
@@ -124,7 +124,7 @@ key = jax.random.PRNGKey(0)
 Next we define specifications required for `dalton` and `fenrir`. In particular, they expect observations to be of the form
 
 \begin{equation*}
-\YY_i \sim \N(\DD \XX_i + \cc, \OOm).
+\YY_i \sim \N(\DD_i \XX_i, \OOm_i).
 \end{equation*}
 This translates to the following set of definitions for this 3-state ODE.
 
@@ -137,7 +137,7 @@ obs_var = jnp.zeros((len(obs_data), n_vars, n_meas, n_meas))
 obs_var = obs_var.at[:, :, :, 0].set(gamma**2)
 ```
 
-We explore a different interrogation method in this example. Our default is `interrogate_rodeo` which is a mix of the zeroth-order Taylor approximation proposed by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7) and the interrogation of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259). We instead use `interrogate_kramer` which is the first-order Taylor approximation proposed by [Kramer et al (2021)](https://arxiv.org/pdf/2110.11812.pdf) which is more accurate at the cost of computation speed.
+Now we can use the three solvers.
 
 ```{code-cell} ipython3
 # rodeo
@@ -171,7 +171,7 @@ fig, axs = plt.subplots(n_vars, figsize=(20, 10))
 ylabel = [r'$x(t)$', r'$y(t)$', r'$z(t)$']
 
 for i in range(n_vars):
-    l0, = axs[i].plot(tseq_sim, rsol[:, i, 0], label="rodeo", linewidth=3)
+    l0, = axs[i].plot(tseq_sim, rsol[:, i, 0], label="No Data", linewidth=3)
     l1, = axs[i].plot(tseq_sim, dsol[:, i, 0], label="DALTON", linewidth=3)
     l2, = axs[i].plot(tseq_sim, fsol[:, i, 0], label="Fenrir", linewidth=3)
     l3, = axs[i].plot(tseq_sim, exact[:, i], label='True', linewidth=2, color="black")
@@ -180,7 +180,7 @@ for i in range(n_vars):
 handles = [l0, l1, l2, l3, l4]
 fig.subplots_adjust(bottom=0.1, wspace=0.33)
 
-axs[2].legend(handles = handles , labels=['rodeo', 'DALTON', 'Fenrir', 'True', 'obs'], loc='upper center', 
+axs[2].legend(handles = handles , labels=['No Data', 'DALTON', 'Fenrir', 'True', 'obs'], loc='upper center', 
               bbox_to_anchor=(0.5, -0.2),fancybox=False, shadow=False, ncol=5)
 ```
 

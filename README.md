@@ -1,25 +1,31 @@
-# **rodeo:** Probabilistic ODE Solver
+# **rodeo:** Fast Probabilistic ODE Solver
 
 [**Home**](https://rodeo.readthedocs.io/)
 | [**Installation**](#installation)
 | [**Documentation**](#documentation)
-| [**Developers**](#developers)
 | [**Tutorial**](#walkthrough)
+| [**Developers**](#developers)
 
 ---
 
 ## Description
 
-**rodeo** is a fast and flexible Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of size $\delta$.  As $\delta$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers such as **rodeo** also output a solution an a grid of size $\delta$; however, the solution is random.  Still, as $\delta$ goes to zero, the probabilistic numerical approximation converges to the true solution. 
+**rodeo** is a fast Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of step size $\Delta t$.  As $\Delta t$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers also output a solution on a grid of size $\Delta t$; however, the solution is random.  Still, as $\Delta t$ goes to zero, the probabilistic numerical approximation converges to the true solution. 
 
-**rodeo** provides a lightweight and extensible family of approximations to a nonlinear Bayesian filtering paradigm common to many probabilistic solvers [Tronarp et al (2018)](http://arxiv.org/abs/1810.03440). This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid. **rodeo** is built on **jax** which allows for just-in-time compilation and auto-differentiation. The API of **jax** is almost equivalent to that of **numpy**. A brief summary of the methods available in this library:
+**rodeo** provides a lightweight and extensible family of approximations to a nonlinear Bayesian filtering paradigm common to many probabilistic solvers ([Tronarp et al (2018)](http://arxiv.org/abs/1810.03440)). This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid. **rodeo** is built on **jax** which allows for just-in-time compilation and auto-differentiation. The API of **jax** is almost equivalent to that of **numpy**. 
 
-- `rodeo`: Implementations of our ODE solver.
-- `fenrir`: Implementations of Fenrir [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html).
-- `marginal_mcmc`: MCMC implementation of Chkrebtii's method [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259).
-- `dalton`: Implementation of our data-adaptive ODE likelihood approximation [Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566).
+**rodeo** provides two main tools: one for approximating the ODE solution and the other for parameter inference. For the former we provide:
 
-Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
+- `solve`: Implementation of a probabilistic ODE solver which uses a nonlinear Bayesian filtering paradigm.
+
+For the latter we provide the likelihood approximation methods:
+
+- `basic`: Implementation of a basic likelihood approximation method (details can be found in [Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566)).
+- `fenrir`: Implementation of Fenrir ([Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html)).
+- `marginal_mcmc`: MCMC implementation of Chkrebtii's method ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
+- `dalton`: Implementation of our data-adaptive ODE likelihood approximation ([Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566)).
+
+Detailed examples for their usage can be found in the [Documentation](#documentation) section. Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
 
 ## Installation
 
@@ -32,69 +38,48 @@ pip install .
 
 ## Documentation
 
-Please first go to [readthedocs](https://rodeo.readthedocs.io/) and then see the documentation for the following examples. 
+Please first go to [readthedocs](https://rodeo.readthedocs.io/) to see the rendered documentation for the following examples. 
 
-- A [quickstart tutorial](docs/examples/tutorial.md).
+- A [quickstart tutorial](docs/examples/tutorial.md) on solving a simple ODE problem.
 
-- An example of [higher-ordered ODE](docs/examples/higher_order.md).
+- An example for solving a [higher-ordered ODE](docs/examples/higher_order.md).
 
-- An example of a difficult [chaotic ODE](docs/examples/lorenz.md).
+- An example for solving a difficult [chaotic ODE](docs/examples/lorenz.md).
 
-- An example of parameter inference using [Laplace Approximation](docs/examples/parameter.md).
-
-## Developers
-
-### Unit Testing
-
-The unit tests can be ran through the following commands:
-```bash
-cd tests
-python -m unittest discover -v
-```
-
-Or, install [**tox**](https://tox.wiki/en/latest/index.html), then from within `rodeo` enter command line: `tox`.
-
-### Building Documentation
-
-The HTML documentation can be compiled from the root folder:
-```bash
-pip install .[docs]
-cd docs
-make html
-```
-This will create the documentation in `docs/build`.
+- An example of a parameter inference problem where we use the [Laplace approximation](docs/examples/parameter.md).
 
 ## Walkthrough
 
-To illustrate the set-up, let's consider the following ODE example (**FitzHugh-Nagumo** model) where the number of derivatives is $p-1=1$ for both variables:
+In this walkthrough, we show both how to solve an ODE with our probabilistic solver and conduct parameter inference. 
+We will first illustrate the set-up for solving the ODE. To that end, let's consider the following first ordered ODE example (**FitzHugh-Nagumo** model),
 
 $$
 \begin{align*}
     \frac{dV}{dt} &= c(V - \frac{V^3}{3} + R), \\
     \frac{dR}{dt} &= -\frac{(V - a - bR)}{c}, \\
-    X(0) &= (V(0), R(0)) = (-1,1).
+    X(t) &= (V(0), R(0)) = (-1,1).
 \end{align*}
 $$
 
-where the solution $X(t)$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$.  
+where the solution $X(t)$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$. 
 
-To approximate the solution with the probabilistic solver, the Gaussian process prior we will use is a so-called 
-[Continuous Autoregressive Process](https://CRAN.R-project.org/package=cts/vignettes/kf.pdf) of order $q$. 
-A particularly simple $\mathrm{CAR}(q)$ proposed by [Schober](http://link.springer.com/10.1007/s11222-017-9798-7) is the 
-$q-1$ times integrated Brownian motion, 
+Following the notation of ([Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566)), we have $p-1=1$ in this example. To approximate the solution with the probabilistic solver, 
+we use a simple Gaussian process prior proposed by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7); namely, that $V(t)$ and $R(t)$ are 
+independent $q-1$ times integrated Brownian motion, such that 
 
 $$
 \begin{equation*}
-\boldsymbol{X(t)} \sim \mathrm{IBM}(q).
+x^{(q)}(t) = \sigma_x B(t)
 \end{equation*}
 $$
 
-Here $\boldsymbol{X(t)} = \big(X(t)^{(0)}, \ldots, X(t)^{(q-1)}\big)$ consists of $x(t)$ and its first $q-1$ derivatives. 
-The $\mathrm{IBM}(q)$ model specifies that each of these is continuous, but $X^{(q)}(t)$ is not. 
+for $x=V, R$. The result is a $q$-dimensional continuous Gaussian Markov process $\boldsymbol{x(t)} = \big(x^{(0)}(t), x^{(1)}(t), \ldots, x^{(q-1)}(t)\big)$
+for each variable $x=V, R$. Here $x^{(i)}(t)$ denotes the $i$-th derivative of $x(t)$. The IBM model specifies that each of these is continuous, but $x^{(q)}(t)$ is not. 
 Therefore, we need to pick $q \geq p$. It's usually a good idea to have $q$ a bit larger than $p$, especially when 
 we think that the true solution $X(t)$ is smooth. However, increasing $q$ also increases the computational burden, 
 and doesn't necessarily have to be large for the solver to work.  For this example, we will use $q=3$. 
-To initialize, we simply set $\boldsymbol{X(0)} = (X(0), 0)$. The Python code to implement all this is as follows.
+To initialize, we simply set $\boldsymbol{X(0)} = (V^{(0)}(0), V^{(1)}(0), 0, R^{(0)}(0), R^{(1)}(0), 0)$ where we padded the initial value with zeros for the higher derivative. 
+The Python code to implement all this is as follows.
 
 ```python
 import jax
@@ -110,6 +95,15 @@ def fitz_fun(X, t, **params):
          [-1 / c * (V - a + b * R)]]
     )
 
+def fitz_init(x0, theta):
+    "FitzHugh-Nagumo initial values in rodeo format."
+    x0 = x0[:, None]
+    return jnp.hstack([
+        x0,
+        fitz_fun(X=x0, t=0., theta=theta),
+        jnp.zeros_like(x0)
+    ])
+
 W = jnp.array([[[0., 1., 0.]], [[0., 1., 0.]]])  # LHS matrix of ODE
 x0 = jnp.array([-1., 1.])  # initial value for the ODE-IVP
 theta = jnp.array([.2, .2, 3])  # ODE parameters
@@ -121,14 +115,14 @@ t_max = 40.
 
 # --- Define the prior process -------------------------------------------
 
-n_vars = 2                        # number of variables in the ODE
+n_vars = 2  # number of variables in the ODE
 n_deriv = 3  # max number of derivatives
 sigma = jnp.array([.1] * n_vars)  # IBM process scale factor
 
 
 # --- data simulation ------------------------------------------------------
 
-n_steps = 800                  # number of evaluations steps
+n_steps = 800  # number of evaluations steps
 dt = (t_max - t_min) / n_steps  # step size
 
 # generate the Kalman parameters corresponding to the prior
@@ -162,28 +156,22 @@ We compare the solution from the solver to the deterministic solution provided b
 
 ![fitzsol](docs/figures/fitzsol.png)
 
+We also include examples for solving a [higher-ordered ODE](docs/examples/higher_order.md) and a [chaotic ODE](docs/examples/lorenz.md).
+
 ## Parameter Inference
 
-Probabilistic solvers in **rodeo** are capable of parameter inference. Here, we provide a simple likelihood estimation of the model parameters $\boldsymbol{\Theta} = (a, b, c, V(0), R(0))$ with $a,b,c > 0$ in the **FitzHugh-Nagumo** ODE. Suppose observations are simulated via the model
+We now move to the parameter inference problem. **rodeo** contains several likelihood approximation methods summarized in the [Description](#description) section.
+Here, we will use the `basic` likelihood approximation method. Suppose observations are simulated via the model
 
 $$
-Y(t) \sim \mathcal{N}(X(t), \phi^2 \cdot \boldsymbol{I}_{2\times 2})
+Y(t) \sim \textnormal{Normal}(X(t), \phi^2 \cdot \boldsymbol{I}_{2\times 2})
 $$
 
-where $t=0, 1, \ldots, 40$ and $\phi^2 = 0.005$. For simplicity, we choose a flat prior for $\boldsymbol{\Theta}$ then the following function can be used to compute the likelihood approximation of $\boldsymbol{\Theta}$.
+where $t=0, 1, \ldots, 40$ and $\phi^2 = 0.005$. The parameters of interest are $\boldsymbol{\Theta} = (a, b, c, V(0), R(0))$ with $a,b,c > 0$.
+We use a normal prior for $(\log a, \log b, \log c, V(0), R(0))$ with mean $0$ and standard deivation $10$. 
+The following function can be used to construct the `basic` likelihood approximation for $\boldsymbol{\Theta}$.
 
 ```python
-# Suppose Y_t is simulated from the observation model above.
-
-def fitz_init(x0, theta):
-    "FitzHugh-Nagumo initial values in rodeo format."
-    x0 = x0[:, None]
-    return jnp.hstack([
-        x0,
-        fitz_fun(X=x0, t=0., theta=theta),
-        jnp.zeros_like(x0)
-    ])
-
 def fitz_logprior(upars):
     "Logprior on unconstrained model parameters."
     n_theta = 5  # number of ODE + IV parameters
@@ -206,7 +194,7 @@ def fitz_loglik(obs_data, ode_data, **params):
     ll = jax.scipy.stats.norm.logpdf(
         x=obs_data,
         loc=ode_data[:, :, 0],
-        scale=noise_sd
+        scale=0.005
     )
     return jnp.sum(ll)
 
@@ -257,18 +245,18 @@ def neglogpost_basic(upars):
         prior_weight=prior_Q,
         prior_var=prior_R,
         # observations
-        obs_data=Y,
+        obs_data=obs_data,
         obs_times=obs_times,
         obs_loglik=fitz_loglik
     )
     return -(ll + fitz_logprior(upars))
 ```
 
-This is a basic example to demonstrate usage. we suggest more sophisticated likelihood approximations which propagate the solution uncertainty to the likelihood approximation such as `fenrir`, `oc_mcmc` and `dalton`. Please refer to the [parameter inference tutorial](docs/examples/parameter.md) for more details.
+This is a basic example to demonstrate usage. We suggest more sophisticated likelihood approximations which propagate the solution uncertainty to the likelihood approximation such as `fenrir`, `marginal_mcmc` and `dalton`. Please refer to the [parameter inference tutorial](docs/examples/parameter.md) for more details.
 
 ## Results
 
-Here are some results produced by solvers in **rodeo** from `/examples/`:
+Here are some results produced by various likelihood approximations found in **rodeo** from `/examples/`:
 
 ### FitzHugh-Nagumo
 
@@ -282,3 +270,24 @@ Here are some results produced by solvers in **rodeo** from `/examples/`:
 
 ![hes1](docs/figures/hes1figure.png)
 
+## Developers
+
+### Unit Testing
+
+The unit tests can be ran through the following commands:
+```bash
+cd tests
+python -m unittest discover -v
+```
+
+Or, install [**tox**](https://tox.wiki/en/latest/index.html), then from within `rodeo` enter command line: `tox`.
+
+### Building Documentation
+
+The HTML documentation can be compiled from the root folder:
+```bash
+pip install .[docs]
+cd docs
+make html
+```
+This will create the documentation in `docs/build`.

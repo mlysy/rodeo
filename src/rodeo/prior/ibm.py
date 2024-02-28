@@ -5,17 +5,11 @@ Computes the initial parameters for the process prior using the q times integrat
 
     x^q(t) = \sigma B(t).
 
-Note that the IBM process is a particularly simple continuous autoregressive process of the form
+It has the analytical formulas for the parameters
 
 .. math::
 
-    x^q(t) + \alpha_1 x^{(q-2)}(t) + \ldots + \alpha_q x(t) = \sigma B(t),
-
-where :math:`\alpha_1 = \ldots = \alpha_q = 0`. It has the analytical formulas for the parameters
-
-.. math::
-
-    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-1)!}, \qquad R_{ij} = \sigma^2 \frac{(\Delta t)^{2q+1-i-j}}{(2q+1-i-j)(q-i)!(q-j)!}.
+    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-1)!}, \qquad R_{ij} = \sigma^2 \frac{(\Delta t)^{2q-1-i-j}}{(2q-1-i-j)(q-i)!(q-j)!}.
 
 """
 

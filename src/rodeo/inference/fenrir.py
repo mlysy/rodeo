@@ -1,5 +1,5 @@
 r"""
-This module implements the Fenrir algorithm as described in Tronarp et al 2022 for computing the approximate likelihood of :math:`p(y_{0:M} \mid z_{0:N})`.
+This module implements the Fenrir algorithm as described in Tronarp et al 2022 for computing the approximate likelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
 The forward pass model is
 
@@ -15,7 +15,7 @@ We assume that :math:`c_n = 0, Q_n = Q, R_n = R`, and :math:`W_n = W` for all :m
 
 .. math::
 
-    X_N \sim N(b_N, C_N)
+    X_N \sim \operatorname{Normal}(b_N, C_N)
 
     X_n = A_n X_{n+1} + b_n + C_n^{1/2} \epsilon_n.
     
@@ -23,9 +23,9 @@ Fenrir combines the observations
 
 .. math::
 
-    y_m = D_m X_m + \Omega^{1/2} \epsilon_m,
+    Y_m = D_m X_m + \Omega^{1/2}_m \eta_m,
 
-with the reverse pass model to condition on data.
+with the reverse pass model to condition on data. Here :math:`\epsilon_n, \eta_m` are standard normals.
 """
 import jax
 import jax.numpy as jnp
@@ -81,11 +81,14 @@ def _forecast_update(mean_state_pred, var_state_pred,
 # --- loglikelihood -----------------------------------------------------------
 
 
-def _backward_param(mean_state_filt, var_state_filt,
-                    mean_state_pred, var_state_pred,
-                    prior_weight):
+def _backward(mean_state_filt, var_state_filt,
+              mean_state_pred, var_state_pred,
+              prior_weight,
+              t_min, t_max, n_steps,
+              obs_data, obs_times,
+              obs_weight, obs_var):
     r"""
-    Compute the backward Markov chain parameters.
+    Compute the backward Markov chain parameters and forward pass but backwards in time.
 
     Args:
         mean_state_pred (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n-1}`.
@@ -93,172 +96,152 @@ def _backward_param(mean_state_filt, var_state_filt,
         mean_state_filt (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
         var_state_filt (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
-
-    Returns:
-        (tuple):
-        - **wgt_state_cond** (ndarray(n_steps, n_block, n_bstate, n_bstate)): Weight of smooth conditional at time t given observations from times [0...N]; :math:`A_{n|N}`.
-        - **mean_state_cond** (ndarray(n_steps+1, n_block, n_bstate)): Offset of smooth conditional at time t given observations from times [0...N]; :math:`b_{n|N}`.
-        - **var_state_cond** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance of smooth conditional at time t given observations from times [0...N]; :math:`C_{n|N}`.
-
-    """
-    # Terminal Point
-    n_tot, n_block, _ = mean_state_filt.shape
-    mean_state_end = mean_state_filt[n_tot-1]
-    var_state_end = var_state_filt[n_tot-1]
-
-    # backward pass
-    # vmap setup
-    def vmap_fun(smooth_kwargs):
-        mean_state_filt = smooth_kwargs['mean_state_filt']
-        var_state_filt = smooth_kwargs['var_state_filt']
-        mean_state_pred = smooth_kwargs['mean_state_pred']
-        var_state_pred = smooth_kwargs['var_state_pred']
-
-        wgt_state_cond, mean_state_cond, var_state_cond = jax.vmap(
-            lambda b: smooth_cond(
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                wgt_state=prior_weight[b]
-            )
-        )(jnp.arange(n_block))
-        return wgt_state_cond, mean_state_cond, var_state_cond
-
-    # scan arguments
-    scan_kwargs = {
-        'mean_state_filt': mean_state_filt[:n_tot-1],
-        'var_state_filt': var_state_filt[:n_tot-1],
-        'mean_state_pred': mean_state_pred[1:n_tot],
-        'var_state_pred': var_state_pred[1:n_tot],
-    }
-    wgt_state_cond, mean_state_cond, var_state_cond = jax.vmap(
-        vmap_fun)(scan_kwargs)
-    mean_state_cond = jnp.concatenate([mean_state_cond, mean_state_end[None]])
-    var_state_cond = jnp.concatenate([var_state_cond, var_state_end[None]])
-    return wgt_state_cond, mean_state_cond, var_state_cond
-
-
-def _backward(t_min, t_max, n_steps,
-              wgt_state, mean_state, var_state,
-              obs_data, obs_times,
-              obs_weight, obs_var):
-    r"""
-    Backward pass of Fenrir algorithm where observations are used.
-
-    Args:
         t_min (float): First time point of the time interval to be evaluated; :math:`t_0`.
         t_max (float): Last time point of the time interval to be evaluated; :math:`t_N`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
-        wgt_state (ndarray(n_steps, n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`A_{0:N}`.
-        mean_state (ndarray(n_steps+1, n_block, n_bstate)): Offsets defining the solution prior; :math:`b_{0:N}`.
-        var_state (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`C_{0:N}`.
         obs_data (ndarray(n_obs, n_blocks, n_bobs)): Observed data; :math:`y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_weight (ndarray(n_obs, n_blocks, n_bobs, n_bstate)): Weight matrix in the observation model; :math:`D_{0:M}`.
         obs_var (ndarry(n_obs, n_blocks, n_bobs, n_bobs)): Variance matrix in the observation model; :math:`\Omega_{0:M}`
 
     Returns:
-        (float) : The logdensity of :math:`p(y_{0:M} \mid z_{0:N})`.
+        (float) : The logdensity of :math:`p(y_{0:M} \mid Z_{1:N})`.
 
     """
-    # Add point to beginning of state variable for simpler loop
+    # get dimensions
     n_obs, n_block, n_bobs, n_bstate = obs_weight.shape
-    # n_steps = (n_obs-1)*n_res
-    wgt_state_end = jnp.zeros(wgt_state.shape[1:])
-    wgt_state = jnp.concatenate([wgt_state, wgt_state_end[None]])
-
+    # insert observations on solver time grid
+    sim_times = jnp.linspace(t_min, t_max, n_steps + 1)
+    obs_ind = jnp.searchsorted(sim_times, obs_times)
     # offset of obs is assumed to be 0
     obs_mean = jnp.zeros((n_block, n_bobs))
 
-    # reverse pass
-    def scan_fun(carry, t):
-        mean_state_filt, var_state_filt = carry["state_filt"]
+    def scan_fun(carry, forward_states):
+        # Kalman filter backwards in time
+        bmean_state_filt, bvar_state_filt = carry["state_filt"] 
+        # Kalman filter estimates from forward
+        mean_state_filt, var_state_filt = forward_states["state_filt"]
+        mean_state_pred, var_state_pred = forward_states["state_pred"]
+
         logdens = carry["logdens"]
         i = carry["i"]
+        t = forward_states["t"] # t_n
         ode_time = t_min + (t_max-t_min)*t/n_steps
-
+        # get Markov params
+        wgt_state_back, mean_state_back, var_state_back = jax.vmap(smooth_cond)(
+                mean_state_filt=mean_state_filt,
+                var_state_filt=var_state_filt,
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+                wgt_state=prior_weight
+        )
         # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(
-            lambda b: predict(
-                mean_state_past=mean_state_filt[b],
-                var_state_past=var_state_filt[b],
-                mean_state=mean_state[t, b],
-                wgt_state=wgt_state[t, b],
-                var_state=var_state[t, b]
-            )
-        )(jnp.arange(n_block))
+        bmean_state_pred, bvar_state_pred = jax.vmap(predict)(
+                mean_state_past=bmean_state_filt,
+                var_state_past=bvar_state_filt,
+                mean_state=mean_state_back,
+                wgt_state=wgt_state_back,
+                var_state=var_state_back
+        )
 
         # not t time point of observation
         def _no_obs():
-            return mean_state_pred, var_state_pred, 0.0, i
+            return bmean_state_pred, bvar_state_pred, 0.0, i
 
         # at time point of observation
         def _obs():
             # kalman forecast and update
-            logp, mean_state_next, var_state_next = jax.vmap(
-                lambda b: _forecast_update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=obs_data[i, b],
-                    mean_meas=obs_mean[b],
-                    wgt_meas=obs_weight[i, b],
-                    var_meas=obs_var[i, b]
-                )
-            )(jnp.arange(n_block))
-            # mean_state_fore, var_state_fore = jax.vmap(lambda b:
-            #     forecast(
-            #         mean_state_pred=mean_state_pred[b],
-            #         var_state_pred=var_state_pred[b],
-            #         mean_meas=obs_mean[b],
-            #         wgt_meas=obs_weight[i, b],
-            #         var_meas=obs_var[i, b]
-            #     )
-            # )(jnp.arange(n_block))
-            # # logdensity of forecast
-            # logp = jnp.sum(jax.vmap(lambda b:
-            #     multivariate_normal_logpdf(obs_data[i, b], mean=mean_state_fore[b], cov=var_state_fore[b])
-            # )(jnp.arange(n_block)))
-            # # kalman update
-            # mean_state_filt, var_state_filt = jax.vmap(lambda b:
-            #     update(
-            #         mean_state_pred=mean_state_pred[b],
-            #         var_state_pred=var_state_pred[b],
-            #         x_meas=obs_data[i, b],
-            #         mean_meas=obs_mean[b],
-            #         wgt_meas=obs_weight[i, b],
-            #         var_meas=obs_var[i, b]
-            #     )
-            # )(jnp.arange(n_block))
-            return mean_state_next, var_state_next, jnp.sum(logp), i-1
+            logp, bmean_state_next, bvar_state_next = jax.vmap(_forecast_update)(
+                    mean_state_pred=bmean_state_pred,
+                    var_state_pred=bvar_state_pred,
+                    x_meas=obs_data[i],
+                    mean_meas=obs_mean,
+                    wgt_meas=obs_weight[i],
+                    var_meas=obs_var[i]
+            )
+            return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
 
-        mean_state_filt, var_state_filt, logp, i = jax.lax.cond(
-            ode_time == obs_times[i], _obs, _no_obs)
+        bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(
+            obs_ind[i] == t, _obs, _no_obs)
         logdens += logp
 
         # output
         carry = {
-            "state_filt": (mean_state_filt, var_state_filt),
+            "state_filt": (bmean_state_filt, bvar_state_filt),
             "logdens": logdens,
             "i": i
         }
         stack = {
-            "state_pred": (mean_state_pred, var_state_pred),
-            "state_filt": (mean_state_filt, var_state_filt)
+            "state_pred": (bmean_state_pred, bvar_state_pred),
+            "state_filt": (bmean_state_filt, bvar_state_filt),
+            "wgt_state": wgt_state_back
         }
         return carry, stack
 
-    # start at N+1 assuming 0 mean and variance
+    # terminal point update
+    mean_state_term = mean_state_filt[n_steps]
+    var_state_term = var_state_filt[n_steps]
+    logdens = 0.0
+    i = n_obs - 1
+    # no observations
+    def _no_obs():
+        # no need to update
+        return mean_state_term, var_state_term, 0.0, i
+
+    # observation
+    def _obs():
+        # kalman forecast and update
+        logp, bmean_state_next, bvar_state_next = jax.vmap(_forecast_update)(
+                mean_state_pred=mean_state_term,
+                var_state_pred=var_state_term,
+                x_meas=obs_data[i],
+                mean_meas=obs_mean,
+                wgt_meas=obs_weight[i],
+                var_meas=obs_var[i]
+        )
+        return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
+
+    bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(
+        obs_ind[i] >= n_steps, _obs, _no_obs)
+    logdens += logp
+
+    # start at N 
     scan_init = {
-        "state_filt": (jnp.zeros((n_block, n_bstate,)), jnp.zeros((n_block, n_bstate, n_bstate))),
-        "logdens": 0.0,
-        "i": n_obs-1
+        "state_filt": (bmean_state_filt, bvar_state_filt),
+        "logdens": logdens,
+        "i": i
+    }
+    forward_states_init = {
+        "state_pred": (mean_state_pred[1:n_steps+1], var_state_pred[1:n_steps+1]),
+        "state_filt": (mean_state_filt[:n_steps], var_state_filt[:n_steps]),
+        "t": jnp.arange(n_steps)
     }
 
     scan_out, scan_out2 = jax.lax.scan(
-        scan_fun, scan_init, jnp.arange(n_steps+1), reverse=True)
-    return scan_out["logdens"], scan_out2
+        scan_fun, scan_init, forward_states_init, reverse=True)
 
+    # append initial values to back
+    mean_scan_pred, var_scan_pred = scan_out2["state_pred"]
+    mean_scan_filt, var_scan_filt = scan_out2["state_filt"]
+    mean_state_pred = jnp.concatenate(
+        [mean_scan_pred, mean_state_term[None]]
+    )
+    var_state_pred = jnp.concatenate(
+        [var_scan_pred, var_state_term[None]]
+    )
+    mean_state_filt = jnp.concatenate(
+        [mean_scan_filt, bmean_state_filt[None]]
+    )
+    var_state_filt = jnp.concatenate(
+        [var_scan_filt, bvar_state_filt[None]]
+    )
+    # repack
+    scan_out2 = {
+        "state_pred": (mean_state_pred, var_state_pred),
+        "state_filt": (mean_state_filt, var_state_filt),
+        "wgt_state": scan_out2["wgt_state"]
+    }
+    return scan_out["logdens"], scan_out2
 
 def fenrir(key, ode_fun, ode_weight, ode_init,
            t_min, t_max, n_steps,
@@ -287,7 +270,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
         params (kwargs): Optional model parameters.
 
     Returns:
-        (float) : The loglikelihood of :math:`p(y_{0:M} \mid Z_{0:N})`.
+        (float) : The loglikelihood of :math:`p(y_{0:M} \mid Z_{1:N})`.
 
     """
 
@@ -304,19 +287,13 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
     mean_state_filt, var_state_filt = filt_out["state_filt"]
 
     # backward pass
-    wgt_state_cond, mean_state_cond, var_state_cond = _backward_param(
+    logdens, _ = _backward(
         mean_state_filt=mean_state_filt,
         var_state_filt=var_state_filt,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
-        prior_weight=prior_weight
-    )
-
-    # reverse pass
-    logdens, _ = _backward(
+        prior_weight=prior_weight,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
-        wgt_state=wgt_state_cond, mean_state=mean_state_cond,
-        var_state=var_state_cond,
         obs_data=obs_data, obs_times=obs_times,
         obs_weight=obs_weight, obs_var=obs_var
     )
@@ -326,7 +303,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
 # --- ODE solver --------------------------------------------------------------
 
 
-def _smooth_mv(wgt_state, state_par):
+def _smooth_mv(state_par):
     r"""
     Smoothing pass of the Fenrir algorithm used to compute solution posterior.
 
@@ -342,7 +319,8 @@ def _smooth_mv(wgt_state, state_par):
     """
     mean_state_pred, var_state_pred = state_par["state_pred"]
     mean_state_filt, var_state_filt = state_par["state_filt"]
-    n_tot, n_block, n_bstate = mean_state_pred.shape
+    wgt_state = state_par["wgt_state"]
+    n_tot = mean_state_pred.shape[0]
     # smooth pass
     # lax.scan setup
 
@@ -352,17 +330,15 @@ def _smooth_mv(wgt_state, state_par):
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
         wgt_state = smooth_kwargs['wgt_state']
-        mean_state_curr, var_state_curr = jax.vmap(
-            lambda b: smooth_mv(
-                mean_state_next=state_next["mean"][b],
-                var_state_next=state_next["var"][b],
-                wgt_state=wgt_state[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-            )
-        )(jnp.arange(n_block))
+        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+                mean_state_next=state_next["mean"],
+                var_state_next=state_next["var"],
+                wgt_state=wgt_state,
+                mean_state_filt=mean_state_filt,
+                var_state_filt=var_state_filt,
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+        )
         state_curr = {
             "mean": mean_state_curr,
             "var": var_state_curr
@@ -423,22 +399,16 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
     mean_state_filt, var_state_filt = filt_out["state_filt"]
 
     # backward pass
-    wgt_state_cond, mean_state_cond, var_state_cond = _backward_param(
+    _, state_par = _backward(
         mean_state_filt=mean_state_filt,
         var_state_filt=var_state_filt,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
-        prior_weight=prior_weight
-    )
-
-    # reverse pass
-    _, state_par = _backward(
+        prior_weight=prior_weight,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
-        wgt_state=wgt_state_cond, mean_state=mean_state_cond,
-        var_state=var_state_cond,
         obs_data=obs_data, obs_times=obs_times,
         obs_weight=obs_weight, obs_var=obs_var
     )
 
-    mean_state_smooth, var_state_smooth = _smooth_mv(wgt_state_cond, state_par)
+    mean_state_smooth, var_state_smooth = _smooth_mv(state_par)
     return mean_state_smooth, var_state_smooth

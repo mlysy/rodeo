@@ -104,27 +104,27 @@ def interrogate_rodeo(key, ode_fun, ode_weight, t,
     return jnp.zeros(ode_weight.shape), mean_meas, var_meas
 
 
-def interrogate_rodeo2(key, ode_fun, ode_weight, t,
-                       mean_state_pred, var_state_pred,
-                       **params):
-    r"""
-    First order interrogate method of Kramer et al (2021); DOI: https://doi.org/10.48550/arXiv.2110.11812.
-    Assumes off block diagonals are zero.
+# def interrogate_rodeo2(key, ode_fun, ode_weight, t,
+#                        mean_state_pred, var_state_pred,
+#                        **params):
+#     r"""
+#     First order interrogate method of Kramer et al (2021); DOI: https://doi.org/10.48550/arXiv.2110.11812.
+#     Assumes off block diagonals are zero.
 
-    Same arguments and returns as :func:`~ode.interrogate_rodeo`.
+#     Same arguments and returns as :func:`~ode.interrogate_rodeo`.
 
-    """
-    n_block, n_bmeas, n_bstate = ode_weight.shape
-    fun_meas = -ode_fun(mean_state_pred, t, **params)
-    jac = jax.jacfwd(ode_fun)(mean_state_pred, t, **params)
-    # need to get the diagonal of jac
-    jac = jax.vmap(lambda b:
-                   jac[b, :, b])(jnp.arange(n_block))
-    wgt_meas = -jac
-    mean_meas = jax.vmap(lambda b:
-                         fun_meas[b] + jac[b].dot(mean_state_pred[b]))(jnp.arange(n_block))
-    var_meas = jax.vmap(lambda wm, vsp:
-                        jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
-        wgt_meas, var_state_pred
-    )
-    return wgt_meas, mean_meas, var_meas
+#     """
+#     n_block, n_bmeas, n_bstate = ode_weight.shape
+#     fun_meas = -ode_fun(mean_state_pred, t, **params)
+#     jac = jax.jacfwd(ode_fun)(mean_state_pred, t, **params)
+#     # need to get the diagonal of jac
+#     jac = jax.vmap(lambda b:
+#                    jac[b, :, b])(jnp.arange(n_block))
+#     wgt_meas = -jac
+#     mean_meas = jax.vmap(lambda b:
+#                          fun_meas[b] + jac[b].dot(mean_state_pred[b]))(jnp.arange(n_block))
+#     var_meas = jax.vmap(lambda wm, vsp:
+#                         jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
+#         wgt_meas, var_state_pred
+#     )
+#     return wgt_meas, mean_meas, var_meas
