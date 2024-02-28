@@ -18,7 +18,7 @@ kernelspec:
 
 ## Description
 
-**rodeo** is a fast Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of size $\Delta t$.  As $\Delta t$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers also output a solution an a grid of size $\Delta t$; however, the solution is random.  Still, as $\Delta t$ goes to zero, the probabilistic numerical approximation converges to the true solution. 
+**rodeo** is a fast Python library that uses [probabilistic numerics](http://probabilistic-numerics.org/) to solve ordinary differential equations (ODEs).  That is, most ODE solvers (such as [Euler's method](https://en.wikipedia.org/wiki/Euler_method)) produce a deterministic approximation to the ODE on a grid of step size $\Delta t$.  As $\Delta t$ goes to zero, the approximation converges to the true ODE solution.  Probabilistic solvers also output a solution on a grid of size $\Delta t$; however, the solution is random.  Still, as $\Delta t$ goes to zero, the probabilistic numerical approximation converges to the true solution. 
 
 For the basic task of solving ODEs, **rodeo** provides a probabilistic solver, `rodeo`, for univariate process $x(t)$ of the form
 

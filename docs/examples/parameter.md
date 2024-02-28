@@ -50,7 +50,7 @@ The model parameters are $\tth = (a,b,c,V(0),R(0))$, with $a,b,c > 0$ which are 
 \YY_i \sim \N(\xx(t_i), \phi^2 \Id_{2 \times 2})
 \end{align*}
 
-where $t_i = i$ and $i=0,1,\ldots 40$ and $\phi^2 = 0.005$. We will first simulate some noisy data using an highly accurate ODE solver (`odeint`).
+where $t_i = i$ and $i=0,1,\ldots 40$ and $\phi^2 = .04$. We will first simulate some noisy data using an highly accurate ODE solver (`odeint`).
 
 ```{code-cell} ipython3
 # --- 1. Define the ODE-IVP ----------------------------------------------
@@ -141,7 +141,7 @@ Xt, _ = rodeo.solve_mv(
 )
 
 # generate observations
-noise_sd = 0.005  # Standard deviation in noise model
+noise_sd = 0.2  # Standard deviation in noise model
 key, subkey = jax.random.split(key)
 eps = jax.random.normal(
     key=subkey,

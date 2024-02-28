@@ -1,5 +1,5 @@
 r"""
-This module implements the Fenrir algorithm as described in Tronarp et al 2022 for computing the approximate likelihood of :math:`p(Y_{0:M} \mid Z_{0:N})`.
+This module implements the Fenrir algorithm as described in Tronarp et al 2022 for computing the approximate likelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
 The forward pass model is
 
@@ -105,11 +105,14 @@ def _backward(mean_state_filt, var_state_filt,
         obs_var (ndarry(n_obs, n_blocks, n_bobs, n_bobs)): Variance matrix in the observation model; :math:`\Omega_{0:M}`
 
     Returns:
-        (float) : The logdensity of :math:`p(y_{0:M} \mid z_{0:N})`.
+        (float) : The logdensity of :math:`p(y_{0:M} \mid Z_{1:N})`.
 
     """
     # get dimensions
     n_obs, n_block, n_bobs, n_bstate = obs_weight.shape
+    # insert observations on solver time grid
+    sim_times = jnp.linspace(t_min, t_max, n_steps + 1)
+    obs_ind = jnp.searchsorted(sim_times, obs_times)
     # offset of obs is assumed to be 0
     obs_mean = jnp.zeros((n_block, n_bobs))
 
@@ -159,7 +162,7 @@ def _backward(mean_state_filt, var_state_filt,
             return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
 
         bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(
-            jnp.isclose(ode_time, obs_times[i]), _obs, _no_obs)
+            obs_ind[i] == t, _obs, _no_obs)
         logdens += logp
 
         # output
@@ -199,7 +202,7 @@ def _backward(mean_state_filt, var_state_filt,
         return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
 
     bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(
-        jnp.isclose(t_max, obs_times[i]), _obs, _no_obs)
+        obs_ind[i] == n_steps, _obs, _no_obs)
     logdens += logp
 
     # start at N 
@@ -267,7 +270,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
         params (kwargs): Optional model parameters.
 
     Returns:
-        (float) : The loglikelihood of :math:`p(y_{0:M} \mid Z_{0:N})`.
+        (float) : The loglikelihood of :math:`p(y_{0:M} \mid Z_{1:N})`.
 
     """
 
