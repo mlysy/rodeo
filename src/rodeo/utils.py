@@ -10,7 +10,7 @@ import jax.scipy.linalg as jsl
 
 def mvncond(mu, Sigma, icond):
     """
-    Calculates A, b, and V such that :math:`y[!icond] | y[icond] \sim N(A y[icond] + b, V)`.
+    Calculates A, b, and V such that :math:`y[!icond] | y[icond] \sim \operatorname{Normal}(A y[icond] + b, V)`.
 
     Args:
         mu (ndarray(2*n_dim)): Mean of y.
@@ -19,12 +19,12 @@ def mvncond(mu, Sigma, icond):
 
     Returns:
         (tuple):
-        - **A** (ndarray(n_dim, n_dim)): For :math:`y \sim N(\mu, \Sigma)` 
-          such that :math:`y[!icond] | y[icond] \sim N(A y[icond] + b, V)` Calculate A.
-        - **b** (ndarray(n_dim)): For :math:`y \sim N(\mu, \Sigma)` 
-          such that :math:`y[!icond] | y[icond] \sim N(A y[icond] + b, V)` Calculate b.
-        - **V** (ndarray(n_dim, n_dim)): For :math:`y \sim N(\mu, \Sigma)`
-          such that :math:`y[!icond] | y[icond] \sim N(A y[icond] + b, V)` Calculate V.
+        - **A** (ndarray(n_dim, n_dim)): For :math:`y \sim \operatorname{Normal}(\mu, \Sigma)` 
+          such that :math:`y[!icond] | y[icond] \sim \operatorname{Normal}(A y[icond] + b, V)` Calculate A.
+        - **b** (ndarray(n_dim)): For :math:`y \sim \operatorname{Normal}(\mu, \Sigma)` 
+          such that :math:`y[!icond] | y[icond] \sim \operatorname{Normal}(A y[icond] + b, V)` Calculate b.
+        - **V** (ndarray(n_dim, n_dim)): For :math:`y \sim \operatorname{Normal}(\mu, \Sigma)`
+          such that :math:`y[!icond] | y[icond] \sim \operatorname{Normal}(A y[icond] + b, V)` Calculate V.
 
     """
     # if y1 = y[~icond] and y2 = y[icond], should have A = Sigma12 * Sigma22^{-1}

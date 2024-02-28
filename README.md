@@ -14,7 +14,7 @@
 
 **rodeo** provides a lightweight and extensible family of approximations to a nonlinear Bayesian filtering paradigm common to many probabilistic solvers ([Tronarp et al (2018)](http://arxiv.org/abs/1810.03440)). This begins by putting a [Gaussian process](https://en.wikipedia.org/wiki/Gaussian_process) prior on the ODE solution, and updating it sequentially as the solver steps through the grid. **rodeo** is built on **jax** which allows for just-in-time compilation and auto-differentiation. The API of **jax** is almost equivalent to that of **numpy**. 
 
-**rodeo** has two major applications: one for approximating the ODE solution and the other for parameter inference. For the former we provide:
+**rodeo** provides two main tools: one for approximating the ODE solution and the other for parameter inference. For the former we provide:
 
 - `solve`: Implementation of a probabilistic ODE solver which uses a nonlinear Bayesian filtering paradigm.
 

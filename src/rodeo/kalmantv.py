@@ -9,7 +9,7 @@ The Gaussian state space model underlying the algorithms is
 
     y_n = d_n + W_n x_n + V_n^{1/2} \eta_n,
 
-where :math:`\epsilon_n \stackrel{\text{iid}}{\sim} \mathcal{N}(0, I_p)` and independently :math:`\eta_n \stackrel{\text{iid}}{\sim} \mathcal{N}(0, I_q)`.  At each time :math:`n`, only :math:`y_n` is observed.  The Kalman filtering and smoothing algorithms efficiently calculate quantities of the form :math:`\theta_{m|n} = (\mu_{m|n}, \Sigma_{m|n})`, where
+where :math:`\epsilon_n \stackrel{\text{iid}}{\sim} \operatorname{Normal}(0, I_p)` and independently :math:`\eta_n \stackrel{\text{iid}}{\sim} \operatorname{Normal}(0, I_q)`.  At each time :math:`n`, only :math:`y_n` is observed.  The Kalman filtering and smoothing algorithms efficiently calculate quantities of the form :math:`\theta_{m|n} = (\mu_{m|n}, \Sigma_{m|n})`, where
 
 .. math::
 
@@ -226,7 +226,7 @@ def smooth_sim(x_state_next,
     r"""
     Perform one step of the Kalman sampling smoother.
 
-    Calculates :math:`\tilde theta_{n|N}` from :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`, i.e., :math:`x_{n | N} | x_{n+1 | N} \sim N(\tilde \mu_{n | N}, \tilde \Sigma_{n | N})`.
+    Calculates :math:`\tilde \theta_{n|N}` from :math:`\theta_{n|n}`, and :math:`\theta_{n+1|n}`, i.e., :math:`x_{n | N} | x_{n+1 | N} \sim \operatorname{Normal}(\tilde \mu_{n | N}, \tilde \Sigma_{n | N})`.
 
     Args:
         x_state_next(ndarray(n_state)): Simulated state at time n+1 given observations from times[0...N]; denoted by :math:`x_{n+1 | N}`.

@@ -22,7 +22,6 @@ In this notebook, we demonstrate the steps to conduct parameter inference using 
 import jax
 import jax.numpy as jnp
 import jaxopt
-import blackjax
 import rodeo
 import rodeo.interrogate
 import rodeo.inference
@@ -119,7 +118,7 @@ prior_Q, prior_R = rodeo.prior.ibm_init(
 )
 
 # Produce a Pseudo-RNG key
-key = jax.random.PRNGKey(0)
+key = jax.random.PRNGKey(100)
 
 
 # calculate ODE via deterministic output
@@ -141,7 +140,7 @@ Xt, _ = rodeo.solve_mv(
 )
 
 # generate observations
-noise_sd = 0.2  # Standard deviation in noise model
+noise_sd = jnp.sqrt(0.005)  # Standard deviation in noise model
 key, subkey = jax.random.split(key)
 eps = jax.random.normal(
     key=subkey,
@@ -170,7 +169,7 @@ fig1.tight_layout()
 ```
 
 We proceed with a Bayesian approach by postulating a prior distribution $\pi(\tth)$ which combined with the likelihood gives the posterior
-\begin{equation}\label{eq:likelihood}
+\begin{equation}
     p(\tth \mid \YY_{0:M}) \propto \pi(\tth) \times p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)
 \end{equation}
 where $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$ is approximated with different methods.
@@ -339,26 +338,6 @@ class fitz_mcmc(rodeo.inference.MarginalMCMC):
         }
         return W, X0, prior_Q, prior_R, params
 
-    # you can define your solve function like this or use the default
-    def solve(self, key, ode_weight, ode_init, prior_weight, prior_var, **params):
-        "You can define your solve function like this or use the base class solve."
-        Xt = rodeo.solve_sim(
-            key=key,
-            # define ode
-            ode_fun=self._ode_fun,
-            ode_weight=ode_weight,
-            ode_init=ode_init,
-            t_min=self._t_min,
-            t_max=self._t_max,
-            # solver parameters
-            n_steps=self._n_steps,
-            interrogate=rodeo.interrogate.interrogate_kramer,
-            prior_weight=prior_weight,
-            prior_var=prior_var,
-            **params
-        )
-        return Xt
-
 
 def fitz_chmcmc(key, n_samples, upars_init):
     r"""
@@ -376,9 +355,7 @@ def fitz_chmcmc(key, n_samples, upars_init):
     """
     key, *subkeys = jax.random.split(key, num=3)
     # proposal parameter
-    scale = jnp.array(
-        [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001])
-
+    scale = jnp.sqrt(jnp.array([1e-5]*7))
     # initial the fitz_mcmc class
     fitz_ch = fitz_mcmc(
         ode_fun=fitz_fun,
@@ -418,7 +395,7 @@ mcmc_post = fitz_chmcmc(key, n_samples, upars_init)
 ### Fenrir
 
 `fenrir` is a method developed by [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html) which uses the data itself in the solution process. `fenrir` begins by using the data-free forward pass of `solve` to estimate $p(\XX_{0:N} \mid \ZZ_{0:N} = \bz, \tth)$. This model can be simulated from via a (non-homogeneous) Markov chain going backwards in time,
-\begin{equation}\label{eq:fenrirback}
+    \begin{equation}
     \begin{aligned}
         \XX_N & \sim \N(\bb_N, \CC_N) \\
         \XX_n \mid \XX_{n+1} & \sim \N(\AA_n \XX_n + \bb_n, \CC_n),
@@ -488,7 +465,6 @@ Finally, we present the method, `dalton`, developed by [Wu, Lysy](https://arxiv.
         \YY_i & \sim p(\YY_i \mid \XX_{n(i)}, \pph),
     \end{aligned}
 \end{equation}
-
 where the data is used directly in the forward pass instead of just the backward pass of `fenrir`. For Gaussian observations such as this example, `dalton` is the appropriate function to use.
 
 ```{code-cell} ipython3
@@ -549,7 +525,7 @@ fig.tight_layout()
 ## Dalton Non-Gaussian Observations
 
 Now suppose that the noisy observation model is
-\begin{equation}\label{eq:fitznoiseng}
+\begin{equation}
     Y_{ij} \sim \operatorname{Poisson}(\exp{b_0 + b_1x_j(t_i)}),
 \end{equation}
 where $b_0 = 0.1$ and $b_1 = 0.5$.

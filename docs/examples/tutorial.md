@@ -165,5 +165,5 @@ for i in range(2):
     axs[i].plot(tseq, mut[:, i, 0], label="rodeo mean")
     axs[i].set_ylabel(ylabel[i])
     axs[i].plot(tseq, exact[:, i], label='Exact')
-    axs[i].legend(loc='upper left')
+axs[0].legend(loc='upper left')
 ```

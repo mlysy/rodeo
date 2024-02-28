@@ -15,7 +15,7 @@ We assume that :math:`c_n = 0, Q_n = Q, R_n = R`, and :math:`W_n = W` for all :m
 
 .. math::
 
-    X_N \sim N(b_N, C_N)
+    X_N \sim \operatorname{Normal}(b_N, C_N)
 
     X_n = A_n X_{n+1} + b_n + C_n^{1/2} \epsilon_n.
     
@@ -23,9 +23,9 @@ Fenrir combines the observations
 
 .. math::
 
-    Y_m = D_m X_m + \Omega^{1/2} \epsilon_m,
+    Y_m = D_m X_m + \Omega^{1/2}_m \eta_m,
 
-with the reverse pass model to condition on data.
+with the reverse pass model to condition on data. Here :math:`\epsilon_n, \eta_m` are standard normals.
 """
 import jax
 import jax.numpy as jnp
@@ -202,7 +202,7 @@ def _backward(mean_state_filt, var_state_filt,
         return bmean_state_next, bvar_state_next, jnp.sum(logp), i-1
 
     bmean_state_filt, bvar_state_filt, logp, i = jax.lax.cond(
-        obs_ind[i] == n_steps, _obs, _no_obs)
+        obs_ind[i] >= n_steps, _obs, _no_obs)
     logdens += logp
 
     # start at N 

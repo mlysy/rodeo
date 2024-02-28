@@ -14,7 +14,7 @@ kernelspec:
 
 # Lorenz63: Chaotic ODE
 
-In this notebook, we consider a multivariate ODE system called **Lorenz63**. This system has a chaotic regime depending on the initial values which proves to be very difficult for ODE solvers.
+In this notebook, we consider a multivariate ODE system called **Lorenz63** given by
 
 \begin{equation*}
   \begin{aligned}
@@ -24,7 +24,7 @@ In this notebook, we consider a multivariate ODE system called **Lorenz63**. Thi
     \xx_0 &= (-12,-5,28).
   \end{aligned}
 \end{equation*}
-where $(\rho, \sigma, \beta) = (28, 10, 8/3)$.
+where $(\rho, \sigma, \beta) = (28, 10, 8/3)$. 
 
 ```{code-cell} ipython3
 import numpy as np

@@ -1,4 +1,4 @@
-DALTON Method
-=============
+DALTON
+======
 .. automodule:: rodeo.inference.dalton
     :members:

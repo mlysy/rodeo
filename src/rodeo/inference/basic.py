@@ -1,9 +1,9 @@
 r"""
 This module implements the Basic method for computing the approximate loglikelihood of :math:`\log p(Y_{0:M} \mid Z_{1:N})`.
 
-Using :math:`\mu_{0:N|N} = E(x{0:N} \mid Z_{1:N})` from the rodeo solver, the approximate likelihood is computed as
+Using :math:`\mu_{0:N|N} = E(X_{0:N} \mid Z_{1:N})` from the rodeo solver, the approximate likelihood is computed as
 
-.. math:: p(y_{0:M} \mid Z_{1:N}) = \sum_{i=0}^M \log p(Y_i \mid x_{n(i)} = \mu_{n(i)|N}).
+.. math:: p(Y_{0:M} \mid Z_{1:N}) = \sum_{i=0}^M \log p(Y_i \mid X_{n(i)} = \mu_{n(i)|N}).
 
 In the case that observations time grid is not the same as the solver time grid, then the observation uses the closest discretization time point.
 
