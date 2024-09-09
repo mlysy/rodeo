@@ -52,12 +52,13 @@ class TestEKF(unittest.TestCase):
         mean_state_pred, var_state_pred = utils.kalman_theta(
             m=1, y=jnp.atleast_2d(self.x_meas[0]), mu=self.mean_gm, Sigma=self.var_gm
         )
+        wgt_meas = self.wgt_meas[1].at[:, self.n_meas:].set(0)
         mean_state_filt1, var_state_filt1 = ktv.update(
-            mean_state_pred=mean_state_pred[:self.n_meas],
-            var_state_pred=var_state_pred[:self.n_meas, :self.n_meas],
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
             x_meas=self.x_meas[1],
             mean_meas=self.mean_meas[1],
-            wgt_meas=self.wgt_meas[1][:self.n_meas, :self.n_meas],
+            wgt_meas=wgt_meas,
             var_meas=self.var_meas[1]
         )
 
@@ -65,14 +66,15 @@ class TestEKF(unittest.TestCase):
             return jnp.sum(
                 jax.scipy.stats.multivariate_normal.logpdf(
                     x_meas, 
-                    mean=self.wgt_meas[1][:self.n_meas, :self.n_meas].dot(mean_state_pred) + self.mean_meas[1], 
+                    mean=mean_state_pred + self.mean_meas[1], 
                     cov=self.var_meas[1])
             )
         
         mean_state_filt2, var_state_filt2 = ekf.update(
-            mean_state_pred=mean_state_pred[:self.n_meas],
-            var_state_pred=var_state_pred[:self.n_meas, :self.n_meas],
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
             x_meas=self.x_meas[1],
+            wgt_meas=wgt_meas,
             meas_lpdf=meas_lpdf,
             theta=None
         )

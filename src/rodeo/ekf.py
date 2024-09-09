@@ -55,6 +55,7 @@ def predict(mean_state_past, var_state_past,
 def update(mean_state_pred,
            var_state_pred,
            x_meas,
+           wgt_meas,
            meas_lpdf,
            theta):
     r"""
@@ -66,6 +67,7 @@ def update(mean_state_pred,
         mean_state_pred (ndarray(n_state)): Mean estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\mu_{n|n-1}`.
         var_state_pred (ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times [0...n-1]; denoted by :math:`\Sigma_{n|n-1}`.
         x_meas (ndarray(n_meas)): Measure vector from `x_state`; :math:`y_n`.
+        wgt_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W_n`.
         meas_lpdf (func): The logpdf for the measurement vector.
         theta (ndarray(n_theta)): Parameters for the mean and variance functions.
 
@@ -76,16 +78,15 @@ def update(mean_state_pred,
 
     """
     # parameters for linear update
-    jac = jax.jacobian(meas_lpdf)(mean_state_pred, x_meas, theta)
-    hess = jax.hessian(meas_lpdf)(mean_state_pred, x_meas, theta)
-    var_meas = -jnp.linalg.inv(hess)
-    y_hat = mean_state_pred + var_meas.dot(jac)
-    # wgt_meas = jnp.where(var_meas != 0, 1, 0)
-    wgt_meas = jnp.eye(len(y_hat))
+    n_state = len(mean_state_pred)
+    jac = jax.jacobian(meas_lpdf)(wgt_meas.dot(mean_state_pred), x_meas, theta)
+    hess = jax.hessian(meas_lpdf)(wgt_meas.dot(mean_state_pred), x_meas, theta)
+    var_meas = -jnp.linalg.pinv(hess)
+    y_hat = wgt_meas.dot(mean_state_pred) + var_meas.dot(jac)
     
     return kalmantv.update(mean_state_pred,
                            var_state_pred,
                            y_hat,
-                           jnp.zeros((len(y_hat,))),
+                           jnp.zeros(len(y_hat)),
                            wgt_meas,
                            var_meas)
