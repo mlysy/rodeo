@@ -81,16 +81,14 @@ def dalton(key, ode_fun, ode_weight, ode_init,
     mean_state_init = ode_init
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
-    # split keys
-    key1, key2 = jax.random.split(key)
-
     # compute p(Z_{1:N}, Y_{0:M})
-    def scan(carry, t):
+    def scan(carry, filter_kwargs):
         mean_state_filt_zy, var_state_filt_zy = carry["state_filt_joint"]
         mean_state_filt_z, var_state_filt_z = carry["state_filt_marg"]
         logdens_zy = carry["logdens_joint"]
         logdens_z = carry["logdens_marg"]
-        key, *subkey = jax.random.split(carry["key"], num=3)
+        t = filter_kwargs["t"]
+        keys = filter_kwargs["key"]
         i = carry["i"]
         ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
         
@@ -104,7 +102,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=keys[0],
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
@@ -156,7 +154,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=keys[1],
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
@@ -181,7 +179,6 @@ def dalton(key, ode_fun, ode_weight, ode_init,
             "state_filt_marg": (mean_state_next_z, var_state_next_z),
             "logdens_joint": logdens_zy,
             "logdens_marg": logdens_z,
-            "key": key,
             "i": i
         }
         return carry, None
@@ -202,10 +199,19 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         "state_filt_marg": (mean_state_init, var_state_init),
         "logdens_joint": logdens_zy,
         "logdens_marg": 0.0,
-        "key": key1,
         "i": i
     }
-    out, _ = jax.lax.scan(scan, scan_init, jnp.arange(n_steps))
+
+    if key is not None:
+        keys = jax.random.split(key, num=(n_steps, 2))
+    else:
+        keys = jnp.zeros((n_steps, 2))
+
+    filter_kwargs = {
+        "t": jnp.arange(n_steps),
+        "key": keys
+    }
+    out, _ = jax.lax.scan(scan, scan_init, filter_kwargs)
     return out["logdens_joint"] - out["logdens_marg"]
 
 
@@ -247,10 +253,11 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
     # compute p(X_{1:n} | Z_{1:n}, Y_{0:m})
-    def scan_fun(carry, t):
+    def scan_fun(carry, filter_kwargs):
         mean_state_filt, var_state_filt = carry["state_filt"]
-        key, subkey = jax.random.split(carry["key"])
         i = carry["i"]
+        t = filter_kwargs["t"]
+        key = filter_kwargs["key"]
         ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
         
         # kalman predict
@@ -263,7 +270,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=key,
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
@@ -305,7 +312,6 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
-            "key": key,
             "i": i
         }
         stack = {
@@ -320,10 +326,19 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
     # scan initial value for computing p(X_{0:n} | Y_{0:m}, Z_{1:n})
     scan_init = {
         "state_filt": (mean_state_init, var_state_init),
-        "key": key,
         "i": i
     }
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, jnp.arange(n_steps))
+    
+    if key is not None:
+        keys = jax.random.split(key, num=n_steps)
+    else:
+        keys = jnp.zeros(n_steps)
+    
+    filter_kwargs = {
+        "t": jnp.arange(n_steps),
+        "key": keys
+    }
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, filter_kwargs)
     # append initial values to front
     scan_out["state_filt"] = (
         jnp.concatenate([mean_state_init[None], scan_out["state_filt"][0]]),
@@ -400,8 +415,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         'var_state_pred': var_state_pred[2:n_steps+1]
     }
     # Note: initial value x0 is assumed to be known, so no need to smooth it
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
-                               reverse=True)
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs, reverse=True)
 
     # append initial values to front and back
     mean_state_smooth = jnp.concatenate(
@@ -480,8 +494,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
         'key': jnp.array(subkeys[:n_steps-1])
     }
     # Note: initial value x0 is assumed to be known, so no need to smooth it
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
-                               reverse=True)
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs, reverse=True)
 
     # append initial values to front and back
     x_state_smooth = jnp.concatenate(
@@ -526,25 +539,24 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
     # compute p(X_{1:n} | Z_{1:n}, \hat Y_{0:m})
-    def scan_fun(carry, t):
+    def scan_fun(carry, filter_kwargs):
         mean_state_filt, var_state_filt = carry["state_filt"]
-        key, subkey = jax.random.split(carry["key"])
         i = carry["i"]
+        t = filter_kwargs["t"]
+        key = filter_kwargs["key"]
         ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
         
         # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(
-            lambda b: predict(
-                mean_state_past=mean_state_filt[b],
-                var_state_past=var_state_filt[b],
-                mean_state=mean_state[b],
-                wgt_state=prior_weight[b],
-                var_state=prior_var[b]
-            )
-        )(jnp.arange(n_block))
+        mean_state_pred, var_state_pred = jax.vmap(predict)(
+            mean_state_past=mean_state_filt,
+            var_state_past=var_state_filt,
+            mean_state=mean_state,
+            wgt_state=prior_weight,
+            var_state=prior_var
+        )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=key,
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
@@ -578,38 +590,33 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
             var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], obs_var[b]))(jnp.arange(n_block))
             x_meas_obs = jnp.concatenate([x_meas, obs_hat], axis=1)
             # kalman update
-            mean_state_next, var_state_next = jax.vmap(
-                lambda b: update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=x_meas_obs[b],
-                    mean_meas=mean_meas_obs[b],
-                    wgt_meas=wgt_meas_obs[b],
-                    var_meas=var_meas_obs[b]
-                )
-            )(jnp.arange(n_block))
+            mean_state_next, var_state_next = jax.vmap(update)(
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+                x_meas=x_meas_obs,
+                mean_meas=mean_meas_obs,
+                wgt_meas=wgt_meas_obs,
+                var_meas=var_meas_obs
+            )
             return mean_state_next, var_state_next, i+1
         
         # only z is observed
         def z_update():
             # kalman update
-            mean_state_next, var_state_next = jax.vmap(
-                lambda b: update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=x_meas[b],
-                    mean_meas=mean_meas[b],
-                    wgt_meas=W_meas[b],
-                    var_meas=var_meas[b]
-                )
-            )(jnp.arange(n_block))
+            mean_state_next, var_state_next = jax.vmap(update)(
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+                x_meas=x_meas,
+                mean_meas=mean_meas,
+                wgt_meas=W_meas,
+                var_meas=var_meas
+            )
             return mean_state_next, var_state_next, i
 
         mean_state_next, var_state_next, i = jax.lax.cond(t+1 == obs_ind[i], zy_update, z_update)
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
-            "key" : key,
             "i": i
         }
         stack = {
@@ -624,10 +631,19 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
     # scan initial value for computing p(X_{0:n} | \hat Y_{0:m}, Z_{1:n})
     scan_init = {
         "state_filt": (mean_state_init, var_state_init),
-        "key": key,
         "i": i
     }
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, jnp.arange(n_steps))
+    
+    if key is not None:
+        keys = jax.random.split(key, num=n_steps)
+    else:
+        keys = jnp.zeros(n_steps)
+    
+    filter_kwargs = {
+        "t": jnp.arange(n_steps),
+        "key": keys
+    }
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, filter_kwargs)
     # append initial values to front
     scan_out["state_filt"] = (
         jnp.concatenate([mean_state_init[None], scan_out["state_filt"][0]]),
@@ -669,31 +685,25 @@ def _logx_yhat(mean_state_filt, var_state_filt,
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
         logx_yhat = state_next["logx_yhat"]
-        mean_state_curr, var_state_curr = jax.vmap(
-            lambda b: smooth_mv(
-                mean_state_next=state_next["mean"][b],
-                var_state_next=state_next["var"][b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                wgt_state=prior_weight[b]
-            )
-        )(jnp.arange(n_block))
-        mean_state_sim, var_state_sim = jax.vmap(
-            lambda b: smooth_sim(
-                x_state_next=state_next["mean"][b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                wgt_state=prior_weight[b]
-            )
-        )(jnp.arange(n_block))
+        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+            mean_state_next=state_next["mean"],
+            var_state_next=state_next["var"],
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
+            wgt_state=prior_weight
+        )
+        mean_state_sim, var_state_sim = jax.vmap(smooth_sim)(
+            x_state_next=state_next["mean"],
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
+            wgt_state=prior_weight
+        )
         logx_yhat += jnp.sum(
-            jax.vmap(lambda b:
-                     multivariate_normal_logpdf(mean_state_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b])
-                    )(jnp.arange(n_block))
+            jax.vmap(multivariate_normal_logpdf)(mean_state_curr, mean=mean_state_sim, cov=var_state_sim)
         )
         carry = {
             "mean": mean_state_curr,
@@ -703,9 +713,8 @@ def _logx_yhat(mean_state_filt, var_state_filt,
         return carry, carry
     # compute log(mu_{N|N}) at the last filtering step
     logx_yhatN = jnp.sum(
-        jax.vmap(lambda b:
-                 multivariate_normal_logpdf(mean_state_filt[n_steps][b], mean=mean_state_filt[n_steps][b], cov=var_state_filt[n_steps][b])
-                )(jnp.arange(n_block)))
+        jax.vmap(multivariate_normal_logpdf)(mean_state_filt[n_steps], mean=mean_state_filt[n_steps], cov=var_state_filt[n_steps])
+    )
     # initialize
     scan_init = {
         "mean": mean_state_filt[n_steps],
@@ -760,35 +769,22 @@ def _logx_z(uncond_mean,
         var_state_pred = smooth_kwargs['var_state_pred']
         uncond_next = smooth_kwargs['uncond_next']
         uncond_curr = smooth_kwargs['uncond_curr']
-        # logx_z = state_next["logx_z"]
-        mean_state_sim, var_state_sim = jax.vmap(
-            lambda b: smooth_sim(
-                x_state_next=uncond_next[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                wgt_state=prior_weight[b]
-            )
-        )(jnp.arange(n_block))
-        logx_z += jnp.sum(
-            jax.vmap(lambda b:
-                     multivariate_normal_logpdf(uncond_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b])
-                    )(jnp.arange(n_block))
+        mean_state_sim, var_state_sim = jax.vmap(smooth_sim)(
+            x_state_next=uncond_next,
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
+            wgt_state=prior_weight
         )
-        # state_curr = {
-        #     "logx_z":  logx_z
-        # }
+        logx_z += jnp.sum(
+            jax.vmap(multivariate_normal_logpdf)(uncond_curr, mean=mean_state_sim, cov=var_state_sim)
+        )
         return logx_z, logx_z
     # compute log(mu_{N|N}) at the last filtering step
     logx_zN = jnp.sum(
-        jax.vmap(lambda b:
-                 multivariate_normal_logpdf(uncond_mean[n_steps][b], mean=mean_state_filt[n_steps][b], cov=var_state_filt[n_steps][b])
-                )(jnp.arange(n_block)))
-    # initialize
-    # scan_init = {
-    #     "logx_z": logx_z0,
-    # }
+        jax.vmap(multivariate_normal_logpdf)(uncond_mean[n_steps], mean=mean_state_filt[n_steps], cov=var_state_filt[n_steps])
+    )
     # scan arguments
     scan_kwargs = {
         'mean_state_filt': mean_state_filt[1:n_steps],
@@ -931,17 +927,15 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
         var_state_filt = smooth_kwargs['var_state_filt']
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
-        mean_state_curr, var_state_curr = jax.vmap(lambda b:
-            smooth_mv(
-                mean_state_next=state_next["mean"][b],
-                var_state_next=state_next["var"][b],
-                wgt_state=prior_weight[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-            )
-        )(jnp.arange(n_block))
+        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+            mean_state_next=state_next["mean"],
+            var_state_next=state_next["var"],
+            wgt_state=prior_weight,
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
+        )
         state_curr = {
             "mean": mean_state_curr,
             "var": var_state_curr

@@ -45,9 +45,12 @@ def _solveV(V, B):
 # --- core functions -----------------------------------------------------
 
 
-def predict(mean_state_past, var_state_past,
-            mean_state, wgt_state,
-            var_state):
+def predict(mean_state_past, 
+            var_state_past,
+            mean_state, 
+            wgt_state,
+            var_state, 
+            *args, **kwargs):
     r"""
     Perform one prediction step of the Kalman filter.
 
@@ -59,6 +62,8 @@ def predict(mean_state_past, var_state_past,
         mean_state (ndarray(n_state)): Transition offsets defining the solution prior; denoted by :math:`c_n`.
         wgt_state (ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q_n`.
         var_state (ndarray(n_state, n_state)): Variance matrix defining the solution prior; denoted by :math:`R_n`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
 
     Returns:
         (tuple):
@@ -77,7 +82,8 @@ def update(mean_state_pred,
            x_meas,
            mean_meas,
            wgt_meas,
-           var_meas):
+           var_meas,
+           *args, **kwargs):
     r"""
     Perform one update step of the Kalman filter.
 
@@ -90,6 +96,8 @@ def update(mean_state_pred,
         mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d_n`.
         wgt_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W_n`.
         var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`V_n`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
 
     Returns:
         (tuple):
@@ -118,7 +126,8 @@ def filter(mean_state_past,
            x_meas,
            mean_meas,
            wgt_meas,
-           var_meas):
+           var_meas,
+           *args, **kwargs):
     r"""
     Perform one step of the Kalman filter.
 
@@ -134,6 +143,9 @@ def filter(mean_state_past,
         mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d_n`.
         wgt_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W_n`.
         var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`V_n`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
+
 
     Returns:
         (tuple):
@@ -161,7 +173,7 @@ def filter(mean_state_past,
     return mean_state_pred, var_state_pred, mean_state_filt, var_state_filt
 
 
-def _smooth(var_state_filt, var_state_pred, wgt_state):
+def _smooth(var_state_filt, var_state_pred, wgt_state, *args, **kwargs):
     r"""
     Common part of :func:`kalmantv.smooth_sim` and :func:`kalmantv.smooth_mv`.
 
@@ -169,6 +181,9 @@ def _smooth(var_state_filt, var_state_pred, wgt_state):
         var_state_filt(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
         var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n given observations from times[0...n-1]; denoted by :math:`\Sigma_{n | n-1}`.
         wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
+
 
     Returns:
         (tuple):
@@ -186,7 +201,8 @@ def smooth_mv(mean_state_next,
               var_state_filt,
               mean_state_pred,
               var_state_pred,
-              wgt_state):
+              wgt_state,
+              *args, **kwargs):
     r"""
     Perform one step of the Kalman mean/variance smoother.
 
@@ -200,6 +216,9 @@ def smooth_mv(mean_state_next,
         mean_state_pred(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\mu_{n+1 | n}`.
         var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\Sigma_{n+1 | n}`.
         wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q_{n+1}`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
+
 
     Returns:
         (tuple):
@@ -222,7 +241,8 @@ def smooth_sim(x_state_next,
                var_state_filt,
                mean_state_pred,
                var_state_pred,
-               wgt_state):
+               wgt_state,
+               *args, **kwargs):
     r"""
     Perform one step of the Kalman sampling smoother.
 
@@ -235,6 +255,9 @@ def smooth_sim(x_state_next,
         mean_state_pred(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\mu_{n+1 | n}`.
         var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\Sigma_{n+1 | n}`.
         wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q_{n+1}`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
+
 
     Returns:
         (tuple):
@@ -259,7 +282,8 @@ def smooth(x_state_next,
            var_state_filt,
            mean_state_pred,
            var_state_pred,
-           wgt_state):
+           wgt_state,
+           *args, **kwargs):
     r"""
     Perform one step of both Kalman mean/variance and sampling smoothers.
 
@@ -274,6 +298,9 @@ def smooth(x_state_next,
         mean_state_pred(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\mu_{n+1 | n}`.
         var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\Sigma_{n | n}`.
         wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q_{n+1}`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
+
 
     Returns:
         (tuple):
@@ -305,7 +332,8 @@ def forecast(mean_state_pred,
              var_state_pred,
              mean_meas,
              wgt_meas,
-             var_meas):
+             var_meas,
+             *args, **kwargs):
     r"""
     Forecasts the mean and variance of the measurement at time step n given observations from times[0...n-1].
 
@@ -315,6 +343,9 @@ def forecast(mean_state_pred,
         mean_meas (ndarray(n_meas)): Transition offsets defining the measure prior; denoted by :math:`d_n`.
         wgt_meas (ndarray(n_meas, n_state)): Transition matrix defining the measure prior; denoted by :math:`W_n`.
         var_meas (ndarray(n_meas, n_meas)): Variance matrix defining the measure prior; denoted by :math:`V_n`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
+
 
     Returns:
         (tuple):
@@ -331,7 +362,8 @@ def smooth_cond(mean_state_filt,
                 var_state_filt,
                 mean_state_pred,
                 var_state_pred,
-                wgt_state):
+                wgt_state,
+                *args, **kwargs):
     r"""
     Perform one step of the Kalman sampling smoother conditional.
 
@@ -343,6 +375,9 @@ def smooth_cond(mean_state_filt,
         mean_state_pred(ndarray(n_state)): Mean estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\mu_{n+1 | n}`.
         var_state_pred(ndarray(n_state, n_state)): Covariance of estimate for state at time n+1 given observations from times[0...n]; denoted by :math:`\Sigma_{n+1 | n}`.
         wgt_state(ndarray(n_state, n_state)): Transition matrix defining the solution prior; denoted by :math:`Q_{n+1}`.
+        *args (args): Extra arguments for different Kalman equations.
+        **kwargs (kwargs): Extra keyword arguments for different Kalman equations.
+
 
     Returns:
         - **wgt_state_cond** (ndarray(n_state, n_state)): Transition of smooth conditional at time n given observations from times[0...N]; :math:`A_{n|N}`.

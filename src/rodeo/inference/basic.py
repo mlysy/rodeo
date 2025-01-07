@@ -59,4 +59,4 @@ def basic(key, ode_fun, ode_weight, ode_init,
     )
     sim_times = jnp.linspace(t_min, t_max, n_steps+1)
     ode_data = Xt[jnp.searchsorted(sim_times, obs_times)]
-    return obs_loglik(obs_data, ode_data, **params)
+    return obs_loglik(obs_data, ode_data, **params), Xt

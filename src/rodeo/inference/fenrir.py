@@ -29,7 +29,6 @@ with the reverse pass model to condition on data. Here :math:`\epsilon_n, \eta_m
 """
 import jax
 import jax.numpy as jnp
-import jax.scipy as jsp
 from rodeo.kalmantv import *
 from rodeo.solve import _solve_filter
 from rodeo.utils import multivariate_normal_logpdf

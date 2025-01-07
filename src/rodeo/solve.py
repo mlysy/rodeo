@@ -53,9 +53,10 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
     # forward pass
-    def scan_fun(carry, t):
+    def scan_fun(carry, filter_kwargs):
         mean_state_filt, var_state_filt = carry["state_filt"]
-        key, subkey = jax.random.split(carry["key"])
+        t = filter_kwargs["t"]
+        key = filter_kwargs["key"]
         # kalman predict
         mean_state_pred, var_state_pred = jax.vmap(predict)(
                 mean_state_past=mean_state_filt,
@@ -66,7 +67,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         )
         # model interrogation
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=key,
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=t_min + (t_max-t_min)*(t+1)/n_steps,
@@ -86,8 +87,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         )
         # output
         carry = {
-            "state_filt": (mean_state_next, var_state_next),
-            "key": key
+            "state_filt": (mean_state_next, var_state_next)
         }
         stack = {
             "state_filt": (mean_state_next, var_state_next),
@@ -96,11 +96,19 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         return carry, stack
     # scan initial value
     scan_init = {
-        "state_filt": (mean_state_init, var_state_init),
-        "key": key
+        "state_filt": (mean_state_init, var_state_init)
+    }
+    if key is not None:
+        keys = jax.random.split(key, num=n_steps)
+    else:
+        keys = jnp.zeros(n_steps)
+
+    filter_kwargs = {
+        "t": jnp.arange(n_steps),
+        "key": keys
     }
     # scan itself
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, jnp.arange(n_steps))
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, filter_kwargs)
     # append initial values to front
     scan_out["state_filt"] = (
         jnp.concatenate([mean_state_init[None], scan_out["state_filt"][0]]),
@@ -196,7 +204,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
     Mean and variance of the stochastic ODE solver.
 
     Args:
-        key (PRNGKey): PRNG key.
+        key (PRNGKey): PRNG key or None.
         ode_fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
         ode_weight (ndarray(n_block, n_bmeas, n_bstate)): Weight matrix defining the measure prior; :math:`W`.
         ode_init (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
