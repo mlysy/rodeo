@@ -17,7 +17,8 @@ interrogate.rst
 basic.rst
 fenrir.rst
 dalton.rst
-marginal_mcmc.rst
+magi.rst
+random_walk.rst
 utils.rst
 ```
 

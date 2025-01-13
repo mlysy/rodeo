@@ -30,10 +30,11 @@ The variants offered are:
 
     Function: `rmh` with proposal_logdensity_fn.
 
-Reference: :cite:p:`gelman2014bayesian` Section 11.2
+    
+Reference: Andrew Gelman, John B Carlin, Hal S Stern, and Donald B Rubin. Bayesian data analysis. Chapman and Hall/CRC, 2014. Section 11.2
 
-Examples
---------
+Example:
+    
     The simplest case is:
 
     .. code::
@@ -102,15 +103,13 @@ from blackjax.mcmc.random_walk import normal as normal
 
 
 class RWAState(NamedTuple):
-    """State of the RWA chain.
+    """
+    State of the Random Walk Auxiliary (RWA) chain.
 
-    position
-        Current position of the chain.
-    logdensity
-        Current value of the log-density.
-    auxdata
-        Current value of the auxiliary data.
-
+    Attributes:
+        position (ArrayTree): Current position of the chain.
+        logdensity (float): Current value of the log-density.
+        auxdata (ArrayTree, optional): Current value of the auxiliary data.
     """
 
     position: ArrayTree
@@ -119,20 +118,13 @@ class RWAState(NamedTuple):
 
 
 class RWAInfo(NamedTuple):
-    """Additional information on the RWA chain.
+    """
+    Additional information about the RWA chain step.
 
-    This additional information can be used for debugging or computing
-    diagnostics.
-
-    acceptance_rate
-        The acceptance probability of the transition, linked to the energy
-        difference between the original and the proposed states.
-    is_accepted
-        Whether the proposed position was accepted or the original position
-        was returned.
-    proposal
-        The state proposed by the proposal.
-
+    Attributes:
+        acceptance_rate (float): The acceptance probability of the proposed transition.
+        is_accepted (bool): Indicates whether the proposed state was accepted.
+        proposal (RWAState): The proposed state of the chain.
     """
 
     acceptance_rate: float
@@ -141,29 +133,26 @@ class RWAInfo(NamedTuple):
 
 
 def init(position: ArrayLikeTree, logdensity_fn: Callable) -> RWAState:
-    """Create a chain state from a position.
+    """
+    Create an initial chain state from a given position.
 
-    Parameters
-    ----------
-    position: PyTree
-        The initial position of the chain
-    logdensity_fn: Callable
-        Log-probability density function of the distribution we wish to sample
-        from.
+    Args:
+        position (ArrayLikeTree): The initial position of the chain.
+        logdensity_fn (Callable): Function to compute the log-probability density of the distribution.
 
+    Returns:
+        (RWAState): The initialized state of the chain.
     """
     logdensity, auxdata = logdensity_fn(position)
     return RWAState(position, logdensity, auxdata)
 
 
 def build_additive_step():
-    """Build a Random Walk Rosenbluth-Metropolis-Hastings kernel
+    """"
+    Build a Random Walk Rosenbluth-Metropolis-Hastings (RMH) kernel using an additive step proposal.
 
-    Returns
-    -------
-    A kernel that takes a rng_key and a Pytree that contains the current state
-    of the chain and that returns a new state of the chain along with
-    information about the transition.
+    Returns:
+        (Callable): A function that takes a random key and chain state, performs an RMH step, and returns the new state and transition info.
     """
 
     def kernel(
@@ -183,16 +172,17 @@ def build_additive_step():
 
 def normal_random_walk(logdensity_fn: Callable, sigma):
     """
-    Parameters
-    ----------
-    logdensity_fn
-        The log density probability density function from which we wish to sample.
-    sigma
-        The value of the covariance matrix of the gaussian proposal distribution.
+    Create a Gaussian additive step random walk Metropolis-Hastings sampler.
 
-    Returns
-    -------
-         A ``SamplingAlgorithm``.
+    This method initializes a random walk sampler with Gaussian-distributed steps.
+
+    Args:
+        logdensity_fn (Callable): Function to compute the log-probability density of the distribution.
+        sigma (ArrayLikeTree): Standard deviation of the Gaussian distribution used for the proposal steps.
+
+    Returns:
+        (SamplingAlgorithm): An object with `init` and `step` methods to run the Gaussian RMH sampler.
+
     """
     return additive_step_random_walk(logdensity_fn, normal(sigma))
 
@@ -202,8 +192,7 @@ def additive_step_random_walk(
 ) -> SamplingAlgorithm:
     """Implements the user interface for the Additive Step RMH
 
-    Examples
-    --------
+    Example:
 
     A new kernel can be initialized and used with the following code:
 
@@ -222,18 +211,13 @@ def additive_step_random_walk(
         state = rw_gaussian.init(position)
         new_state, info = rw_gaussian.step(rng_key, state)
 
-    Parameters
-    ----------
-    logdensity_fn
-        The log density probability density function from which we wish to sample.
-    random_step
-        A Callable that takes a random number generator and the current state and produces a step,
-        which will be added to the current position to obtain a new position. Must be symmetric
-        to maintain detailed balance. This means that P(step|position) = P(-step | position+step)
+    Args:
+        logdensity_fn (Callable): Function to compute the log-probability density of the distribution.
+        random_step (Callable): A function that generates a step to be added to the current state. This
+            function takes a PRNG key and the current position as input and returns a new proposal step.
 
-    Returns
-    -------
-    A ``SamplingAlgorithm``.
+    Returns:
+        (SamplingAlgorithm): A sampling algorithm with `init` and `step` methods to perform RMH sampling.
     """
     kernel = build_additive_step()
 
@@ -249,15 +233,15 @@ def additive_step_random_walk(
 
 def build_irmh() -> Callable:
     """
-    Build an Independent Random Walk Rosenbluth-Metropolis-Hastings kernel. This implies
-    that the proposal distribution does not depend on the particle being mutated :cite:p:`wang2022exact`.
+    Build an Independent Random Walk Rosenbluth-Metropolis-Hastings (RMH) kernel.
 
-    Returns
-    -------
-    A kernel that takes a rng_key and a Pytree that contains the current state
-    of the chain and that returns a new state of the chain along with
-    information about the transition.
+    This kernel uses a proposal distribution that is independent of the current state, i.e., 
+    the new proposed state is sampled independently of the particle's current position.
 
+    Returns:
+        (Callable): A function (kernel) that takes a PRNG key and a PyTree containing the 
+        current state of the chain and that returns a new state of the chain along with
+        information about the transition.
     """
 
     def kernel(
@@ -268,15 +252,13 @@ def build_irmh() -> Callable:
         proposal_logdensity_fn: Optional[Callable] = None,
     ) -> tuple[RWAState, RWAInfo]:
         """
-        Parameters
-        ----------
-        proposal_distribution
-            A function that, given a PRNGKey, is able to produce a sample in the same
-            domain of the target distribution.
-        proposal_logdensity_fn:
-            For non-symmetric proposals, a function that returns the log-density
-            to obtain a given proposal knowing the current state. If it is not
-            provided we assume the proposal is symmetric.
+        Args:
+            proposal_distribution (Callable): A function that takes a PRNG key and returns a 
+                sample in the same domain as the target distribution.
+            proposal_logdensity_fn (Optional[Callable]): A function that returns the log-density
+                of obtaining a given proposal, given the current state. This is required
+                for non-symmetric proposals where P(x_t | x_{t-1}) ≠ P(x_{t-1} | x_t). If not
+                provided, the proposal is assumed to be symmetric.
         """
 
         def proposal_generator(rng_key: PRNGKey, position: ArrayTree):
@@ -298,8 +280,7 @@ def irmh_as_top_level_api(
 ) -> SamplingAlgorithm:
     """Implements the (basic) user interface for the independent RMH.
 
-    Examples
-    --------
+    Example:
 
     A new kernel can be initialized and used with the following code:
 
@@ -316,20 +297,17 @@ def irmh_as_top_level_api(
         step = jax.jit(rmh.step)
         new_state, info = step(rng_key, state)
 
-    Parameters
-    ----------
-    logdensity_fn
-        The log density probability density function from which we wish to sample.
-    proposal_distribution
-        A Callable that takes a random number generator and produces a new proposal. The
-        proposal is independent of the sampler's current state.
-    proposal_logdensity_fn:
-        For non-symmetric proposals, a function that returns the log-density
-        to obtain a given proposal knowing the current state. If it is not
-        provided we assume the proposal is symmetric.
-    Returns
-    -------
-    A ``SamplingAlgorithm``.
+    Args:
+    logdensity_fn (Callable): The log-probability density function of the distribution to sample from.
+    proposal_distribution (Callable): A function that takes a PRNG key and produces a new proposal.
+        The proposal is independent of the current state of the sampler.
+    proposal_logdensity_fn (Optional[Callable]): A function that returns the log-density of obtaining
+        a given proposal, given the current state. This is required for non-symmetric proposals.
+        If not provided, the proposal is assumed to be symmetric.
+
+    Returns:
+        (SamplingAlgorithm): An object containing `init` and `step` methods for performing
+        Independent Random Walk Metropolis-Hastings sampling.
 
     """
     kernel = build_irmh()
@@ -353,11 +331,10 @@ def irmh_as_top_level_api(
 def build_rmh():
     """Build a Rosenbluth-Metropolis-Hastings kernel.
 
-    Returns
-    -------
-    A kernel that takes a rng_key and a Pytree that contains the current state
-    of the chain and that returns a new state of the chain along with
-    information about the transition.
+    Returns:
+        (Callable): A function (kernel) that takes a PRNG key and a PyTree containing the 
+        current state of the chain and that returns a new state of the chain along with
+        information about the transition.
 
     """
 
@@ -368,29 +345,22 @@ def build_rmh():
         transition_generator: Callable,
         proposal_logdensity_fn: Optional[Callable] = None,
     ) -> tuple[RWAState, RWAInfo]:
-        """Move the chain by one step using the Rosenbluth Metropolis Hastings
-        algorithm.
+        """
+        Perform one step of the Rosenbluth-Metropolis-Hastings (RMH) algorithm.
 
-        Parameters
-        ----------
-        rng_key:
-           The pseudo-random number generator key used to generate random
-           numbers.
-        logdensity_fn:
-            A function that returns the log-probability at a given position.
-        transition_generator:
-            A function that generates a candidate transition for the markov chain.
-        proposal_logdensity_fn:
-            For non-symmetric proposals, a function that returns the log-density
-            to obtain a given proposal knowing the current state. If it is not
-            provided we assume the proposal is symmetric.
-        state:
-            The current state of the chain.
+        This function moves the Markov chain by one step using the RMH algorithm by generating a candidate state and accepting or rejecting it based on the Metropolis-Hastings acceptance criterion.
 
-        Returns
-        -------
-        The next state of the chain and additional information about the current
-        step.
+        Args:
+            rng_key (PRNGKey): The pseudo-random number generator key used to generate random numbers.
+            state (RWAState): The current state of the Markov chain.
+            logdensity_fn (Callable): A function that computes the log-probability at a given position.
+            transition_generator (Callable): A function that generates a candidate transition for the Markov chain.
+            proposal_logdensity_fn (Optional[Callable]): A function that returns the log-density of obtaining a given proposal from the current state. Required for non-symmetric proposals. If not provided, the proposal is assumed to be symmetric.
+
+        Returns:
+            (tuple):
+                - **RWAState**: The new state of the Markov chain after the RMH step.
+                - **RWAInfo**: Additional information about the step, such as the acceptance probability and whether the proposal was accepted.
 
         """
         transition_energy = build_rmh_transition_energy(proposal_logdensity_fn)
@@ -416,8 +386,7 @@ def rmh_as_top_level_api(
 ) -> SamplingAlgorithm:
     """Implements the user interface for the RMH.
 
-    Examples
-    --------
+    Example:
 
     A new kernel can be initialized and used with the following code:
 
@@ -434,20 +403,18 @@ def rmh_as_top_level_api(
         step = jax.jit(rmh.step)
         new_state, info = step(rng_key, state)
 
-    Parameters
-    ----------
-    logdensity_fn
-        The log density probability density function from which we wish to sample.
-    proposal_generator
-        A Callable that takes a random number generator and the current state and produces a new proposal.
-    proposal_logdensity_fn
-        The logdensity function associated to the proposal_generator. If the generator is non-symmetric,
-         P(x_t|x_t-1) is not equal to P(x_t-1|x_t), then this parameter must be not None in order to apply
-         the Metropolis-Hastings correction for detailed balance.
+    Create a user interface for the Rosenbluth-Metropolis-Hastings (RMH) sampler.
 
-    Returns
-    -------
-    A ``SamplingAlgorithm``.
+    This function returns a `SamplingAlgorithm` object that provides `init` and `step` methods for performing RMH sampling. The user can specify a custom proposal generator and an optional log-density function for non-symmetric proposals.
+
+    Args:
+        logdensity_fn (Callable): The log-probability density function of the distribution to sample from.
+        proposal_generator (Callable): A function that takes a random number generator key and the current state, then generates a new proposal.
+        proposal_logdensity_fn (Optional[Callable]): The log-density function associated with the proposal generator. If the proposal distribution is non-symmetric (i.e., P(x_t | x_{t-1}) ≠ P(x_{t-1} | x_t)), this must be provided to apply the Metropolis-Hastings correction for detailed balance.
+
+    Returns:
+        (SamplingAlgorithm): An object containing `init` and `step` methods for running the RMH sampler.
+
     """
     kernel = build_rmh()
 
@@ -487,6 +454,17 @@ def rmh_proposal(
     compute_acceptance_ratio: Callable,
     sample_proposal: Callable = proposal.static_binomial_sampling,
 ) -> Callable:
+    """
+    Args:
+        logdensity_fn (Callable): The log-probability density function of the distribution to sample from.
+        transition_distribution (Callable): A function that takes a random number generator key and the current state, then generates a new proposal.
+        compute_acceptance_ratio (Callable): A function to compute the acceptance ratio.
+        sample_proposal (Callable): A function to generate the next sample given proposal and previous state.
+    
+    Returns:
+        (Callable): Generator for sample proposals.
+    """
+
     def generate(rng_key, previous_state: RWAState) -> tuple[RWAState, bool, float]:
         key_proposal, key_accept = jax.random.split(rng_key, 2)
         position, _, _ = previous_state

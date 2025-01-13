@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.14.7
+    jupytext_version: 1.16.6
 kernelspec:
   display_name: Python 3 (ipykernel)
   language: python
@@ -285,7 +285,7 @@ def neglogpost_basic(upars):
     # solve ODE
     theta, X0, prior_Q, prior_R = constrain_pars(upars, dt_sim)
     # basic loglikelihood
-    ll = rodeo.inference.basic(
+    ll, Xt = rodeo.inference.basic(
         key=key,  # immaterial, since not used
         # ode specification
         ode_fun=fitz_fun,
@@ -317,7 +317,7 @@ basic_post = fitz_laplace(key, neglogpost_basic, n_samples, upars_init)
 
 Another method to estimate the parameter posteriors of $\tth$ is given by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) using MCMC. First, $\tth_0$ is initialized from a given prior $\pi(\tth)$. Next, a sample solution, $\xx_{0:N}$ dependent on $\tth_0$ is computed from `solve`. At each sampling step, $\tth' \sim q(\tth_{i-1})$ is sampled from the proposal distribution and is used to compute a new sample solution, $\xx_{0:N}'$. Finally, a rejection ratio is used to decide if $\tth_i = \tth'$ is updated or $\tth_i = \tth_{i-1}$ is kept. 
 
-The structure of this method is different than the other solvers presented here. That is, the MCMC method uses a base class to implement the skeleton of the algorithm with a few functions that need to be implemented by the user. First the `logprior` and `obs_loglik` methods define the log-prior and loglikelihood respectively. Next, the `parse_pars` method is analogous to the `constrain_pars` function which helps with the initialization of the process prior and the initial values for the ODE solver. 
+The structure of this method is different than the other solvers presented here. That is, the MCMC method uses a base class to implement the skeleton of the algorithm with a few functions that need to be implemented by the user. First the `logprior` and `obs_loglik` methods define the log-prior and loglikelihood respectively. Next, the `parse_pars` method is analogous to the `constrain_pars` function which helps with the initialization of the process prior and the initial values for the ODE solver.
 
 ```{code-cell} ipython3
 class fitz_mcmc(rodeo.inference.MarginalMCMC):

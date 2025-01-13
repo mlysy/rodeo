@@ -1,22 +1,23 @@
 import jax
 import jax.numpy as jnp
-from rodeo.kalmantv import *
 from rodeo.utils import multivariate_normal_logpdf
 
 def magi_logdens(ode_data_subset,
                  ode_expand,
                  n_active,
                  prior_weight, prior_var,
+                 kalman_funs,
                  **params):
     """
     Log-density of MAGI approximation.
 
     Args:
         ode_data_subset (ndarray(n_steps+1, n_block, n_deriv-1)): Array specifying :math:`U_{0:N}`, the subset of the solution process needed to reconstruct the entire solution with `ode_expand()`.
-        ode_expand (fun): Function taking inputs `ode_data_subset` and `**params` and returning the full solution process :math:`X_{0:N}`.
+        ode_expand (Callable): Function taking inputs `ode_data_subset` and `**params` and returning the full solution process :math:`X_{0:N}`.
         n_active (int): Number of active derivatives -- i.e., not those zero-padded -- for the solution process.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        kalman_funs (obj): Kalman filtering functions; require predict, forecast and update methods.
         **params (kwargs): Parameters to pass to `ode_expand`.
 
     Returns:
@@ -37,13 +38,14 @@ def magi_logdens(ode_data_subset,
     # construct remaining `*_state` parameters
     mean_state = jnp.zeros((n_vars, n_deriv))
     wgt_state = prior_weight
-    var_state = prior_var
+    # var_state = prior_var
+    var_state = jax.vmap(jnp.linalg.cholesky)(prior_var) # square-root filter for stability
 
     # kalman filter
     def filter_scan(carry, x_meas):
         mean_state_past, var_state_past = carry["state"]
         # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(predict)(
+        mean_state_pred, var_state_pred = jax.vmap(kalman_funs.predict)(
             mean_state_past=mean_state_past,
             var_state_past=var_state_past,
             mean_state=mean_state,
@@ -51,20 +53,21 @@ def magi_logdens(ode_data_subset,
             var_state=var_state
         )
         # kalman forecast (for logdens)
-        mean_state_fore, var_state_fore = jax.vmap(forecast)(
+        mean_state_fore, var_state_fore = jax.vmap(kalman_funs.forecast)(
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
             mean_meas=mean_meas,
             wgt_meas=wgt_meas,
             var_meas=var_meas
         )
+        var_state_fore = jax.vmap(lambda a: a.dot(a.T))(var_state_fore)
         logdens = jax.vmap(multivariate_normal_logpdf)(
             x=x_meas,
             mean=mean_state_fore,
             cov=var_state_fore
         )
         # kalman update
-        mean_state_next, var_state_next = jax.vmap(update)(
+        mean_state_next, var_state_next = jax.vmap(kalman_funs.update)(
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
             x_meas=x_meas,

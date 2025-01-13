@@ -81,7 +81,7 @@ def interrogate_rodeo(key, ode_fun, ode_weight, t,
 
     Args:
         key (PRNGKey): Jax PRNG key.
-        ode_fun (function): Higher order ODE function :math:`W X_t = f(X_t, t, \theta)` taking arguments :math:`X` and :math:`t`.
+        ode_fun (Callable): Higher order ODE Callable :math:`W X_t = f(X_t, t, \theta)` taking arguments :math:`X` and :math:`t`.
         ode_weight (ndarray(n_block, n_bmeas, n_bstate)): Weight matrix.
         t (float): Time point.
         mean_state_pred (ndarray(n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1]; denoted by :math:`\mu_{t|t-1}`.

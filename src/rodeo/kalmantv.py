@@ -40,7 +40,7 @@ def _solveV(V, B):
     """
     # L, low = jsp.linalg.cho_factor(V)
     # return jsp.linalg.cho_solve((L, low), B)
-    return jsp.linalg.solve(V, B)
+    return jnp.linalg.solve(V, B)
 
 # --- core functions -----------------------------------------------------
 
@@ -380,6 +380,7 @@ def smooth_cond(mean_state_filt,
 
 
     Returns:
+        (tuple):
         - **wgt_state_cond** (ndarray(n_state, n_state)): Transition of smooth conditional at time n given observations from times[0...N]; :math:`A_{n|N}`.
         - **mean_state_cond** (ndarray(n_state)): Offset of smooth conditional at time n given observations from times[0...N]; :math:`b_{n|N}`.
         - *var_state_cond** (ndarray(n_state, n_state)): Variance of smooth conditional at time n given observations from times[0...N]; :math:`C_{n|N}`.
