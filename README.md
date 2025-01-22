@@ -22,8 +22,9 @@ For the latter we provide the likelihood approximation methods:
 
 - `basic`: Implementation of a basic likelihood approximation method (details can be found in [Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566)).
 - `fenrir`: Implementation of Fenrir ([Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html)).
-- `marginal_mcmc`: MCMC implementation of Chkrebtii's method ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
+- `random_walk_aux`: MCMC implementation of Chkrebtii's method ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
 - `dalton`: Implementation of our data-adaptive ODE likelihood approximation ([Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566)).
+- `magi`: Implementation of MAGI ([Wong et al (2023)](https://arxiv.org/abs/2203.06066)).
 
 Detailed examples for their usage can be found in the [Documentation](#documentation) section. Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
 

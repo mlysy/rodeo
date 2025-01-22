@@ -24,14 +24,14 @@ This module optimizes the calculations when :math:`Q`, :math:`R`, and :math:`W`,
 
 import jax
 import jax.numpy as jnp
-from rodeo.kalmantv import *
+from kalmantv import standard
 
 
 def _solve_filter(key, ode_fun, ode_weight, ode_init,
                   t_min, t_max, n_steps,
                   interrogate,
                   prior_weight, prior_var,
-                  **params):
+                  kalman_funs, **params):
     r"""
     Forward pass of the ODE solver. Same arguments as :func:`~ode.solve_mv`.
 
@@ -58,7 +58,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         t = filter_kwargs["t"]
         key = filter_kwargs["key"]
         # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(predict)(
+        mean_state_pred, var_state_pred = jax.vmap(kalman_funs.predict)(
                 mean_state_past=mean_state_filt,
                 var_state_past=var_state_filt,
                 mean_state=mean_state,
@@ -77,7 +77,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         )
         W_meas = ode_weight + wgt_meas
         # kalman update
-        mean_state_next, var_state_next = jax.vmap(update)(
+        mean_state_next, var_state_next = jax.vmap(kalman_funs.update)(
                 mean_state_pred=mean_state_pred,
                 var_state_pred=var_state_pred,
                 x_meas=x_meas,
@@ -125,7 +125,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
               t_min, t_max, n_steps,
               interrogate,
               prior_weight, prior_var,
-              **params):
+              kalman_funs=standard, **params):
     r"""
     Draw sample solution. Same arguments as :func:`~ode.solve_mv`.
 
@@ -144,7 +144,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         interrogate=interrogate,
         prior_weight=prior_weight, prior_var=prior_var,
-        **params
+        kalman_funs=kalman_funs, **params
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -157,7 +157,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
         var_state_pred = smooth_kwargs['var_state_pred']
         key = smooth_kwargs['key']
 
-        mean_state_sim, var_state_sim = jax.vmap(smooth_sim)(
+        mean_state_sim, var_state_sim = jax.vmap(kalman_funs.smooth_sim)(
             x_state_next=x_state_next,
             wgt_state=prior_weight,
             mean_state_filt=mean_state_filt,
@@ -185,8 +185,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
     # Note: initial value x0 is assumed to be known, so we don't
     # sample it.  In fact, doing so would probably fail due to cholesky
     # of a zero variance matrix...
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
-                               reverse=True)
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs, reverse=True)
 
     # append initial values to front and back
     x_state_smooth = jnp.concatenate(
@@ -199,7 +198,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
              t_min, t_max, n_steps,
              interrogate,
              prior_weight, prior_var,
-             **params):
+             kalman_funs=standard, **params):
     r"""
     Mean and variance of the stochastic ODE solver.
 
@@ -214,6 +213,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         interrogate (Callable): Function defining the interrogation method.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
         params (kwargs): Optional model parameters.
 
     Returns:
@@ -230,7 +230,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         interrogate=interrogate,
         prior_weight=prior_weight, prior_var=prior_var,
-        **params
+        kalman_funs=kalman_funs, **params
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -241,7 +241,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         var_state_filt = smooth_kwargs['var_state_filt']
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
-        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+        mean_state_curr, var_state_curr = jax.vmap(kalman_funs.smooth_mv)(
                 mean_state_next=state_next["mean"],
                 var_state_next=state_next["var"],
                 wgt_state=prior_weight,
@@ -249,6 +249,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
                 var_state_filt=var_state_filt,
                 mean_state_pred=mean_state_pred,
                 var_state_pred=var_state_pred,
+                var_state=prior_var
         )
         state_curr = {
             "mean": mean_state_curr,

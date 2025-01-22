@@ -2,26 +2,26 @@
 Implements the user interfaces for Random Walk Rosenbluth-Metropolis-Hastings kernels with auxiliary variables.
 That is, the `logdensity_fn` returns a tuple of which the first element is the log-density, and the second
 is a PyTree containing the auxiliary variables.
-The remainder of this file is nearly identical to `random_walk.py`. 
+The remainder of this file is nearly identical to `blackjax.mcmc.random_walk.py`. 
 
 Some interfaces are exposed here for convenience and for entry level users, who might be familiar
 with simpler versions of the algorithms, but in all cases they are particular instantiations
 of the Random Walk Rosenbluth-Metropolis-Hastings.
 
-Let's note $x_{t-1}$ to the previous position and $x_t$ to the newly sampled one.
+Let's note :math:`x_{t-1}` to the previous position and :math:`x_t` to the newly sampled one.
 
 The variants offered are:
 
 1. Proposal distribution as addition of random noice from previous position. This means
-   $x_t = x_{t-1} + step$.
+   :math:`x_t = x_{t-1} + step`.
 
     Function: `additive_step`
 
-2. Independent proposal distribution: $P(x_t)$ doesn't depend on $x_{t_1}$.
+2. Independent proposal distribution: :math:`P(x_t)` doesn't depend on :math:`x_{t_1}`.
 
     Function: `irmh`
 
-3. Proposal distribution using a symmetric function. That means $P(x_t|x_{t-1}) = P(x_{t-1}|x_t)$.
+3. Proposal distribution using a symmetric function. That means :math:`P(x_t|x_{t-1}) = P(x_{t-1}|x_t)`.
    See 'Metropolis Algorithm' in [1].
 
     Function: `rmh` without proposal_logdensity_fn.
@@ -33,8 +33,7 @@ The variants offered are:
     
 Reference: Andrew Gelman, John B Carlin, Hal S Stern, and Donald B Rubin. Bayesian data analysis. Chapman and Hall/CRC, 2014. Section 11.2
 
-Example:
-    
+Example:    
     The simplest case is:
 
     .. code::
@@ -106,30 +105,32 @@ class RWAState(NamedTuple):
     """
     State of the Random Walk Auxiliary (RWA) chain.
 
-    Attributes:
-        position (ArrayTree): Current position of the chain.
-        logdensity (float): Current value of the log-density.
-        auxdata (ArrayTree, optional): Current value of the auxiliary data.
     """
 
     position: ArrayTree
+    """Current position of the chain."""
+
     logdensity: float
+    """Current value of the log-density."""
+
     auxdata: ArrayTree = None
+    """Current value of the auxiliary data."""
 
 
 class RWAInfo(NamedTuple):
     """
     Additional information about the RWA chain step.
 
-    Attributes:
-        acceptance_rate (float): The acceptance probability of the proposed transition.
-        is_accepted (bool): Indicates whether the proposed state was accepted.
-        proposal (RWAState): The proposed state of the chain.
     """
 
     acceptance_rate: float
+    """acceptance_rate (float): The acceptance probability of the proposed transition."""
+    
     is_accepted: bool
+    """Indicates whether the proposed state was accepted."""
+
     proposal: RWAState
+    """The proposed state of the chain."""
 
 
 def init(position: ArrayLikeTree, logdensity_fn: Callable) -> RWAState:
@@ -148,7 +149,7 @@ def init(position: ArrayLikeTree, logdensity_fn: Callable) -> RWAState:
 
 
 def build_additive_step():
-    """"
+    """
     Build a Random Walk Rosenbluth-Metropolis-Hastings (RMH) kernel using an additive step proposal.
 
     Returns:
@@ -193,23 +194,22 @@ def additive_step_random_walk(
     """Implements the user interface for the Additive Step RMH
 
     Example:
+        A new kernel can be initialized and used with the following code:
 
-    A new kernel can be initialized and used with the following code:
+        .. code::
 
-    .. code::
+            rw = blackjax.additive_step_random_walk(logdensity_fn, random_step)
+            state = rw.init(position)
+            new_state, info = rw.step(rng_key, state)
 
-        rw = blackjax.additive_step_random_walk(logdensity_fn, random_step)
-        state = rw.init(position)
-        new_state, info = rw.step(rng_key, state)
+        The specific case of a Gaussian `random_step` is already implemented, either with independent components
+        when `covariance_matrix` is a one dimensional array or with dependent components if a two dimensional array:
 
-    The specific case of a Gaussian `random_step` is already implemented, either with independent components
-    when `covariance_matrix` is a one dimensional array or with dependent components if a two dimensional array:
+        .. code::
 
-    .. code::
-
-        rw_gaussian = blackjax.additive_step_random_walk.normal_random_walk(logdensity_fn, covariance_matrix)
-        state = rw_gaussian.init(position)
-        new_state, info = rw_gaussian.step(rng_key, state)
+            rw_gaussian = blackjax.additive_step_random_walk.normal_random_walk(logdensity_fn, covariance_matrix)
+            state = rw_gaussian.init(position)
+            new_state, info = rw_gaussian.step(rng_key, state)
 
     Args:
         logdensity_fn (Callable): Function to compute the log-probability density of the distribution.
@@ -278,32 +278,32 @@ def irmh_as_top_level_api(
     proposal_distribution: Callable,
     proposal_logdensity_fn: Optional[Callable] = None,
 ) -> SamplingAlgorithm:
-    """Implements the (basic) user interface for the independent RMH.
+    """
+    Implements the (basic) user interface for the independent RMH.
 
     Example:
+        A new kernel can be initialized and used with the following code:
 
-    A new kernel can be initialized and used with the following code:
+        .. code::
 
-    .. code::
+            rmh = blackjax.irmh(logdensity_fn, proposal_distribution)
+            state = rmh.init(position)
+            new_state, info = rmh.step(rng_key, state)
 
-        rmh = blackjax.irmh(logdensity_fn, proposal_distribution)
-        state = rmh.init(position)
-        new_state, info = rmh.step(rng_key, state)
+        We can JIT-compile the step function for better performance
 
-    We can JIT-compile the step function for better performance
+        .. code::
 
-    .. code::
-
-        step = jax.jit(rmh.step)
-        new_state, info = step(rng_key, state)
+            step = jax.jit(rmh.step)
+            new_state, info = step(rng_key, state)
 
     Args:
-    logdensity_fn (Callable): The log-probability density function of the distribution to sample from.
-    proposal_distribution (Callable): A function that takes a PRNG key and produces a new proposal.
-        The proposal is independent of the current state of the sampler.
-    proposal_logdensity_fn (Optional[Callable]): A function that returns the log-density of obtaining
-        a given proposal, given the current state. This is required for non-symmetric proposals.
-        If not provided, the proposal is assumed to be symmetric.
+        logdensity_fn (Callable): The log-probability density function of the distribution to sample from.
+        proposal_distribution (Callable): A function that takes a PRNG key and produces a new proposal.
+            The proposal is independent of the current state of the sampler.
+        proposal_logdensity_fn (Optional[Callable]): A function that returns the log-density of obtaining
+            a given proposal, given the current state. This is required for non-symmetric proposals.
+            If not provided, the proposal is assumed to be symmetric.
 
     Returns:
         (SamplingAlgorithm): An object containing `init` and `step` methods for performing
@@ -384,28 +384,28 @@ def rmh_as_top_level_api(
     proposal_logdensity_fn: Optional[Callable[[
         ArrayLikeTree], ArrayTree]] = None,
 ) -> SamplingAlgorithm:
-    """Implements the user interface for the RMH.
+    """
+    Implements the user interface for the RMH.
 
     Example:
+        A new kernel can be initialized and used with the following code:
 
-    A new kernel can be initialized and used with the following code:
+        .. code::
 
-    .. code::
+            rmh = blackjax.rmh(logdensity_fn, proposal_generator)
+            state = rmh.init(position)
+            new_state, info = rmh.step(rng_key, state)
 
-        rmh = blackjax.rmh(logdensity_fn, proposal_generator)
-        state = rmh.init(position)
-        new_state, info = rmh.step(rng_key, state)
+        We can JIT-compile the step function for better performance
 
-    We can JIT-compile the step function for better performance
+        .. code::
 
-    .. code::
+            step = jax.jit(rmh.step)
+            new_state, info = step(rng_key, state)
 
-        step = jax.jit(rmh.step)
-        new_state, info = step(rng_key, state)
+        Create a user interface for the Rosenbluth-Metropolis-Hastings (RMH) sampler.
 
-    Create a user interface for the Rosenbluth-Metropolis-Hastings (RMH) sampler.
-
-    This function returns a `SamplingAlgorithm` object that provides `init` and `step` methods for performing RMH sampling. The user can specify a custom proposal generator and an optional log-density function for non-symmetric proposals.
+        This function returns a `SamplingAlgorithm` object that provides `init` and `step` methods for performing RMH sampling. The user can specify a custom proposal generator and an optional log-density function for non-symmetric proposals.
 
     Args:
         logdensity_fn (Callable): The log-probability density function of the distribution to sample from.

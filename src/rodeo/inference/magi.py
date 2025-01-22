@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-from rodeo.utils import multivariate_normal_logpdf
 
 def magi_logdens(ode_data_subset,
                  ode_expand,
@@ -17,7 +16,7 @@ def magi_logdens(ode_data_subset,
         n_active (int): Number of active derivatives -- i.e., not those zero-padded -- for the solution process.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        kalman_funs (obj): Kalman filtering functions; require predict, forecast and update methods.
+        kalman_funs (object): Kalman filtering functions; require predict, forecast and update methods.
         **params (kwargs): Parameters to pass to `ode_expand`.
 
     Returns:
@@ -38,8 +37,8 @@ def magi_logdens(ode_data_subset,
     # construct remaining `*_state` parameters
     mean_state = jnp.zeros((n_vars, n_deriv))
     wgt_state = prior_weight
-    # var_state = prior_var
-    var_state = jax.vmap(jnp.linalg.cholesky)(prior_var) # square-root filter for stability
+    var_state = prior_var
+    # var_state = jax.vmap(jnp.linalg.cholesky)(prior_var) # square-root filter for stability
 
     # kalman filter
     def filter_scan(carry, x_meas):
@@ -60,8 +59,8 @@ def magi_logdens(ode_data_subset,
             wgt_meas=wgt_meas,
             var_meas=var_meas
         )
-        var_state_fore = jax.vmap(lambda a: a.dot(a.T))(var_state_fore)
-        logdens = jax.vmap(multivariate_normal_logpdf)(
+        # var_state_fore = jax.vmap(lambda a: a.dot(a.T))(var_state_fore)
+        logdens = jax.vmap(jax.scipy.stats.multivariate_normal.logpdf)(
             x=x_meas,
             mean=mean_state_fore,
             cov=var_state_fore
