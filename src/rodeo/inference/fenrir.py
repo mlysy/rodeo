@@ -84,7 +84,7 @@ def _forecast_update(mean_state_pred, var_state_pred,
 
 def _backward(mean_state_filt, var_state_filt,
               mean_state_pred, var_state_pred,
-              prior_weight,
+              prior_weight, prior_var,
               t_min, t_max, n_steps,
               obs_data, obs_times,
               obs_weight, obs_var,
@@ -98,6 +98,7 @@ def _backward(mean_state_filt, var_state_filt,
         mean_state_filt (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
         var_state_filt (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
+        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         t_min (float): First time point of the time interval to be evaluated; :math:`t_0`.
         t_max (float): Last time point of the time interval to be evaluated; :math:`t_N`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
@@ -142,7 +143,8 @@ def _backward(mean_state_filt, var_state_filt,
                 var_state_filt=var_state_filt,
                 mean_state_pred=mean_state_pred,
                 var_state_pred=var_state_pred,
-                wgt_state=prior_weight
+                wgt_state=prior_weight,
+                var_state=prior_var
         )
         # kalman predict
         bmean_state_pred, bvar_state_pred = jax.vmap(kalman_funs.predict)(
@@ -306,6 +308,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
         prior_weight=prior_weight,
+        prior_var=prior_var,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         obs_data=obs_data, obs_times=obs_times,
         obs_weight=obs_weight, obs_var=obs_var,
@@ -424,6 +427,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
         prior_weight=prior_weight,
+        prior_var=prior_var,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         obs_data=obs_data, obs_times=obs_times,
         obs_weight=obs_weight, obs_var=obs_var,

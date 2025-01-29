@@ -485,7 +485,8 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
             mean_state_filt=mean_state_filt,
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
-            var_state_pred=var_state_pred
+            var_state_pred=var_state_pred,
+            var_state=prior_var
         )
         x_state_curr = jax.random.multivariate_normal(key, mean_state_sim, var_state_sim, method='svd')
         return x_state_curr, x_state_curr
@@ -713,7 +714,8 @@ def _logx_yhat(mean_state_filt, var_state_filt,
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
-            wgt_state=prior_weight
+            wgt_state=prior_weight,
+            var_state=prior_var
         )
         logx_yhat += jnp.sum(
             jax.vmap(multivariate_normal_logpdf)(mean_state_curr, mean=mean_state_sim, cov=var_state_sim)
@@ -754,7 +756,7 @@ def _logx_yhat(mean_state_filt, var_state_filt,
 def _logx_z(uncond_mean, 
             mean_state_filt, var_state_filt,
             mean_state_pred, var_state_pred,
-            prior_weight, kalman_funs):
+            prior_weight, prior_var, kalman_funs):
     r"""
     Compute the loglikelihood of :math:`p(X_{0:N} \mid Z_{1:N})`.
     
@@ -765,6 +767,7 @@ def _logx_z(uncond_mean,
         mean_state_filt (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
         var_state_filt (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
+        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
     
     Return:
@@ -789,7 +792,8 @@ def _logx_z(uncond_mean,
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
             var_state_pred=var_state_pred,
-            wgt_state=prior_weight
+            wgt_state=prior_weight,
+            var_state=prior_var
         )
         logx_z += jnp.sum(
             jax.vmap(multivariate_normal_logpdf)(uncond_curr, mean=mean_state_sim, cov=var_state_sim)
@@ -900,6 +904,7 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
         prior_weight=prior_weight,
+        prior_var=prior_var,
         kalman_funs=kalman_funs
     )
 

@@ -163,7 +163,8 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
             mean_state_filt=mean_state_filt,
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
-            var_state_pred=var_state_pred
+            var_state_pred=var_state_pred,
+            var_state=prior_var
         )
         x_state_curr = jax.random.multivariate_normal(key, mean_state_sim, var_state_sim, method='svd')
         return x_state_curr, x_state_curr
