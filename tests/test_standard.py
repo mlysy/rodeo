@@ -1,9 +1,8 @@
 import unittest
 import jax
 import jax.numpy as jnp
-import kalmantv.standard as ktv
+import rodeo.kalmantv.standard as ktv
 import utils
-from kalmantv.utils import mvncond
 
 
 # --- kalmantv.predict ---------------------------------------------------------

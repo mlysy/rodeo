@@ -1,7 +1,7 @@
 import unittest
 import jax
 import jax.numpy as jnp
-from kalmantv.utils import add_sqrt
+from rodeo.utils import add_sqrt
 
 class TestAddSqrt(unittest.TestCase):
     """

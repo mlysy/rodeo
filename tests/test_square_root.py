@@ -1,9 +1,8 @@
 import unittest
 import jax
 import jax.numpy as jnp
-import kalmantv.square_root as sqrt_ktv
+import rodeo.kalmantv.square_root as sqrt_ktv
 import utils
-from kalmantv.utils import mvncond
 
 
 # --- square-root kalmantv.predict ---------------------------------------------------------
