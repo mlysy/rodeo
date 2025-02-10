@@ -24,7 +24,7 @@ This module optimizes the calculations when :math:`Q`, :math:`R`, and :math:`W`,
 
 import jax
 import jax.numpy as jnp
-from kalmantv import standard
+from rodeo.kalmantv import standard
 
 
 def _solve_filter(key, ode_fun, ode_weight, ode_init,

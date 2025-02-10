@@ -29,7 +29,7 @@ with the reverse pass model to condition on data. Here :math:`\epsilon_n, \eta_m
 """
 import jax
 import jax.numpy as jnp
-from kalmantv import standard
+from rodeo.kalmantv import standard
 from rodeo.solve import _solve_filter
 from rodeo.utils import multivariate_normal_logpdf
 
@@ -399,7 +399,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
              obs_data, obs_times, obs_weight, obs_var,
              kalman_funs=standard, **params):
     r"""
-    Fenrir algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid Z_{1:N}, Y_{0:M})`. Same arguments as :func:`~fenrir.fenrir`.
+    Fenrir algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid Z_{1:N}, Y_{0:M})`. Same arguments as :func:`fenrir`.
 
     Returns:
         (tuple):

@@ -13,7 +13,7 @@ The model is
     
     Y_m = g(X_m, \phi_m)
 
-where :math:`g` is a general distribution function. In the case that :math:`g` is Gaussian, use :func:`~dalton.loglikehood` for a better approximation. In other cases, use :func:`~dalton.loglikehood_nn`. We assume that :math:`c_n = 0, Q_n = Q, R_n = R`, and :math:`W_n = W` for all :math:`n`.
+where :math:`g` is a general distribution function. In the case that :math:`g` is Gaussian, use :func:`dalton` for a better approximation. In other cases, use :func:`daltonng`. We assume that :math:`c_n = 0, Q_n = Q, R_n = R`, and :math:`W_n = W` for all :math:`n`.
 
 In the Gaussian case, we assume the observation model is
 
@@ -27,7 +27,7 @@ We assume that the :math:`M \leq N`, so that the observation step size is larger
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from kalmantv import standard
+from rodeo.kalmantv import standard
 from rodeo.inference.fenrir import _forecast_update
 from rodeo.utils import multivariate_normal_logpdf
 from rodeo.solve import _solve_filter as _solve_filter_ode
@@ -235,7 +235,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
                   obs_data, obs_times, obs_weight, obs_var,
                   kalman_funs, **params):
     r"""
-    Forward pass of the DALTON algorithm with Gaussian observations. Same arguments as :func:`~dalton.dalton`.
+    Forward pass of the DALTON algorithm with Gaussian observations. Same arguments as :func:`dalton`.
 
     Returns:
         (tuple):
@@ -368,7 +368,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
              kalman_funs=standard, **params):
     r"""
     DALTON algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid Y_{0:M}, Z_{1:N})` assuming Gaussian observations.
-    Same arguments as :func:`~dalton.dalton`.
+    Same arguments as :func:`dalton`.
 
     Returns:
         (tuple):
@@ -446,7 +446,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
               kalman_funs=standard, **params):
     r"""
     DALTON algorithm to sample from :math:`p(X_{0:N} \mid Y_{0:M}, Z_{1:N})` assuming Gaussian observations.
-    Same arguments as :func:`~dalton.dalton`.
+    Same arguments as :func:`dalton`.
 
     Returns:
         (tuple):
@@ -523,7 +523,7 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
                      obs_data, obs_times, obs_loglik_i,
                      kalman_funs, **params):
     r"""
-    Forward pass of the DALTON algorithm using non-Gaussian observations. Same arguments as :func:`~dalton.daltonng`.
+    Forward pass of the DALTON algorithm using non-Gaussian observations. Same arguments as :func:`daltonng`.
 
     Returns:
         (tuple):
@@ -922,7 +922,7 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
                 kalman_funs=standard, **params):
     r"""
     DALTON algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid \hat Y_{0:M}, Z_{1:N})` assuming non-Gaussian observations. 
-    Same arguments as :func:`~dalton.daltonng`.
+    Same arguments as :func:`daltonng`.
 
     Returns:
         (tuple):

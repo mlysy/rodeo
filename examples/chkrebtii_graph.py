@@ -25,7 +25,7 @@ def ode_exact_x1(t):
     return (-2*cos(2*t) + 3*sin(t) + 2*cos(t))/3
 
 # Example ode written for Euler Approximation
-def ode_euler(x, t):
+def ode_euler(x, t, theta):
     return jnp.array([x[1], jnp.sin(2*t) -x[0]])
 
 # Setup the IVP problem in rodeo block form

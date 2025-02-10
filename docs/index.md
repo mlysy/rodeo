@@ -10,15 +10,10 @@ API Documentation
 :caption: API Documentation
 
 kalmantv.rst
-ibm.rst
-indep_init.rst
+prior.rst
 solve.rst
 interrogate.rst
-basic.rst
-fenrir.rst
-dalton.rst
-magi.rst
-random_walk.rst
+inference.rst
 utils.rst
 ```
 

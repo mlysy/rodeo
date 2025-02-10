@@ -7,6 +7,8 @@ build
 /rodeo.egg-info/
 /examples/figures/
 /examples/saves/
+/examples/output/
+/examples/old/
 /tests/local
 /docs/build/
 src/rodeo.egg-info/

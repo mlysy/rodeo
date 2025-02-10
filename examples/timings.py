@@ -9,11 +9,12 @@ from scipy.integrate import odeint
 from numba import njit
 from diffrax import diffeqsolve, Dopri5, ODETerm, SaveAt, PIDController
 from timeit import default_timer as timer
-from jax.config import config
+from jax import config
 config.update("jax_enable_x64", True)
 
 from rodeo.prior import ibm_init, indep_init
-from rodeo.solve import solve_mv, interrogate_kramer
+from rodeo.solve import solve_mv
+from rodeo.interrogate import interrogate_kramer
 import solve_nb
 
 # common helper function ---------------------------------------------------------------------------------------------
@@ -155,10 +156,11 @@ time_rdnb = rodeo_nb_time(chkrebtii_nb, n_loops, n_times) # rodeo non-block
 time_ode = odeint_time(chkrebtii_ode, n_loops, n_times) # odeint
 time_rax = diffrax_time(chkrebtii_rax, n_loops, n_times) # diffrax
 
-print("Chkrebtii----------------------------------")
-print("rodeo / odeint = {}".format(time_ode/time_rd))
-print("rodeo / diffrax = {}".format(time_rax/time_rd))
-print("rodeo / non-blocking = {}".format(time_rdnb/time_rd))
+with open("timings.txt", "w") as text_file:
+    text_file.write("Chkrebtii----------------------------------\n")
+    text_file.write("rodeo / LSODA = {}\n".format(time_ode/time_rd))
+    text_file.write("rodeo / RK45 = {}\n".format(time_rax/time_rd))
+    text_file.write("rodeo / non-blocking = {}\n".format(time_rdnb/time_rd))
 
 # Fitz-Hugh Nagumo ---------------------------------------------------------------------------------------------------
 # used by rodeo
@@ -235,10 +237,11 @@ time_rdnb = rodeo_nb_time(fitz_nb, n_loops, n_times) # rodeo non-block
 time_ode = odeint_time(fitz_ode, n_loops, n_times) # odeint
 time_rax = diffrax_time(fitz_rax, n_loops, n_times) # diffrax
 
-print("Fitz-Hugh----------------------------------")
-print("rodeo / odeint = {}".format(time_ode/time_rd))
-print("rodeo / diffrax = {}".format(time_rax/time_rd))
-print("rodeo / non-blocking = {}".format(time_rdnb/time_rd))
+with open("timings.txt", "a") as text_file:
+    text_file.write("Fitz-Hugh----------------------------------\n")
+    text_file.write("rodeo / LSODA = {}\n".format(time_ode/time_rd))
+    text_file.write("rodeo / RK45 = {}\n".format(time_rax/time_rd))
+    text_file.write("rodeo / non-blocking = {}\n".format(time_rdnb/time_rd))
 
 # Hes1 ---------------------------------------------------------------------------------------------------------------
 def hes1(X, t, **params):
@@ -330,10 +333,11 @@ time_rdnb = rodeo_nb_time(hes1_nb, n_loops, n_times) # rodeo non-block
 time_ode = odeint_time(hes1_ode, n_loops, n_times) # odeint
 time_rax = diffrax_time(hes1_rax, n_loops, n_times) # diffrax
 
-print("Hes1----------------------------------")
-print("rodeo / odeint = {}".format(time_ode/time_rd))
-print("rodeo / diffrax = {}".format(time_rax/time_rd))
-print("rodeo / non-blocking = {}".format(time_rdnb/time_rd))
+with open("timings.txt", "a") as text_file:
+    text_file.write("Fitz-Hugh----------------------------------\n")
+    text_file.write("rodeo / LSODA = {}\n".format(time_ode/time_rd))
+    text_file.write("rodeo / RK45 = {}\n".format(time_rax/time_rd))
+    text_file.write("rodeo / non-blocking = {}\n".format(time_rdnb/time_rd))
 
 # SEIRAH -------------------------------------------------------------------------------------------------------------
 def seirah(X, t, **params):
@@ -448,7 +452,8 @@ time_rdnb = rodeo_nb_time(seirah_nb, n_loops, n_times) # rodeo non-block
 time_ode = odeint_time(seirah_ode, n_loops, n_times) # odeint
 time_rax = diffrax_time(seirah_rax, n_loops, n_times) # diffrax
 
-print("SEIRAH----------------------------------")
-print("rodeo / odeint = {}".format(time_ode/time_rd))
-print("rodeo / diffrax = {}".format(time_rax/time_rd))
-print("rodeo / non-blocking = {}".format(time_rdnb/time_rd))
+with open("timings.txt", "a") as text_file:
+    text_file.write("SEIRAH----------------------------------\n")
+    text_file.write("rodeo / LSODA = {}\n".format(time_ode/time_rd))
+    text_file.write("rodeo / RK45 = {}\n".format(time_rax/time_rd))
+    text_file.write("rodeo / non-blocking = {}\n".format(time_rdnb/time_rd))

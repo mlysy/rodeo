@@ -10,7 +10,7 @@ In the case that observations time grid is not the same as the solver time grid,
 """
 import jax
 import jax.numpy as jnp
-from kalmantv import standard
+from rodeo.kalmantv import standard
 from rodeo.solve import solve_mv
 
 
@@ -42,7 +42,7 @@ def basic(key, ode_fun, ode_weight, ode_init,
         params (kwargs): Optional model parameters.
 
     Returns:
-        (float) : The loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
+        (float): The loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
     """
 

@@ -27,8 +27,7 @@ import rodeo
 from rodeo.prior import ibm_init
 from rodeo.solve import solve_mv, solve_sim
 from rodeo.interrogate import interrogate_chkrebtii, interrogate_kramer
-from rodeo.inference import basic, fenrir, random_walk_aux, magi_logdens
-
+from rodeo.inference import basic, fenrir, random_walk_aux
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -320,7 +319,6 @@ basic_post = fitz_laplace(key, neglogpost_basic, n_samples, upars_init)
 Another method to estimate the parameter posteriors of $\tth$ is given by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) using MCMC. The marginal MCMC method has the same API as the BLACKJAX MCMC. The only difference is that instead of using a MCMC algorithm directly from BLACKJAX, we use the **random_walk_aux** module. There are three main steps required to use the marginal MCMC method. First, we need to define a likelihood function where the ODE solver uses the interrogation method of Chkbrebtii to sample from the solution posterior. Next, we need to define a random walk kernel to generate a sample from the current state. Finally, we use an inference loop to draw MCMC samples from the parameter posterior.
 
 ```{code-cell} ipython3
-
 def fitz_logpost_mcmc(key, upars):
     """
     Computes marginal MCMC posterior.
