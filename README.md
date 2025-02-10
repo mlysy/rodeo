@@ -7,6 +7,7 @@
 | [**Developers**](#developers)
 
 ---
+![CI build](https://github.com/mlysy/kalmantv-jax/actions/workflows/build_test.yml/badge.svg)
 
 ## Description
 
