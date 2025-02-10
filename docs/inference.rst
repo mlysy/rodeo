@@ -17,7 +17,7 @@ Fenrir
 .. automodule:: rodeo.inference.fenrir
     :members:
 
-Magi
+MAGI
 ====
 .. automodule:: rodeo.inference.magi
     :members:
