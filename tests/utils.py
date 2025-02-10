@@ -112,25 +112,30 @@ def fitz_setup(self):
 
     self.fitz_odeint = fitz_odeint
 
+
 def kalman_setup(self):
     key = random.PRNGKey(0)
     key, *subkey = random.split(key, 3)
-    self.n_meas = random.randint(subkey[0], (1,), 1, 4)[0] 
+    self.n_meas = random.randint(subkey[0], (1,), 1, 4)[0]
     self.n_state = int(self.n_meas + random.randint(subkey[1], (1,), 1, 5)[0])
     self.n_tot = 3
-    #self.n_meas = 3
-    #self.n_state = 4
-    
+    # self.n_meas = 3
+    # self.n_state = 4
+
     self.key, *subkeys = random.split(key, 10)
     self.mean_state = random.normal(subkeys[0], (self.n_tot, self.n_state))
-    self.var_state = random.normal(subkeys[1], (self.n_tot, self.n_state, self.n_state))
+    self.var_state = random.normal(
+        subkeys[1], (self.n_tot, self.n_state, self.n_state))
     self.var_state = jax.vmap(lambda vs: vs.dot(vs.T))(self.var_state)
-    self.wgt_state = 0.01*random.normal(subkeys[2], (self.n_tot-1, self.n_state, self.n_state))
+    self.wgt_state = 0.01 * \
+        random.normal(subkeys[2], (self.n_tot-1, self.n_state, self.n_state))
     # wgt_state = jnp.zeros((n_tot-1, self.n_state, self.n_state))
     self.mean_meas = random.normal(subkeys[3], (self.n_tot, self.n_meas,))
-    self.var_meas = random.normal(subkeys[4], (self.n_tot, self.n_meas, self.n_meas))
+    self.var_meas = random.normal(
+        subkeys[4], (self.n_tot, self.n_meas, self.n_meas))
     self.var_meas = jax.vmap(lambda vs: vs.dot(vs.T))(self.var_meas)
-    self.wgt_meas = random.normal(subkeys[5], (self.n_tot, self.n_meas, self.n_state))
+    self.wgt_meas = random.normal(
+        subkeys[5], (self.n_tot, self.n_meas, self.n_state))
     # wgt_meas = jnp.zeros((n_tot, n_meas, self.n_state))
     self.x_meas = random.normal(subkeys[6], (self.n_tot, self.n_meas))
     self.x_state_next = random.normal(subkeys[7], (self.n_state,))
@@ -146,3 +151,65 @@ def kalman_setup(self):
     )
 
     self.mean_gm, self.var_gm = gm.gauss_markov_mv(A=A_gm, b=b_gm, C=C_gm)
+
+
+def test_filter(self):
+    # theta_{0|0}
+    mean_state_past, var_state_past = kalman_theta(
+        m=0, y=jnp.atleast_2d(self.x_meas[0]), mu=self.mean_gm, Sigma=self.var_gm
+    )
+    # theta_{1|0}
+    mean_state_pred1, var_state_pred1 = kalman_theta(
+        m=1, y=jnp.atleast_2d(self.x_meas[0]), mu=self.mean_gm, Sigma=self.var_gm
+    )
+    # theta_{1|1}
+    mean_state_filt1, var_state_filt1 = kalman_theta(
+        m=1, y=self.x_meas[0:2], mu=self.mean_gm, Sigma=self.var_gm
+    )
+    return mean_state_past, var_state_past, mean_state_pred1, var_state_pred1, mean_state_filt1, var_state_filt1
+
+
+def test_filter2(self):
+    # theta_{1|1}
+    mean_state_past, var_state_past = kalman_theta(
+        m=1, y=self.x_meas[0:2], mu=self.mean_gm, Sigma=self.var_gm
+    )
+    # theta_{2|1}
+    mean_state_pred1, var_state_pred1 = kalman_theta(
+        m=2, y=self.x_meas[0:2], mu=self.mean_gm, Sigma=self.var_gm
+    )
+    # theta_{2|2}
+    mean_state_filt1, var_state_filt1 = kalman_theta(
+        m=2, y=self.x_meas[0:3], mu=self.mean_gm, Sigma=self.var_gm
+    )
+
+    return mean_state_past, var_state_past, mean_state_pred1, var_state_pred1, mean_state_filt1, var_state_filt1 
+
+
+def test_smooth(self):
+    # theta_{1|1}
+    mean_state_next, var_state_next = kalman_theta(
+        m=1, y=self.x_meas, mu=self.mean_gm, Sigma=self.var_gm
+    )
+    # theta_{0|0}
+    mean_state_filt, var_state_filt = kalman_theta(
+        m=0, y=jnp.atleast_2d(self.x_meas[0]), mu=self.mean_gm, Sigma=self.var_gm
+    )
+    # theta_{1|0}
+    mean_state_pred, var_state_pred = kalman_theta(
+        m=1, y=jnp.atleast_2d(self.x_meas[0]), mu=self.mean_gm, Sigma=self.var_gm
+    )
+    # theta_{0:1|1}
+    mean_state_smooth1, var_state_smooth1 = kalman_theta(
+        m=[0, 1], y=self.x_meas, mu=self.mean_gm, Sigma=self.var_gm
+    )
+    A, b, V = mvncond(
+        mu=mean_state_smooth1.ravel(),
+        Sigma=var_state_smooth1.reshape(2*self.n_state, 2*self.n_state),
+        icond=jnp.array([False]*self.n_state + [True]*self.n_state)
+    )
+    mean_state_sim1 = A.dot(self.x_state_next)+b
+    
+    return mean_state_next, var_state_next, mean_state_filt, var_state_filt, mean_state_pred, \
+                var_state_pred, mean_state_smooth1, var_state_smooth1, mean_state_sim1, V, A, b
+
