@@ -162,7 +162,7 @@ def _smooth(var_state_filt, var_state_pred, wgt_state):
     Args:
         var_state_filt (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n` given observations at times :math:`t = 0, \dots, n`.
         var_state_pred (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n` given observations at times :math:`t = 0, \dots, n-1`.
-        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n`.
+        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n+1`.
 
     Returns:
         (ndarray(n_state, n_state)): Temporary square-root variance calculation used by :func:`smooth_sim` and :func:`smooth_mv`.
@@ -196,7 +196,7 @@ def smooth_mv(mean_state_next,
         var_state_filt (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n` given observations at times :math:`t = 0, \dots, n`.
         mean_state_pred (ndarray(n_state)): State mean at time :math:`t = n+1` given observations at times :math:`t = 0, \dots, n`.
         var_state_pred (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n+1` given observations at times :math:`t = 0, \dots, n`.
-        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n`.
+        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n+1`.
         var_state (ndarray(n_state, n_state)): State square-root variance matrix at time :math:`t = n`.
         args (Optional[pytree]): Additional positional arguments for Kalman functions.
         kwargs (Optional[pytree]): Additional keyword arguments for Kalman functions.
@@ -238,7 +238,7 @@ def smooth_sim(x_state_next,
         var_state_filt (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n` given observations at times :math:`t = 0, \dots, n`.
         mean_state_pred (ndarray(n_state)): State mean at time :math:`t = n+1` given observations at times :math:`t = 0, \dots, n`.
         var_state_pred (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n+1` given observations at times :math:`t = 0, \dots, n`.
-        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n`.
+        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n+1`.
         var_state (ndarray(n_state, n_state)): State square-root variance matrix at time :math:`t = n`.
         args (Optional[pytree]): Additional positional arguments for Kalman functions.
         kwargs (Optional[pytree]): Additional keyword arguments for Kalman functions.
@@ -282,7 +282,7 @@ def smooth(x_state_next,
         var_state_filt (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n` given observations at times :math:`t = 0, \dots, n`.
         mean_state_pred (ndarray(n_state)): State mean at time :math:`t = n+1` given observations at times :math:`t = 0, \dots, n`.
         var_state_pred (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n+1` given observations at times :math:`t = 0, \dots, n`.
-        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n`.
+        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n+1`.
         var_state (ndarray(n_state, n_state)): State square-root variance matrix at time :math:`t = n`.
         args (Optional[pytree]): Additional positional arguments for Kalman functions.
         kwargs (Optional[pytree]): Additional keyword arguments for Kalman functions.
@@ -362,7 +362,7 @@ def smooth_cond(mean_state_filt,
         var_state_filt (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n` given observations at times :math:`t = 0, \dots, n`.
         mean_state_pred (ndarray(n_state)): State mean at time :math:`t = n+1` given observations at times :math:`t = 0, \dots, n`.
         var_state_pred (ndarray(n_state, n_state)): State square-root variance at time :math:`t = n+1` given observations at times :math:`t = 0, \dots, n`.
-        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n`.
+        wgt_state (ndarray(n_state, n_state)): State transition matrix at time :math:`t = n+1`.
         var_state (ndarray(n_state, n_state)): State square-root variance matrix at time :math:`t = n`.
         args (Optional[pytree]): Additional positional arguments for Kalman functions.
         kwargs (Optional[pytree]): Additional keyword arguments for Kalman functions.
