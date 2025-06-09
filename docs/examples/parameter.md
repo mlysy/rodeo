@@ -41,7 +41,7 @@ We will use the FitzHugh-Nagumo model as the example here which is a two-state O
 
 \begin{align*}
 \frac{dV(t)}{dt} &= c(V(t) - \frac{V(t)^3}{3} + R(t)), \\
-\frac{dR(t)}{dt} &= -\frac{(V(t) - a - bR(t))}{c}. \\
+\frac{dR(t)}{dt} &= -\frac{(V(t) - a + bR(t))}{c}. \\
 \end{align*}
 
 The model parameters are $\tth = (a,b,c,V(0),R(0))$, with $a,b,c > 0$ which are to be learned from the measurement model
