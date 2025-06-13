@@ -28,6 +28,7 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from rodeo.kalmantv import standard
+from rodeo.kalmantv import square_root
 from rodeo.inference.fenrir import _forecast_update
 from rodeo.utils import multivariate_normal_logpdf
 from rodeo.solve import _solve_filter as _solve_filter_ode
@@ -40,7 +41,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
            interrogate,
            prior_weight, prior_var,
            obs_data, obs_times, obs_weight, obs_var,
-           kalman_funs=standard, **params):
+           kalman_type="standard", **params):
     r"""
     Compute marginal loglikelihood of DALTON algorithm for Gaussian observations; :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
@@ -59,7 +60,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_weight (ndarray(n_obs, n_blocks, n_bobs, n_bstate)): Weight matrix in the observation model; :math:`D_{0:M}`.
         obs_var (ndarry(n_obs, n_blocks, n_bobs, n_bobs)): Variance matrix in the observation model; :math:`\Omega_{0:M}`
-        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     Returns:
@@ -71,6 +72,14 @@ def dalton(key, ode_fun, ode_weight, ode_init,
     # Dimension of observation
     n_bobs = obs_weight.shape[2]
 
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     # insert observations on solver time grid
     sim_times = jnp.linspace(t_min, t_max, n_steps + 1)
     obs_ind = jnp.searchsorted(sim_times, obs_times)
@@ -365,7 +374,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
              interrogate,
              prior_weight, prior_var,
              obs_data, obs_times, obs_weight, obs_var,
-             kalman_funs=standard, **params):
+             kalman_type="standard", **params):
     r"""
     DALTON algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid Y_{0:M}, Z_{1:N})` assuming Gaussian observations.
     Same arguments as :func:`dalton`.
@@ -377,6 +386,15 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
 
     """
     n_block, n_bstate, _ = prior_weight.shape
+
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+
     # forward pass
     filt_out = _solve_filter(
         key=key,
@@ -443,7 +461,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
               interrogate,
               prior_weight, prior_var,
               obs_data, obs_times, obs_weight, obs_var,
-              kalman_funs=standard, **params):
+              kalman_type="standard", **params):
     r"""
     DALTON algorithm to sample from :math:`p(X_{0:N} \mid Y_{0:M}, Z_{1:N})` assuming Gaussian observations.
     Same arguments as :func:`dalton`.
@@ -455,6 +473,15 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
 
     """
     n_block, n_bstate, _ = prior_weight.shape
+    
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     key, *subkeys = jax.random.split(key, num=n_steps+1)
     # forward pass
     filt_out = _solve_filter(
@@ -822,7 +849,7 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
              interrogate,
              prior_weight, prior_var,
              obs_data, obs_times, obs_loglik_i,
-             kalman_funs=standard, **params):
+             kalman_type="standard", **params):
     r"""
     Compute marginal loglikelihood of DALTON algorithm for non-Gaussian observations; :math:`p(\hat Y_{0:M} \mid Z_{1:N})`.
 
@@ -840,7 +867,7 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
         obs_data (ndarray(n_obs, n_blocks, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_loglik_i (Callable): Loglikelihood function for each observation.
-        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     
@@ -849,6 +876,14 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
 
     """
     n_obs = obs_data.shape[0]
+
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
 
     # forward pass
     filt_out = _solve_filter_nn(
@@ -919,7 +954,7 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
                 interrogate,
                 prior_weight, prior_var,
                 obs_data, obs_times, obs_loglik_i,
-                kalman_funs=standard, **params):
+                kalman_type="standard", **params):
     r"""
     DALTON algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid \hat Y_{0:M}, Z_{1:N})` assuming non-Gaussian observations. 
     Same arguments as :func:`daltonng`.
@@ -931,6 +966,15 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
 
     """
     n_block, n_bstate, _ = prior_weight.shape
+    
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     # forward pass
     filt_out = _solve_filter_nn(
         key=key,

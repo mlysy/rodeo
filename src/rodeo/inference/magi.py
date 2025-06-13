@@ -1,11 +1,13 @@
 import jax
 import jax.numpy as jnp
+from rodeo.kalmantv import standard
+from rodeo.kalmantv import square_root
 
 def magi_logdens(ode_data_subset,
                  ode_expand,
                  n_active,
                  prior_weight, prior_var,
-                 kalman_funs,
+                 kalman_type,
                  **params):
     """
     Log-density of MAGI approximation.
@@ -16,12 +18,20 @@ def magi_logdens(ode_data_subset,
         n_active (int): Number of active derivatives -- i.e., not those zero-padded -- for the solution process.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        kalman_funs (object): Kalman filtering functions; require predict, forecast and update methods.
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         **params (kwargs): Parameters to pass to `ode_expand`.
 
     Returns:
         (float): Value of the logdensity `p(ode_data_subset, Z = 0 | params, prior_weight, prior_var)`.
     """
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     # setup
     n_vars = ode_data_subset.shape[1]
     ode_state = ode_expand(ode_data_subset, **params)

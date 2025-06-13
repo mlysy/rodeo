@@ -25,6 +25,7 @@ This module optimizes the calculations when :math:`Q`, :math:`R`, and :math:`W`,
 import jax
 import jax.numpy as jnp
 from rodeo.kalmantv import standard
+from rodeo.kalmantv import square_root
 
 
 def _solve_filter(key, ode_fun, ode_weight, ode_init,
@@ -125,7 +126,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
               t_min, t_max, n_steps,
               interrogate,
               prior_weight, prior_var,
-              kalman_funs=standard, **params):
+              kalman_type="standard", **params):
     r"""
     Draw sample solution. Same arguments as :func:`~ode.solve_mv`.
 
@@ -133,6 +134,14 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
         (ndarray(n_steps+1, n_blocks, n_bstate)): Sample solution for :math:`X_t` at times :math:`t \in [a, b]`.
 
     """
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+
     n_block = prior_weight.shape[0]
     key, *subkeys = jax.random.split(key, num=n_steps+1)
     # subkeys = jnp.reshape(jnp.array(subkeys), newshape=(n_steps, n_block, 2))
@@ -199,7 +208,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
              t_min, t_max, n_steps,
              interrogate,
              prior_weight, prior_var,
-             kalman_funs=standard, **params):
+             kalman_type="standard", **params):
     r"""
     Mean and variance of the stochastic ODE solver.
 
@@ -214,7 +223,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         interrogate (Callable): Function defining the interrogation method.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
-        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     Returns:
@@ -223,6 +232,14 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+
     n_block, n_bstate, _ = prior_weight.shape
     # forward pass
     filt_out = _solve_filter(

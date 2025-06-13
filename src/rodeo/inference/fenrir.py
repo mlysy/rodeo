@@ -30,6 +30,7 @@ with the reverse pass model to condition on data. Here :math:`\epsilon_n, \eta_m
 import jax
 import jax.numpy as jnp
 from rodeo.kalmantv import standard
+from rodeo.kalmantv import square_root
 from rodeo.solve import _solve_filter
 from rodeo.utils import multivariate_normal_logpdf
 
@@ -262,7 +263,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
            interrogate,
            prior_weight, prior_var,
            obs_data, obs_times, obs_weight, obs_var,
-           kalman_funs=standard, **params):
+           kalman_type="standard", **params):
     r"""
     Fenrir algorithm to compute the approximate loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
@@ -281,13 +282,20 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_weight (ndarray(n_obs, n_blocks, n_bobs, n_bstate)): Weight matrix in the observation model; :math:`D_{0:M}`.
         obs_var (ndarry(n_obs, n_blocks, n_bobs, n_bobs)): Variance matrix in the observation model; :math:`\Omega_{0:M}`
-        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     Returns:
         (float) : The loglikelihood of :math:`p(y_{0:M} \mid Z_{1:N})`.
 
     """
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
 
     # forward pass
     filt_out = _solve_filter(
@@ -397,7 +405,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
              interrogate,
              prior_weight, prior_var,
              obs_data, obs_times, obs_weight, obs_var,
-             kalman_funs=standard, **params):
+             kalman_type="standard", **params):
     r"""
     Fenrir algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid Z_{1:N}, Y_{0:M})`. Same arguments as :func:`fenrir`.
 
@@ -407,7 +415,14 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     # forward pass
     filt_out = _solve_filter(
         key=key,

@@ -10,7 +10,6 @@ In the case that observations time grid is not the same as the solver time grid,
 """
 import jax
 import jax.numpy as jnp
-from rodeo.kalmantv import standard
 from rodeo.solve import solve_mv
 
 
@@ -19,7 +18,7 @@ def basic(key, ode_fun, ode_weight, ode_init,
           interrogate,
           prior_weight, prior_var,
           obs_data, obs_times, obs_loglik,
-          kalman_funs=standard, **params):
+          kalman_type="standard", **params):
     
     r"""
     Basic algorithm to compute the approximate loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
@@ -38,7 +37,7 @@ def basic(key, ode_fun, ode_weight, ode_init,
         obs_data (ndarray(n_obs, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_loglik (Callable): Observation loglikelihood function.
-        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     Returns:
@@ -57,7 +56,7 @@ def basic(key, ode_fun, ode_weight, ode_init,
         interrogate=interrogate,
         prior_weight=prior_weight,
         prior_var=prior_var,
-        kalman_funs=kalman_funs,
+        kalman_type=kalman_type,
         **params
     )
     sim_times = jnp.linspace(t_min, t_max, n_steps+1)

@@ -28,6 +28,7 @@ from rodeo.prior import ibm_init
 from rodeo.solve import solve_mv, solve_sim
 from rodeo.interrogate import interrogate_chkrebtii, interrogate_kramer
 from rodeo.inference import basic, fenrir, random_walk_aux
+from rodeo.utils import first_order_pad
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -66,29 +67,26 @@ def fitz_fun(X, t, **params):
     )
 
 
-def fitz_init(x0, theta):
-    "FitzHugh-Nagumo initial values in rodeo format."
-    x0 = x0[:, None]
-    return jnp.hstack([
-        x0,
-        fitz_fun(X=x0, t=0., theta=theta),
-        jnp.zeros_like(x0)
-    ])
+n_vars = 2
+n_deriv = 3
 
-
-W = jnp.array([[[0., 1., 0.]], [[0., 1., 0.]]])  # LHS matrix of ODE
 x0 = jnp.array([-1., 1.])  # initial value for the ODE-IVP
 theta = jnp.array([.2, .2, 3])  # ODE parameters
-X0 = fitz_init(x0, theta)  # initial value in rodeo format
+
+# helper function for standard first-order problems where W is fixed, it returns
+# W: LHS matrix of ODE
+# fitz_init: Function to help initialize FN model with
+# Args: x0, t, **params
+# Returns: Function that takes the initial values of each variable
+#          and puts them in rodeo format.
+W, fitz_init = first_order_pad(fitz_fun, n_vars, n_deriv)
+X0 = fitz_init(x0, 0, theta=theta)  # initial value in rodeo form
 
 # Time interval on which a solution is sought.
 t_min = 0.
 t_max = 40.
 
 # --- Define the prior process -------------------------------------------
-
-n_vars = 2
-n_deriv = 3
 
 # IBM process scale factor
 sigma = jnp.array([.1] * n_vars)
@@ -226,7 +224,7 @@ def fitz_constrain_pars(upars, dt):
     """
     theta = jnp.exp(upars[:3])
     x0 = upars[3:5]
-    X0 = fitz_init(x0, theta)
+    X0 = fitz_init(x0, 0, theta=theta)
     sigma = upars[5:]
     Q, R = rodeo.prior.ibm_init(
         dt=dt,
