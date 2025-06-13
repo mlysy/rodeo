@@ -97,6 +97,8 @@ def fitz_fun(X, t, **params):
          [-1 / c * (V - a + b * R)]]
     )
 
+n_vars = 2  # number of variables in the ODE
+n_deriv = 3  # max number of derivatives
 
 x0 = jnp.array([-1., 1.])  # initial value for the ODE-IVP
 theta = jnp.array([.2, .2, 3])  # ODE parameters
@@ -115,8 +117,6 @@ t_max = 40.
 
 # --- Define the prior process -------------------------------------------
 
-n_vars = 2  # number of variables in the ODE
-n_deriv = 3  # max number of derivatives
 sigma = jnp.array([.1] * n_vars)  # IBM process scale factor
 
 
