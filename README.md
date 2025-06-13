@@ -1,4 +1,4 @@
-# **rodeo:** Fast Probabilistic ODE Solver
+# **rodeo:** Probabilistic Methods of Parameter Inference for ODEs
 
 [**Home**](https://rodeo.readthedocs.io/)
 | [**Installation**](#installation)
@@ -25,7 +25,7 @@ For the latter we provide the likelihood approximation methods:
 - `fenrir`: Implementation of Fenrir ([Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html)).
 - `random_walk_aux`: MCMC implementation of Chkrebtii's method ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
 - `dalton`: Implementation of our data-adaptive ODE likelihood approximation ([Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566)).
-- `magi`: Implementation of MAGI ([Wong et al (2023)](https://arxiv.org/abs/2203.06066)).
+- `magi`: Implementation of MAGI ([Wong et al (2023)](https://arxiv.org/abs/2203.06066)) with a Markov prior.
 
 Detailed examples for their usage can be found in the [Documentation](#documentation) section. Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
 
@@ -97,19 +97,17 @@ def fitz_fun(X, t, **params):
          [-1 / c * (V - a + b * R)]]
     )
 
-def fitz_init(x0, theta):
-    "FitzHugh-Nagumo initial values in rodeo format."
-    x0 = x0[:, None]
-    return jnp.hstack([
-        x0,
-        fitz_fun(X=x0, t=0., theta=theta),
-        jnp.zeros_like(x0)
-    ])
 
-W = jnp.array([[[0., 1., 0.]], [[0., 1., 0.]]])  # LHS matrix of ODE
 x0 = jnp.array([-1., 1.])  # initial value for the ODE-IVP
 theta = jnp.array([.2, .2, 3])  # ODE parameters
-X0 = fitz_init(x0, theta)  # initial value in rodeo format
+
+# we have a helper function to help with the rodeo initialization
+W, fitz_init = rodeo.utils.first_order_pad(fitz_fun, n_vars, n_deriv)
+# fitz_init takes Args:
+# x0: initial value for the ODE-ivp
+# t: initial time
+# **params: extra model parameters as kwargs
+X0 = fitz_init(x0, 0., theta=theta)  # initial value in rodeo format
 
 # Time interval on which a solution is sought.
 t_min = 0.
@@ -217,7 +215,7 @@ def constrain_pars(upars, dt):
     """
     theta = jnp.exp(upars[:3])
     x0 = upars[3:5]
-    X0 = fitz_init(x0, theta)
+    X0 = fitz_init(x0, 0, theta=theta)
     sigma = upars[5:]
     Q, R = rodeo.prior.ibm_init(
         dt=dt,
