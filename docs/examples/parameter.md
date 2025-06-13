@@ -392,7 +392,7 @@ def fitz_mcmc(key, n_samples, upars):
     return ode_sample
 
 # optimization process
-n_samples = 100_000
+n_samples = 10000
 upars_init = jnp.append(jnp.log(theta), x0)
 upars_init = jnp.append(upars_init, .1*jnp.ones(n_vars))
 mcmc_post = fitz_mcmc(key, n_samples, upars_init)
