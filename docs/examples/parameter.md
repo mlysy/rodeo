@@ -23,6 +23,7 @@ import jax
 import jax.numpy as jnp
 import jaxopt
 import blackjax
+from functools import partial
 import rodeo
 from rodeo.prior import ibm_init
 from rodeo.solve import solve_mv, solve_sim
@@ -314,9 +315,11 @@ basic_post = fitz_laplace(key, neglogpost_basic, n_samples, upars_init)
 
 ### Chkrebtii MCMC
 
-Another method to estimate the parameter posteriors of $\tth$ is given by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) using MCMC. The marginal MCMC method has the same API as the BLACKJAX MCMC. The only difference is that instead of using a MCMC algorithm directly from BLACKJAX, we use the **random_walk_aux** module. There are three main steps required to use the marginal MCMC method. First, we need to define a likelihood function where the ODE solver uses the interrogation method of Chkbrebtii to sample from the solution posterior. Next, we need to define a random walk kernel to generate a sample from the current state. Finally, we use an inference loop to draw MCMC samples from the parameter posterior.
+Another method to estimate the parameter posteriors of $\tth$ is given by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) using MCMC. The marginal MCMC method has the same API as the BLACKJAX MCMC. The only difference is that instead of using a MCMC algorithm directly from BLACKJAX, we use the **random_walk_aux** module. There are three main steps required to use the marginal MCMC method. First, we need to define a likelihood function where the ODE solver uses the interrogation method of Chkbrebtii to sample from the solution posterior. `interrogate_chkrebtii` takes an extra argument `kalman_type` to determine which Kalman algorithms (standard or square-root) is used. `rodeo`, however, does not take interrogation functions with this extra argument so we fix the value with `functools.partial`. Next, we need to define a random walk kernel to generate a sample from the current state. Finally, we use an inference loop to draw MCMC samples from the parameter posterior.
 
 ```{code-cell} ipython3
+interrogate_chkrebtii_partial = partial(interrogate_chkrebtii, kalman_type="standard")
+
 def fitz_logpost_mcmc(key, upars):
     """
     Computes marginal MCMC posterior.
@@ -335,7 +338,7 @@ def fitz_logpost_mcmc(key, upars):
         theta=theta,
         # solver parameters
         n_steps=n_steps,
-        interrogate=interrogate_chkrebtii,
+        interrogate=interrogate_chkrebtii_partial,
         prior_weight=prior_Q,
         prior_var=prior_R
     )
@@ -389,7 +392,7 @@ def fitz_mcmc(key, n_samples, upars):
     return ode_sample
 
 # optimization process
-n_samples = 10000
+n_samples = 100_000
 upars_init = jnp.append(jnp.log(theta), x0)
 upars_init = jnp.append(upars_init, .1*jnp.ones(n_vars))
 mcmc_post = fitz_mcmc(key, n_samples, upars_init)
