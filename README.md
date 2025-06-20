@@ -21,10 +21,10 @@
 
 For the latter we provide the likelihood approximation methods:
 
-- `basic`: Implementation of a basic likelihood approximation method (details can be found in [Wu and Lysy (2023)](https://arxiv.org/abs/2306.05566)).
+- `basic`: Implementation of a basic likelihood approximation method (details can be found in [Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html)).
 - `fenrir`: Implementation of Fenrir ([Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html)).
 - `random_walk_aux`: MCMC implementation of Chkrebtii's method ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
-- `dalton`: Implementation of our data-adaptive ODE likelihood approximation ([Wu and Lysy (2023)](https://proceedings.mlr.press/v238/wu24b.html)).
+- `dalton`: Implementation of our data-adaptive ODE likelihood approximation ([Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html)).
 - `magi`: Implementation of MAGI ([Wong et al (2023)](https://arxiv.org/abs/2203.06066)) with a Markov prior.
 
 Detailed examples for their usage can be found in the [Documentation](#documentation) section. Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
@@ -65,7 +65,7 @@ $$
 
 where the solution $X(t)$ is sought on the interval $t \in [0, 40]$ and $\theta = (a,b,c) = (.2,.2,3)$. 
 
-Following the notation of [Wu and Lysy (2023)](https://proceedings.mlr.press/v238/wu24b.html), we have $p-1=1$ in this example. To approximate the solution with the probabilistic solver, 
+Following the notation of [Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html), we have $p-1=1$ in this example. To approximate the solution with the probabilistic solver, 
 we use a simple Gaussian process prior proposed by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7); namely, that $V(t)$ and $R(t)$ are 
 independent $q-1$ times integrated Brownian motion, such that 
 
@@ -104,12 +104,12 @@ x0 = jnp.array([-1., 1.])  # initial value for the ODE-IVP
 theta = jnp.array([.2, .2, 3])  # ODE parameters
 
 # we have a helper function to help with the rodeo initialization
-W, fitz_init = rodeo.utils.first_order_pad(fitz_fun, n_vars, n_deriv)
-# fitz_init takes Args:
+W, fitz_init_pad = rodeo.utils.first_order_pad(fitz_fun, n_vars, n_deriv)
+# fitz_init_pad takes Args:
 # x0: initial value for the ODE-ivp
 # t: initial time
 # **params: extra model parameters as kwargs
-X0 = fitz_init(x0, 0., theta=theta)  # initial value in rodeo format
+X0 = fitz_init_pad(x0, 0., theta=theta)  # initial value in rodeo format
 
 # Time interval on which a solution is sought.
 t_min = 0.
@@ -154,7 +154,8 @@ Xt, _ = rodeo.solve_mv(
 
 We compare the solution from the solver to the deterministic solution provided by `odeint` in the **scipy** library. 
 
-![fitzsol](docs/figures/fitzsol.png)
+![fitzsol](https://raw.githubusercontent.com/mlysy/rodeo/main/docs/figures/fitzsol.png)
+
 
 We also include examples for solving a [higher-ordered ODE](docs/examples/higher_order.md) and a [chaotic ODE](docs/examples/lorenz.md).
 
@@ -260,15 +261,15 @@ Here are some results produced by various likelihood approximations found in **r
 
 ### FitzHugh-Nagumo
 
-![fitzhugh](docs/figures/fitzfigure.png)
+![fitzhugh](https://raw.githubusercontent.com/mlysy/rodeo/main/docs/figures/fitzfigure.png)
 
 ### Hes1
 
-![hes1](docs/figures/hes1figure.png)
+![hes1](https://raw.githubusercontent.com/mlysy/rodeo/main/docs/figures/hes1figure.png)
 
 ### SEIRAH
 
-![seirah](docs/figures/seirahfigure.png)
+![seirah](https://raw.githubusercontent.com/mlysy/rodeo/main/docs/figures/seirahfigure.png)
 
 ## Developers
 

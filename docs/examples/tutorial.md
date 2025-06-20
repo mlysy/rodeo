@@ -40,6 +40,7 @@ from scipy.integrate import odeint
 from rodeo.prior import ibm_init
 import rodeo.interrogate
 from rodeo import solve_mv, solve_sim
+from rodeo.utils import first_order_pad
 from jax import config
 config.update("jax_enable_x64", True)
 ```
@@ -75,7 +76,7 @@ To initialize, we simply set $\boldsymbol{X(0)} = (V^{(0)}(0), V^{(1)}(0), 0, R^
 The Python code to implement all this is as follows.
 
 ```{code-cell} ipython3
-def ode_fun_jax(X_t, t, **params):
+def fitz_fun(X_t, t, **params):
     "FitzHugh-Nagumo ODE."
     a, b, c = params["theta"]
     V, R = X_t[:,0]
@@ -84,8 +85,8 @@ def ode_fun_jax(X_t, t, **params):
 
 
 # problem setup and intialization
-n_obs = 2  # Total observations
-n_deriv_prior = 3 # q
+n_vars = 2  # number of variables
+n_deriv = 3 # q
 
 # it is assumed that the solution is sought on the interval [tmin, tmax].
 n_steps = 400
@@ -99,12 +100,12 @@ sigma = .01
 sigma = jnp.array([sigma]*n_obs)
 
 # Initial W for jax block
-W_mat = np.zeros((n_obs, 1, n_deriv_prior))
-W_mat[:, :, 1] = 1
-W = jnp.array(W_mat)
+W, fitz_init_pad = first_order_pad(fitz_fun, n_vars, n_deriv)
 
 # Initial x0 for jax block
-X0 = jnp.array([[-1., 1., 0.], [1., 1/3, 0.]])
+theta = jnp.array([0.2, 0.2, 3])  # ODE parameters
+x0 = jnp.array([-1.0, 1.0])  # initial value for the ODE-IVP
+X0 = fitz_init_pad(x0, 0, theta=theta)  # initial value in rodeo format
 
 # Get parameters needed to run the solver
 dt = (t_max-t_min)/n_steps
@@ -129,12 +130,12 @@ key = jax.random.PRNGKey(0)
 sim_jit = jax.jit(solve_sim, static_argnums=(1, 6, 7))
 mv_jit = jax.jit(solve_mv, static_argnums=(1, 6, 7))
 
-xt = sim_jit(key=key, ode_fun=ode_fun_jax,
+xt = sim_jit(key=key, ode_fun=fitz_fun,
              ode_weight=W, ode_init=X0, theta=theta,
              t_min=t_min, t_max=t_max, n_steps=n_steps,
              interrogate=rodeo.interrogate.interrogate_kramer,
              prior_weight=prior_weight, prior_var=prior_var)
-mut, _ = mv_jit(key=key, ode_fun=ode_fun_jax,
+mut, _ = mv_jit(key=key, ode_fun=fitz_fun,
              ode_weight=W, ode_init=X0, theta=theta,
              t_min=t_min, t_max=t_max, n_steps=n_steps,
              interrogate=rodeo.interrogate.interrogate_kramer,

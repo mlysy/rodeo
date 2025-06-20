@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.14.7
+    jupytext_version: 1.16.6
 kernelspec:
   display_name: Python 3 (ipykernel)
   language: python
@@ -24,7 +24,7 @@ In this notebook, we consider a multivariate ODE system called **Lorenz63** give
     \xx_0 &= (-12,-5,28).
   \end{aligned}
 \end{equation*}
-where $(\rho, \sigma, \beta) = (28, 10, 8/3)$. 
+where $(\rho, \sigma, \beta) = (28, 10, 8/3)$.
 
 ```{code-cell} ipython3
 import numpy as np
@@ -38,6 +38,7 @@ from rodeo.prior import ibm_init
 from rodeo.interrogate import interrogate_kramer
 from rodeo.inference.fenrir import solve_mv as fsolve
 from rodeo.inference.dalton import solve_mv as dsolve
+from rodeo.utils import first_order_pad
 from jax import config
 config.update("jax_enable_x64", True)
 ```
@@ -81,8 +82,8 @@ We have a few different ways of solving this ODE. The first is using `solve` whi
 
 ```{code-cell} ipython3
 # ODE function
-def lorenz(X_t, t, **params):
-    rho, sigma, beta = params["theta"]
+def lorenz(X_t, t, theta):
+    rho, sigma, beta = theta
     x, y, z = X_t[:,0]
     dx = -sigma*x + sigma*y
     dy = rho*x - y -x*z
@@ -104,12 +105,10 @@ theta = jnp.array([28, 10, 8/3])
 sigma = jnp.array([5e7]*n_vars)
 
 # Initial W for jax block
-W_mat = np.zeros((n_vars, 1, n_deriv))
-W_mat[:, :, 1] = 1
-W = jnp.array(W_mat)
+W, lorenz_init_pad = first_order_pad(lorenz, n_deriv, n_vars)
 
 # Initial x0 for jax block
-x0 = jnp.array([[-12., 70., 0.], [-5., 125, 0.], [38., -124/3, 0.]])
+x0 = lorenz_init_pad(jnp.array(ode0), 0, theta=theta)
 
 # Get parameters needed to run the solver
 n_res = 200

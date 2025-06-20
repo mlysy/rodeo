@@ -76,7 +76,7 @@ theta = jnp.array([.2, .2, 3])  # ODE parameters
 
 # helper function for standard first-order problems where W is fixed, it returns
 # W: LHS matrix of ODE
-# fitz_init: Function to help initialize FN model with
+# fitz_init_pad: Function to help initialize FN model with
 # Args: x0, t, **params
 # Returns: Function that takes the initial values of each variable
 #          and puts them in rodeo format.
@@ -168,20 +168,20 @@ axs[1].legend(loc=1)
 fig1.tight_layout()
 ```
 
+
+
 We now turn to the problem of parameter estimation.  In the Bayesian context, this is achieved by postulating a prior distribution $p(\TTh)$ on $\TTh = (\tth, \pph)$, and then combining it with the stochastic solver's likelihood function $\Ell(\TTh \mid \YY_{0:M}) \propto p(\YY_{0:M} \mid \ZZ_{1:N} = \bz, \TTh)$ to obtain the posterior distribution
-\begin{equation}
+\begin{equation*}
   p(\TTh \mid \YY_{0:M}) \propto \pi(\TTh) \times \Ell(\TTh \mid \YY_{0:M}).
-\end{equation}
+\end{equation*}
 For the Basic, Fenrir, and DALTON algorithms, the high-dimensional latent ODE variables $\XX_{0:N}$ can be approximately integrated out to produce a closed-form likelihood approximation $\hat \Ell(\TTh \mid \YY_{0:M})$ to form the corresponding posterior approximation $\hat p(\TTh \mid \YY_{0:M})$.  While this posterior can be readily sampled from using MCMC techniques (as we shall do momentarily) Bayesian parameter estimation can also be achieved by way of a Laplace approximation. We approximate, $p(\TTh \mid \YY_{0:M})$ is approximated by a multivariate normal distribution,
-\begin{equation}
+\begin{equation*}
     \TTh \mid \YY_{0:M} \approx \N(\hat \TTh, \hat \VV),
-\end{equation}
+\end{equation*}
 where
-\begin{equation}
-  \begin{aligned}
+  \begin{align*}
     \hat \TTh & = \argmax_{\TTh} \log \hat p(\TTh \mid \YY_{0:M}), & \hat \VV & = -\left[\frac{\partial^2}{\partial \TTh \partial \TTh'} \log \hat p(\hat \TTh \mid \YY_{0:M})\right]^{-1}.
-  \end{aligned}
-\end{equation}
+  \end{align*}
 
 ```{code-cell} ipython3
 # --- parameter inference: basic + laplace -------------------------------
@@ -229,7 +229,7 @@ def fitz_constrain_pars(upars, dt):
     """
     theta = jnp.exp(upars[:3])
     x0 = upars[3:5]
-    X0 = fitz_init(x0, 0, theta=theta)
+    X0 = fitz_init_pad(x0, 0, theta=theta)
     sigma = upars[5:]
     Q, R = rodeo.prior.ibm_init(
         dt=dt,
@@ -282,9 +282,9 @@ def fitz_laplace(key, neglogpost, n_samples, upars_init):
 ### Basic Likelihood
 
 A basic approximation to the likelihood function takes the posterior mean $\mmu_{0:N|N}(\tth, \eet) = \E_\L[\XX_{0:N} \mid \ZZ_{1:N} = \bz, \tth, \eet]$ of the **rodeo** solver and simply plugs it into the measurement model, such that
-\begin{equation}
+\begin{equation*}
     \hat \Ell(\TTh \mid \YY_{0:M}) = \prod_{i=0}^M p(\YY_i \mid \XX_{n(i)} = \mmu_{n(i)|N}(\tth, \eet), \pph),
-\end{equation}
+\end{equation*}
 where in terms of the ODE solver discretization time points $t = t_0, \ldots, t_N$, $N \ge M$, the mapping $n(\cdot)$ is such that $t_{n(i)} = t'_i$. .
 
 ```{code-cell} ipython3
@@ -324,13 +324,12 @@ basic_post = fitz_laplace(key, neglogpost_basic, n_samples, upars_init)
 ### Chkrebtii MCMC
 
 The marginal MCMC method shares the same API as the **Blackjax** MCMC. The first step is to choose a proposal distribution. For this, we use a random walk (RW) kernel:
-\begin{equation}
+\begin{equation*}
     \TTh \mid \TTh^\curr \sim \N(\TTh^\curr, \diag(\SSi_{rw}^2)),
-\end{equation}
+\end{equation*}
 where $\diag(\SSi_{rw}^2)$ is a tuning parameter for the MCMC algorithm. While **Blackjax** provides a RW MCMC sampler, it does not support a Metropolis–Hastings acceptance ratio that depends on the auxiliary random variable $\XX_{0:N}$, as required for pseudo-marginal MCMC. Therefore, we use the **Blackjax** API to define a pseudo-marginal MCMC sampler with an RW kernel, which we provide in the `rodeo.random_walk_aux` module.
 
 There are three main steps to using the marginal MCMC method. First, a likelihood function must be defined, where the ODE solver uses the interrogation method of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) to sample from the solution posterior $\hat{p}_\L(\XX_{0:N}, \ipar_{0:N} \mid \ZZ_{1:N} = \bz, \tth, \eet)$ where $\ipar_{0:N}$ correspond to Chkrebtii interrogations. Second, a kernel must be defined, for which we use the RW kernel. Finally, an inference loop} is used to draw MCMC samples from the parameter posterior.
-
 
 ```{code-cell} ipython3
 interrogate_chkrebtii_partial = partial(interrogate_chkrebtii, kalman_type="standard")
@@ -416,17 +415,15 @@ mcmc_post = fitz_mcmc(key, n_samples, upars_init)
 ### Fenrir
 
 The Fenrir method [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html) is applicable to Gaussian measurement models of the form
-\begin{equation}
+\begin{equation*}
   \YY_i \ind \N(\DD_i^{(\pph)} \XX_{n(i)}, \OOm_i^{(\pph)}).
-\end{equation}
+\end{equation*}
 Fenrir begins by estimating $p_\L(\XX_{0:N} \mid \ZZ_{1:N} = \bz, \tth, \eet)$. This results in a Gaussian non-homogeneous Markov model going backwards in time,
-\begin{equation}
-    \begin{aligned}
-        \XX_N & \sim \N(\bb_N, \CC_N) \\
-        \XX_n \mid \XX_{n+1} & \sim \N(\AA_n \XX_n + \bb_n, \CC_n), \\
-    \end{aligned}
-\end{equation}
-where the coefficients $\AA_{0:N-1}$, $\bb_{0:N}$, and $\CC_{0:N}$ can be derived using the Kalman filtering and smoothing recursions. In combination with the Gaussian measurement model, the integral in the likelihood function can be computed analytically. 
+\begin{align*}
+    \XX_N & \sim \N(\bb_N, \CC_N) \\
+    \XX_n \mid \XX_{n+1} & \sim \N(\AA_n \XX_n + \bb_n, \CC_n), \\
+\end{align*}
+where the coefficients $\AA_{0:N-1}$, $\bb_{0:N}$, and $\CC_{0:N}$ can be derived using the Kalman filtering and smoothing recursions. In combination with the Gaussian measurement model, the integral in the likelihood function can be computed analytically.
 
 ```{code-cell} ipython3
 # gaussian measurement model specification in blocked form
@@ -478,9 +475,9 @@ fenrir_post = fitz_laplace(key, neglogpost_fenrir, n_samples, upars_init)
 
 
 The DALTON approximation [Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html) is data-adaptive in that it uses the $\YY_{0:M}$ to approximate the ODE solution.  DALTON uses the identity
-\begin{equation}
+\begin{equation*}
     p(\YY_{0:M} \mid \ZZ_{1:N} = \bz, \TTh) = \frac{p(\YY_{0:M}, \ZZ_{1:N} = \bz \mid \TTh)}{p(\ZZ_{1:N} = \bz \mid \TTh)}.
-\end{equation}
+\end{equation*}
 
 ```{code-cell} ipython3
 def neglogpost_dalton(upars):
