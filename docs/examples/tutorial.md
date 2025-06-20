@@ -50,7 +50,7 @@ To illustrate the set-up, let's consider the following ODE example (**FitzHugh-N
 
 \begin{align*}
 \frac{dV}{dt} &= c(V - \frac{V^3}{3} + R), \\
-\frac{dR}{dt} &= -\frac{(V - a - bR)}{c}, \\
+\frac{dR}{dt} &= -\frac{(V - a + bR)}{c}, \\
 X(0) &= (V(0), R(0)) = (-1,1).
 \end{align*}
 

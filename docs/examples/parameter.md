@@ -80,8 +80,8 @@ theta = jnp.array([.2, .2, 3])  # ODE parameters
 # Args: x0, t, **params
 # Returns: Function that takes the initial values of each variable
 #          and puts them in rodeo format.
-W, fitz_init = first_order_pad(fitz_fun, n_vars, n_deriv)
-X0 = fitz_init(x0, 0, theta=theta)  # initial value in rodeo form
+W, fitz_init_pad = first_order_pad(fitz_fun, n_vars, n_deriv)
+X0 = fitz_init_pad(x0, 0, theta=theta)  # initial value in rodeo form
 
 # Time interval on which a solution is sought.
 t_min = 0.
@@ -168,16 +168,20 @@ axs[1].legend(loc=1)
 fig1.tight_layout()
 ```
 
-We proceed with a Bayesian approach by postulating a prior distribution $\pi(\tth)$ which combined with the likelihood gives the posterior
+We now turn to the problem of parameter estimation.  In the Bayesian context, this is achieved by postulating a prior distribution $p(\TTh)$ on $\TTh = (\tth, \pph)$, and then combining it with the stochastic solver's likelihood function $\Ell(\TTh \mid \YY_{0:M}) \propto p(\YY_{0:M} \mid \ZZ_{1:N} = \bz, \TTh)$ to obtain the posterior distribution
 \begin{equation}
-    p(\tth \mid \YY_{0:M}) \propto \pi(\tth) \times p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)
+  p(\TTh \mid \YY_{0:M}) \propto \pi(\TTh) \times \Ell(\TTh \mid \YY_{0:M}).
 \end{equation}
-where $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$ is approximated with different methods.
-Parameter inference is then accomplished by way of a Laplace approximation, for which we have
-\begin{equation*}
-    \tth \mid \YY_{0:M} \approx \N(\hat \tth, \hat \VV_{\tth}),
-\end{equation*}
-where $\hat \tth = \argmax_{\tth} \log p(\tth \mid \YY_{0:M})$ and $\hat \VV_{\tth} = -\big[\frac{\partial^2}{\partial \tth \partial \tth'} \log p(\hat \tth \mid \YY_{0:M})\big]^{-1}$. For the prior, we assume independent $\N(0, 10^2)$ priors on $\log a, \log b, \log c$ and $V(0), R(0)$. The likelihood is defined according to the measurement model above. Here we define the helper function `constrain_pars` to help initialize the process prior and the initial value needed for the underlying ODE solver. Finally `fitz_laplace` draws samples via the Laplace approximation.
+For the Basic, Fenrir, and DALTON algorithms, the high-dimensional latent ODE variables $\XX_{0:N}$ can be approximately integrated out to produce a closed-form likelihood approximation $\hat \Ell(\TTh \mid \YY_{0:M})$ to form the corresponding posterior approximation $\hat p(\TTh \mid \YY_{0:M})$.  While this posterior can be readily sampled from using MCMC techniques (as we shall do momentarily) Bayesian parameter estimation can also be achieved by way of a Laplace approximation. We approximate, $p(\TTh \mid \YY_{0:M})$ is approximated by a multivariate normal distribution,
+\begin{equation}
+    \TTh \mid \YY_{0:M} \approx \N(\hat \TTh, \hat \VV),
+\end{equation}
+where
+\begin{equation}
+  \begin{aligned}
+    \hat \TTh & = \argmax_{\TTh} \log \hat p(\TTh \mid \YY_{0:M}), & \hat \VV & = -\left[\frac{\partial^2}{\partial \TTh \partial \TTh'} \log \hat p(\hat \TTh \mid \YY_{0:M})\right]^{-1}.
+  \end{aligned}
+\end{equation}
 
 ```{code-cell} ipython3
 # --- parameter inference: basic + laplace -------------------------------
@@ -277,7 +281,11 @@ def fitz_laplace(key, neglogpost, n_samples, upars_init):
 
 ### Basic Likelihood
 
-To start, we use the `basic` method to construct a likelihood approximation. In this method, we approximate $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$ in (1) with $\prod_{i=0}^M p(\YY_i \mid \XX(t_i) = \mmu_{n(i)|N}, \tth)$ where $n(i)$ maps the corresponding time points of the solver to the data and $\mmu_{0:N|N}$ is the ODE posterior mean from the probabilistic solver `solve`. The inputs for `basic` is very similar to the ODE solver `solve`. Additional arguments include `obs_data` which is the observations, `obs_times` which are the time points where data is observed and `obs_loglik` which is the measurement likelihood function.
+A basic approximation to the likelihood function takes the posterior mean $\mmu_{0:N|N}(\tth, \eet) = \E_\L[\XX_{0:N} \mid \ZZ_{1:N} = \bz, \tth, \eet]$ of the **rodeo** solver and simply plugs it into the measurement model, such that
+\begin{equation}
+    \hat \Ell(\TTh \mid \YY_{0:M}) = \prod_{i=0}^M p(\YY_i \mid \XX_{n(i)} = \mmu_{n(i)|N}(\tth, \eet), \pph),
+\end{equation}
+where in terms of the ODE solver discretization time points $t = t_0, \ldots, t_N$, $N \ge M$, the mapping $n(\cdot)$ is such that $t_{n(i)} = t'_i$. .
 
 ```{code-cell} ipython3
 def neglogpost_basic(upars):
@@ -315,7 +323,14 @@ basic_post = fitz_laplace(key, neglogpost_basic, n_samples, upars_init)
 
 ### Chkrebtii MCMC
 
-Another method to estimate the parameter posteriors of $\tth$ is given by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) using MCMC. The marginal MCMC method has the same API as the BLACKJAX MCMC. The only difference is that instead of using a MCMC algorithm directly from BLACKJAX, we use the **random_walk_aux** module. There are three main steps required to use the marginal MCMC method. First, we need to define a likelihood function where the ODE solver uses the interrogation method of Chkbrebtii to sample from the solution posterior. `interrogate_chkrebtii` takes an extra argument `kalman_type` to determine which Kalman algorithms (standard or square-root) is used. `rodeo`, however, does not take interrogation functions with this extra argument so we fix the value with `functools.partial`. Next, we need to define a random walk kernel to generate a sample from the current state. Finally, we use an inference loop to draw MCMC samples from the parameter posterior.
+The marginal MCMC method shares the same API as the **Blackjax** MCMC. The first step is to choose a proposal distribution. For this, we use a random walk (RW) kernel:
+\begin{equation}
+    \TTh \mid \TTh^\curr \sim \N(\TTh^\curr, \diag(\SSi_{rw}^2)),
+\end{equation}
+where $\diag(\SSi_{rw}^2)$ is a tuning parameter for the MCMC algorithm. While **Blackjax** provides a RW MCMC sampler, it does not support a Metropolis–Hastings acceptance ratio that depends on the auxiliary random variable $\XX_{0:N}$, as required for pseudo-marginal MCMC. Therefore, we use the **Blackjax** API to define a pseudo-marginal MCMC sampler with an RW kernel, which we provide in the `rodeo.random_walk_aux` module.
+
+There are three main steps to using the marginal MCMC method. First, a likelihood function must be defined, where the ODE solver uses the interrogation method of [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259) to sample from the solution posterior $\hat{p}_\L(\XX_{0:N}, \ipar_{0:N} \mid \ZZ_{1:N} = \bz, \tth, \eet)$ where $\ipar_{0:N}$ correspond to Chkrebtii interrogations. Second, a kernel must be defined, for which we use the RW kernel. Finally, an inference loop} is used to draw MCMC samples from the parameter posterior.
+
 
 ```{code-cell} ipython3
 interrogate_chkrebtii_partial = partial(interrogate_chkrebtii, kalman_type="standard")
@@ -400,20 +415,18 @@ mcmc_post = fitz_mcmc(key, n_samples, upars_init)
 
 ### Fenrir
 
-`fenrir` is a method developed by [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html) which uses the data itself in the solution process. `fenrir` begins by using the data-free forward pass of `solve` to estimate $p(\XX_{0:N} \mid \ZZ_{0:N} = \bz, \tth)$. This model can be simulated from via a (non-homogeneous) Markov chain going backwards in time,
-    \begin{equation}
+The Fenrir method [Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html) is applicable to Gaussian measurement models of the form
+\begin{equation}
+  \YY_i \ind \N(\DD_i^{(\pph)} \XX_{n(i)}, \OOm_i^{(\pph)}).
+\end{equation}
+Fenrir begins by estimating $p_\L(\XX_{0:N} \mid \ZZ_{1:N} = \bz, \tth, \eet)$. This results in a Gaussian non-homogeneous Markov model going backwards in time,
+\begin{equation}
     \begin{aligned}
         \XX_N & \sim \N(\bb_N, \CC_N) \\
-        \XX_n \mid \XX_{n+1} & \sim \N(\AA_n \XX_n + \bb_n, \CC_n),
+        \XX_n \mid \XX_{n+1} & \sim \N(\AA_n \XX_n + \bb_n, \CC_n), \\
     \end{aligned}
 \end{equation}
-where the coefficients $\AA_{0:N-1}$, $\bb_{0:N}$, and $\CC_{0:N}$ can be derived using the Kalman filtering and smoothing recursions. Next, `fenrir` assumes that Gaussian observations are added to the model, from which $p(\YY_{0:M} \mid \ZZ_{0:N} = \bz, \tth)$ is computed using a Kalman filter on the backward pass of (2).
-
-To use `fenrir`, we first need to define the specifications. `fenrir` expects observations to be of the form
-\begin{equation*}
-\YY_i \sim \N(\DD_i \XX_i, \OOm_i).
-\end{equation*}
-This translates to the following set of definitions for this 2-state ODE.
+where the coefficients $\AA_{0:N-1}$, $\bb_{0:N}$, and $\CC_{0:N}$ can be derived using the Kalman filtering and smoothing recursions. In combination with the Gaussian measurement model, the integral in the likelihood function can be computed analytically. 
 
 ```{code-cell} ipython3
 # gaussian measurement model specification in blocked form
@@ -463,15 +476,11 @@ fenrir_post = fitz_laplace(key, neglogpost_fenrir, n_samples, upars_init)
 
 ### Dalton
 
-Finally, we present the method, `dalton`, developed by [Wu, Lysy](https://arxiv.org/pdf/2306.05566.pdf). `dalton` uses the model
+
+The DALTON approximation [Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html) is data-adaptive in that it uses the $\YY_{0:M}$ to approximate the ODE solution.  DALTON uses the identity
 \begin{equation}
-    \begin{aligned}
-        \XX_{n+1} \mid \XX_n & \sim \N(\QQ \XX_n, \RR) \\
-        \ZZ_n & \sim \N(\WW \XX_n - \ff(\XX_n, t_n, \tth), \VV_n) \\
-        \YY_i & \sim p(\YY_i \mid \XX_{n(i)}, \pph),
-    \end{aligned}
+    p(\YY_{0:M} \mid \ZZ_{1:N} = \bz, \TTh) = \frac{p(\YY_{0:M}, \ZZ_{1:N} = \bz \mid \TTh)}{p(\ZZ_{1:N} = \bz \mid \TTh)}.
 \end{equation}
-where the data is used directly in the forward pass instead of just the backward pass of `fenrir`. For Gaussian observations such as this example, `dalton` is the appropriate function to use.
 
 ```{code-cell} ipython3
 def neglogpost_dalton(upars):
