@@ -18,29 +18,30 @@ def basic(key, ode_fun, ode_weight, ode_init,
           interrogate,
           prior_weight, prior_var,
           obs_data, obs_times, obs_loglik,
-          **params):
+          kalman_type="standard", **params):
     
     r"""
     Basic algorithm to compute the approximate loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
     Args:
         key (PRNGKey): PRNG key.
-        ode_fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        ode_fun (Callable): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
         ode_weight (ndarray(n_block, n_bmeas, n_bstate)): Weight matrix defining the measure prior; :math:`W`.
         ode_init (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         t_min (float): First time point of the time interval to be evaluated; :math:`a`.
         t_max (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
-        interrogate (function): Function defining the interrogation method.
+        interrogate (Callable): Function defining the interrogation method.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         obs_data (ndarray(n_obs, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
-        obs_loglik (fun): Observation loglikelihood function.
+        obs_loglik (Callable): Observation loglikelihood function.
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     Returns:
-        (float) : The loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
+        (float): The loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
     """
 
@@ -55,8 +56,9 @@ def basic(key, ode_fun, ode_weight, ode_init,
         interrogate=interrogate,
         prior_weight=prior_weight,
         prior_var=prior_var,
+        kalman_type=kalman_type,
         **params
     )
     sim_times = jnp.linspace(t_min, t_max, n_steps+1)
     ode_data = Xt[jnp.searchsorted(sim_times, obs_times)]
-    return obs_loglik(obs_data, ode_data, **params)
+    return obs_loglik(obs_data, ode_data, **params), Xt

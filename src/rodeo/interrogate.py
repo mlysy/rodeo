@@ -12,7 +12,7 @@ import jax.numpy as jnp
 
 def interrogate_chkrebtii(key, ode_fun, ode_weight, t,
                           mean_state_pred, var_state_pred,
-                          **params):
+                          kalman_type, **params):
     r"""
     Interrogate method of Chkrebtii et al (2016); DOI: 10.1214/16-BA1017.
 
@@ -22,16 +22,27 @@ def interrogate_chkrebtii(key, ode_fun, ode_weight, t,
     n_block, n_bstate = mean_state_pred.shape
     key, *subkeys = jax.random.split(key, num=n_block+1)
     subkeys = jnp.array(subkeys)
-    var_meas = jax.vmap(lambda wm, vsp:
-                        jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
-        ode_weight, var_state_pred
-    )
-    x_state = jax.vmap(lambda b:
-                       jax.random.multivariate_normal(
-                           subkeys[b],
-                           mean_state_pred[b],
-                           var_state_pred[b]
-                       ))(jnp.arange(n_block))
+    if kalman_type == "standard":
+        var_meas = jax.vmap(lambda wm, vsp:
+                            jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp, wm.T])))(
+            ode_weight, var_state_pred
+        )
+        x_state = jax.vmap(jax.random.multivariate_normal)(
+            subkeys,
+            mean_state_pred,
+            var_state_pred
+        )
+    elif kalman_type == "square-root":
+        var_meas = jax.vmap(lambda wm, vsp:
+                            jnp.atleast_2d(jnp.linalg.multi_dot([wm, vsp])))(
+            ode_weight, var_state_pred
+        )
+        random_norm = jax.vmap(jax.random.normal, in_axes=(0, None))(subkeys, (n_bstate,))
+        x_state = jax.vmap(lambda b:
+                           mean_state_pred[b] + var_meas[b].dot(random_norm[b]))(jnp.arange(n_block))
+    else:
+        raise NotImplementedError
+    
     mean_meas = -ode_fun(x_state, t, **params)
     return jnp.zeros(ode_weight.shape), mean_meas, var_meas
 
@@ -81,7 +92,7 @@ def interrogate_rodeo(key, ode_fun, ode_weight, t,
 
     Args:
         key (PRNGKey): Jax PRNG key.
-        ode_fun (function): Higher order ODE function :math:`W X_t = f(X_t, t, \theta)` taking arguments :math:`X` and :math:`t`.
+        ode_fun (Callable): Higher order ODE Callable :math:`W X_t = f(X_t, t, \theta)` taking arguments :math:`X` and :math:`t`.
         ode_weight (ndarray(n_block, n_bmeas, n_bstate)): Weight matrix.
         t (float): Time point.
         mean_state_pred (ndarray(n_block, n_bstate)): Mean estimate for state at time t given observations from times [a...t-1]; denoted by :math:`\mu_{t|t-1}`.

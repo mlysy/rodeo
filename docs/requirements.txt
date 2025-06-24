@@ -6,4 +6,5 @@ matplotlib
 seaborn
 myst_nb
 sphinx_rtd_theme
+sphinxcontrib-bibtex
 jupytext

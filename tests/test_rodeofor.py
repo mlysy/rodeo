@@ -47,7 +47,8 @@ class TestrodeoFor(unittest.TestCase):
             t=self.t,
             theta=self.theta,
             mean_state_pred=self.x0_block,
-            var_state_pred=self.prior_R
+            var_state_pred=self.prior_R,
+            kalman_type="standard"
         )
         # for
         wgt_meas2, mean_meas2, var_meas2 = bfor.interrogate_chkrebtii(

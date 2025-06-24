@@ -64,10 +64,11 @@ class TestrodeoJit(unittest.TestCase):
             t=self.t,
             theta=self.theta,
             mean_state_pred=self.x0_block,
-            var_state_pred=self.prior_R
+            var_state_pred=self.prior_R,
+            kalman_type="standard"
         )
         # with jit
-        rodeo_jit = jax.jit(interrogate_chkrebtii, static_argnums=(1,))
+        rodeo_jit = jax.jit(interrogate_chkrebtii, static_argnums=(1,6))
         wgt_meas2, mean_meas2, var_meas2 = rodeo_jit(
             self.key,
             self.fitz_jax,
@@ -75,7 +76,8 @@ class TestrodeoJit(unittest.TestCase):
             t=self.t,
             theta=self.theta,
             mean_state_pred=self.x0_block,
-            var_state_pred=self.prior_R
+            var_state_pred=self.prior_R,
+            kalman_type="standard"
         )
         # objective function for gradient
         def obj_fun(theta):
@@ -84,7 +86,8 @@ class TestrodeoJit(unittest.TestCase):
                     self.key, self.fitz_jax,
                     ode_weight=self.W_block, t=self.t, theta=theta,
                     mean_state_pred=self.x0_block,
-                    var_state_pred=self.prior_R)[0])
+                    var_state_pred=self.prior_R,
+                    kalman_type="standard")[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)
         # grad with jit

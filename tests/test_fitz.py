@@ -1,9 +1,6 @@
 import unittest
 from scipy.integrate import odeint
-import jax
-import jax.numpy as jnp
-import jax.scipy as jsp
-import jax.random as random
+
 
 from rodeo import solve_sim, solve_mv
 from rodeo.interrogate import interrogate_rodeo

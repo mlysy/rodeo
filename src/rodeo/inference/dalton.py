@@ -13,7 +13,7 @@ The model is
     
     Y_m = g(X_m, \phi_m)
 
-where :math:`g` is a general distribution function. In the case that :math:`g` is Gaussian, use :func:`~dalton.loglikehood` for a better approximation. In other cases, use :func:`~dalton.loglikehood_nn`. We assume that :math:`c_n = 0, Q_n = Q, R_n = R`, and :math:`W_n = W` for all :math:`n`.
+where :math:`g` is a general distribution function. In the case that :math:`g` is Gaussian, use :func:`dalton` for a better approximation. In other cases, use :func:`daltonng`. We assume that :math:`c_n = 0, Q_n = Q, R_n = R`, and :math:`W_n = W` for all :math:`n`.
 
 In the Gaussian case, we assume the observation model is
 
@@ -27,7 +27,8 @@ We assume that the :math:`M \leq N`, so that the observation step size is larger
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from rodeo.kalmantv import *
+from rodeo.kalmantv import standard
+from rodeo.kalmantv import square_root
 from rodeo.inference.fenrir import _forecast_update
 from rodeo.utils import multivariate_normal_logpdf
 from rodeo.solve import _solve_filter as _solve_filter_ode
@@ -40,25 +41,26 @@ def dalton(key, ode_fun, ode_weight, ode_init,
            interrogate,
            prior_weight, prior_var,
            obs_data, obs_times, obs_weight, obs_var,
-           **params):
+           kalman_type="standard", **params):
     r"""
     Compute marginal loglikelihood of DALTON algorithm for Gaussian observations; :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
     Args:
         key (PRNGKey): PRNG key.
-        ode_fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        ode_fun (Callable): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
         ode_weight (ndarray(n_block, n_bmeas, n_bstate)): Weight matrix defining the measure prior; :math:`W`.
         ode_init (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         t_min (float): First time point of the time interval to be evaluated; :math:`a`.
         t_max (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
-        interrogate (function): Function defining the interrogation method.
+        interrogate (Callable): Function defining the interrogation method.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         obs_data (ndarray(n_obs, n_blocks, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_weight (ndarray(n_obs, n_blocks, n_bobs, n_bstate)): Weight matrix in the observation model; :math:`D_{0:M}`.
         obs_var (ndarry(n_obs, n_blocks, n_bobs, n_bobs)): Variance matrix in the observation model; :math:`\Omega_{0:M}`
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     Returns:
@@ -70,6 +72,14 @@ def dalton(key, ode_fun, ode_weight, ode_init,
     # Dimension of observation
     n_bobs = obs_weight.shape[2]
 
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     # insert observations on solver time grid
     sim_times = jnp.linspace(t_min, t_max, n_steps + 1)
     obs_ind = jnp.searchsorted(sim_times, obs_times)
@@ -81,21 +91,27 @@ def dalton(key, ode_fun, ode_weight, ode_init,
     mean_state_init = ode_init
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
-    # split keys
-    key1, key2 = jax.random.split(key)
+    # forecast function without kalman_funs
+    forecast_update = lambda mean_state_pred, var_state_pred,\
+                             x_meas, mean_meas, wgt_meas, var_meas\
+                             : _forecast_update(mean_state_pred, var_state_pred,
+                                                x_meas, mean_meas,
+                                                wgt_meas, var_meas,
+                                                kalman_funs)
 
     # compute p(Z_{1:N}, Y_{0:M})
-    def scan(carry, t):
+    def scan(carry, filter_kwargs):
         mean_state_filt_zy, var_state_filt_zy = carry["state_filt_joint"]
         mean_state_filt_z, var_state_filt_z = carry["state_filt_marg"]
         logdens_zy = carry["logdens_joint"]
         logdens_z = carry["logdens_marg"]
-        key, *subkey = jax.random.split(carry["key"], num=3)
+        t = filter_kwargs["t"]
+        keys = filter_kwargs["key"]
         i = carry["i"]
         ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
         
         # compute joint logpdf
-        mean_state_pred_zy, var_state_pred_zy = jax.vmap(predict)(
+        mean_state_pred_zy, var_state_pred_zy = jax.vmap(kalman_funs.predict)(
                 mean_state_past=mean_state_filt_zy,
                 var_state_past=var_state_filt_zy,
                 mean_state=mean_state,
@@ -104,7 +120,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=keys[0],
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
@@ -120,7 +136,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
             mean_meas_obs = jnp.concatenate([mean_meas, obs_mean], axis=1)
             var_meas_obs = jax.vmap(jsp.linalg.block_diag)(var_meas, obs_var[i])
             x_meas_obs = jnp.concatenate([x_meas, obs_data[i]], axis=1)
-            logp, mean_state_next, var_state_next = jax.vmap(_forecast_update)(
+            logp, mean_state_next, var_state_next = jax.vmap(forecast_update)(
                     mean_state_pred=mean_state_pred_zy,
                     var_state_pred=var_state_pred_zy,
                     x_meas=x_meas_obs,
@@ -132,7 +148,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
 
         # only z is observed
         def z_update():
-            logp, mean_state_next, var_state_next = jax.vmap(_forecast_update)(
+            logp, mean_state_next, var_state_next = jax.vmap(forecast_update)(
                     mean_state_pred=mean_state_pred_zy,
                     var_state_pred=var_state_pred_zy,
                     x_meas=x_meas,
@@ -147,7 +163,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         
 
         # compute marginal logpdf
-        mean_state_pred_z, var_state_pred_z = jax.vmap(predict)(
+        mean_state_pred_z, var_state_pred_z = jax.vmap(kalman_funs.predict)(
                 mean_state_past=mean_state_filt_z,
                 var_state_past=var_state_filt_z,
                 mean_state=mean_state,
@@ -156,7 +172,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=keys[1],
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
@@ -166,7 +182,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         )
         W_meas = ode_weight + wgt_meas
         # kalman forecast and update
-        logp, mean_state_next_z, var_state_next_z = jax.vmap(_forecast_update)(
+        logp, mean_state_next_z, var_state_next_z = jax.vmap(forecast_update)(
                 mean_state_pred=mean_state_pred_z,
                 var_state_pred=var_state_pred_z,
                 x_meas=x_meas,
@@ -181,7 +197,6 @@ def dalton(key, ode_fun, ode_weight, ode_init,
             "state_filt_marg": (mean_state_next_z, var_state_next_z),
             "logdens_joint": logdens_zy,
             "logdens_marg": logdens_z,
-            "key": key,
             "i": i
         }
         return carry, None
@@ -202,10 +217,19 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         "state_filt_marg": (mean_state_init, var_state_init),
         "logdens_joint": logdens_zy,
         "logdens_marg": 0.0,
-        "key": key1,
         "i": i
     }
-    out, _ = jax.lax.scan(scan, scan_init, jnp.arange(n_steps))
+
+    if key is not None:
+        keys = jax.random.split(key, num=(n_steps, 2))
+    else:
+        keys = jnp.zeros((n_steps, 2))
+
+    filter_kwargs = {
+        "t": jnp.arange(n_steps),
+        "key": keys
+    }
+    out, _ = jax.lax.scan(scan, scan_init, filter_kwargs)
     return out["logdens_joint"] - out["logdens_marg"]
 
 
@@ -218,9 +242,9 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
                   interrogate,
                   prior_weight, prior_var,
                   obs_data, obs_times, obs_weight, obs_var,
-                  **params):
+                  kalman_funs, **params):
     r"""
-    Forward pass of the DALTON algorithm with Gaussian observations. Same arguments as :func:`~dalton.dalton`.
+    Forward pass of the DALTON algorithm with Gaussian observations. Same arguments as :func:`dalton`.
 
     Returns:
         (tuple):
@@ -247,14 +271,15 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
     # compute p(X_{1:n} | Z_{1:n}, Y_{0:m})
-    def scan_fun(carry, t):
+    def scan_fun(carry, filter_kwargs):
         mean_state_filt, var_state_filt = carry["state_filt"]
-        key, subkey = jax.random.split(carry["key"])
         i = carry["i"]
+        t = filter_kwargs["t"]
+        key = filter_kwargs["key"]
         ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
         
         # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(predict)(
+        mean_state_pred, var_state_pred = jax.vmap(kalman_funs.predict)(
                 mean_state_past=mean_state_filt,
                 var_state_past=var_state_filt,
                 mean_state=mean_state,
@@ -263,7 +288,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=key,
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
@@ -279,7 +304,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
             mean_meas_obs = jnp.concatenate([mean_meas, obs_mean], axis=1)
             var_meas_obs = jax.vmap(jsp.linalg.block_diag)(var_meas, obs_var[i])
             x_meas_obs = jnp.concatenate([x_meas, obs_data[i]], axis=1)
-            mean_state_next, var_state_next = jax.vmap(update)(
+            mean_state_next, var_state_next = jax.vmap(kalman_funs.update)(
                     mean_state_pred=mean_state_pred,
                     var_state_pred=var_state_pred,
                     x_meas=x_meas_obs,
@@ -291,7 +316,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
 
         # only z is observed
         def z_update():
-            mean_state_next, var_state_next = jax.vmap(update)(
+            mean_state_next, var_state_next = jax.vmap(kalman_funs.update)(
                     mean_state_pred=mean_state_pred,
                     var_state_pred=var_state_pred,
                     x_meas=x_meas,
@@ -305,7 +330,6 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
-            "key": key,
             "i": i
         }
         stack = {
@@ -320,10 +344,19 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
     # scan initial value for computing p(X_{0:n} | Y_{0:m}, Z_{1:n})
     scan_init = {
         "state_filt": (mean_state_init, var_state_init),
-        "key": key,
         "i": i
     }
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, jnp.arange(n_steps))
+    
+    if key is not None:
+        keys = jax.random.split(key, num=n_steps)
+    else:
+        keys = jnp.zeros(n_steps)
+    
+    filter_kwargs = {
+        "t": jnp.arange(n_steps),
+        "key": keys
+    }
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, filter_kwargs)
     # append initial values to front
     scan_out["state_filt"] = (
         jnp.concatenate([mean_state_init[None], scan_out["state_filt"][0]]),
@@ -341,10 +374,10 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
              interrogate,
              prior_weight, prior_var,
              obs_data, obs_times, obs_weight, obs_var,
-             **params):
+             kalman_type="standard", **params):
     r"""
     DALTON algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid Y_{0:M}, Z_{1:N})` assuming Gaussian observations.
-    Same arguments as :func:`~dalton.dalton`.
+    Same arguments as :func:`dalton`.
 
     Returns:
         (tuple):
@@ -353,6 +386,15 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
 
     """
     n_block, n_bstate, _ = prior_weight.shape
+
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+
     # forward pass
     filt_out = _solve_filter(
         key=key,
@@ -362,7 +404,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         prior_weight=prior_weight, prior_var=prior_var,
         obs_data=obs_data, obs_times=obs_times,
         obs_weight=obs_weight, obs_var=obs_var,
-        **params   
+        kalman_funs=kalman_funs, **params   
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -373,7 +415,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         var_state_filt = smooth_kwargs['var_state_filt']
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
-        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+        mean_state_curr, var_state_curr = jax.vmap(kalman_funs.smooth_mv)(
                 mean_state_next=state_next["mean"],
                 var_state_next=state_next["var"],
                 wgt_state=prior_weight,
@@ -381,6 +423,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
                 var_state_filt=var_state_filt,
                 mean_state_pred=mean_state_pred,
                 var_state_pred=var_state_pred,
+                var_State=prior_var
         )
         state_curr = {
             "mean": mean_state_curr,
@@ -400,8 +443,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         'var_state_pred': var_state_pred[2:n_steps+1]
     }
     # Note: initial value x0 is assumed to be known, so no need to smooth it
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
-                               reverse=True)
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs, reverse=True)
 
     # append initial values to front and back
     mean_state_smooth = jnp.concatenate(
@@ -419,10 +461,10 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
               interrogate,
               prior_weight, prior_var,
               obs_data, obs_times, obs_weight, obs_var,
-              **params):
+              kalman_type="standard", **params):
     r"""
     DALTON algorithm to sample from :math:`p(X_{0:N} \mid Y_{0:M}, Z_{1:N})` assuming Gaussian observations.
-    Same arguments as :func:`~dalton.dalton`.
+    Same arguments as :func:`dalton`.
 
     Returns:
         (tuple):
@@ -431,6 +473,15 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
 
     """
     n_block, n_bstate, _ = prior_weight.shape
+    
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     key, *subkeys = jax.random.split(key, num=n_steps+1)
     # forward pass
     filt_out = _solve_filter(
@@ -441,7 +492,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
         prior_weight=prior_weight, prior_var=prior_var,
         obs_data=obs_data, obs_times=obs_times,
         obs_weight=obs_weight, obs_var=obs_var,
-        **params   
+        kalman_funs=kalman_funs, **params   
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -455,13 +506,14 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
 
         key = smooth_kwargs['key']
 
-        mean_state_sim, var_state_sim = jax.vmap(smooth_sim)(
+        mean_state_sim, var_state_sim = jax.vmap(kalman_funs.smooth_sim)(
             x_state_next=x_state_next,
             wgt_state=prior_weight,
             mean_state_filt=mean_state_filt,
             var_state_filt=var_state_filt,
             mean_state_pred=mean_state_pred,
-            var_state_pred=var_state_pred
+            var_state_pred=var_state_pred,
+            var_state=prior_var
         )
         x_state_curr = jax.random.multivariate_normal(key, mean_state_sim, var_state_sim, method='svd')
         return x_state_curr, x_state_curr
@@ -480,8 +532,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
         'key': jnp.array(subkeys[:n_steps-1])
     }
     # Note: initial value x0 is assumed to be known, so no need to smooth it
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs,
-                               reverse=True)
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs, reverse=True)
 
     # append initial values to front and back
     x_state_smooth = jnp.concatenate(
@@ -497,9 +548,9 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
                      interrogate,
                      prior_weight, prior_var,
                      obs_data, obs_times, obs_loglik_i,
-                     **params):
+                     kalman_funs, **params):
     r"""
-    Forward pass of the DALTON algorithm using non-Gaussian observations. Same arguments as :func:`~dalton.daltonng`.
+    Forward pass of the DALTON algorithm using non-Gaussian observations. Same arguments as :func:`daltonng`.
 
     Returns:
         (tuple):
@@ -526,25 +577,24 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
     var_state_init = jnp.zeros((n_block, n_bstate, n_bstate))
 
     # compute p(X_{1:n} | Z_{1:n}, \hat Y_{0:m})
-    def scan_fun(carry, t):
+    def scan_fun(carry, filter_kwargs):
         mean_state_filt, var_state_filt = carry["state_filt"]
-        key, subkey = jax.random.split(carry["key"])
         i = carry["i"]
+        t = filter_kwargs["t"]
+        key = filter_kwargs["key"]
         ode_time = t_min + (t_max-t_min)*(t+1)/n_steps
         
         # kalman predict
-        mean_state_pred, var_state_pred = jax.vmap(
-            lambda b: predict(
-                mean_state_past=mean_state_filt[b],
-                var_state_past=var_state_filt[b],
-                mean_state=mean_state[b],
-                wgt_state=prior_weight[b],
-                var_state=prior_var[b]
-            )
-        )(jnp.arange(n_block))
+        mean_state_pred, var_state_pred = jax.vmap(kalman_funs.predict)(
+            mean_state_past=mean_state_filt,
+            var_state_past=var_state_filt,
+            mean_state=mean_state,
+            wgt_state=prior_weight,
+            var_state=prior_var
+        )
         # compute meas parameters
         wgt_meas, mean_meas, var_meas = interrogate(
-            key=subkey,
+            key=key,
             ode_fun=ode_fun,
             ode_weight=ode_weight,
             t=ode_time,
@@ -578,38 +628,33 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
             var_meas_obs = jax.vmap(lambda b: jsp.linalg.block_diag(var_meas[b], obs_var[b]))(jnp.arange(n_block))
             x_meas_obs = jnp.concatenate([x_meas, obs_hat], axis=1)
             # kalman update
-            mean_state_next, var_state_next = jax.vmap(
-                lambda b: update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=x_meas_obs[b],
-                    mean_meas=mean_meas_obs[b],
-                    wgt_meas=wgt_meas_obs[b],
-                    var_meas=var_meas_obs[b]
-                )
-            )(jnp.arange(n_block))
+            mean_state_next, var_state_next = jax.vmap(kalman_funs.update)(
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+                x_meas=x_meas_obs,
+                mean_meas=mean_meas_obs,
+                wgt_meas=wgt_meas_obs,
+                var_meas=var_meas_obs
+            )
             return mean_state_next, var_state_next, i+1
         
         # only z is observed
         def z_update():
             # kalman update
-            mean_state_next, var_state_next = jax.vmap(
-                lambda b: update(
-                    mean_state_pred=mean_state_pred[b],
-                    var_state_pred=var_state_pred[b],
-                    x_meas=x_meas[b],
-                    mean_meas=mean_meas[b],
-                    wgt_meas=W_meas[b],
-                    var_meas=var_meas[b]
-                )
-            )(jnp.arange(n_block))
+            mean_state_next, var_state_next = jax.vmap(kalman_funs.update)(
+                mean_state_pred=mean_state_pred,
+                var_state_pred=var_state_pred,
+                x_meas=x_meas,
+                mean_meas=mean_meas,
+                wgt_meas=W_meas,
+                var_meas=var_meas
+            )
             return mean_state_next, var_state_next, i
 
         mean_state_next, var_state_next, i = jax.lax.cond(t+1 == obs_ind[i], zy_update, z_update)
         # output
         carry = {
             "state_filt": (mean_state_next, var_state_next),
-            "key" : key,
             "i": i
         }
         stack = {
@@ -624,10 +669,19 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
     # scan initial value for computing p(X_{0:n} | \hat Y_{0:m}, Z_{1:n})
     scan_init = {
         "state_filt": (mean_state_init, var_state_init),
-        "key": key,
         "i": i
     }
-    _, scan_out = jax.lax.scan(scan_fun, scan_init, jnp.arange(n_steps))
+    
+    if key is not None:
+        keys = jax.random.split(key, num=n_steps)
+    else:
+        keys = jnp.zeros(n_steps)
+    
+    filter_kwargs = {
+        "t": jnp.arange(n_steps),
+        "key": keys
+    }
+    _, scan_out = jax.lax.scan(scan_fun, scan_init, filter_kwargs)
     # append initial values to front
     scan_out["state_filt"] = (
         jnp.concatenate([mean_state_init[None], scan_out["state_filt"][0]]),
@@ -642,7 +696,7 @@ def _solve_filter_nn(key, ode_fun, ode_weight, ode_init,
 
 def _logx_yhat(mean_state_filt, var_state_filt,
                mean_state_pred, var_state_pred,
-               prior_weight):
+               prior_weight, prior_var, kalman_funs):
     r"""
     Compute the loglikelihood of :math:`p(X_{0:N} \mid \hat Y_{0:M}, Z_{1:N})`.
     
@@ -652,6 +706,8 @@ def _logx_yhat(mean_state_filt, var_state_filt,
         mean_state_filt (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
         var_state_filt (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
+        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
 
     Returns:
         (tuple):
@@ -669,31 +725,27 @@ def _logx_yhat(mean_state_filt, var_state_filt,
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
         logx_yhat = state_next["logx_yhat"]
-        mean_state_curr, var_state_curr = jax.vmap(
-            lambda b: smooth_mv(
-                mean_state_next=state_next["mean"][b],
-                var_state_next=state_next["var"][b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                wgt_state=prior_weight[b]
-            )
-        )(jnp.arange(n_block))
-        mean_state_sim, var_state_sim = jax.vmap(
-            lambda b: smooth_sim(
-                x_state_next=state_next["mean"][b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                wgt_state=prior_weight[b]
-            )
-        )(jnp.arange(n_block))
+        mean_state_curr, var_state_curr = jax.vmap(kalman_funs.smooth_mv)(
+            mean_state_next=state_next["mean"],
+            var_state_next=state_next["var"],
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
+            wgt_state=prior_weight,
+            var_state=prior_var
+        )
+        mean_state_sim, var_state_sim = jax.vmap(kalman_funs.smooth_sim)(
+            x_state_next=state_next["mean"],
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
+            wgt_state=prior_weight,
+            var_state=prior_var
+        )
         logx_yhat += jnp.sum(
-            jax.vmap(lambda b:
-                     multivariate_normal_logpdf(mean_state_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b])
-                    )(jnp.arange(n_block))
+            jax.vmap(multivariate_normal_logpdf)(mean_state_curr, mean=mean_state_sim, cov=var_state_sim)
         )
         carry = {
             "mean": mean_state_curr,
@@ -703,9 +755,8 @@ def _logx_yhat(mean_state_filt, var_state_filt,
         return carry, carry
     # compute log(mu_{N|N}) at the last filtering step
     logx_yhatN = jnp.sum(
-        jax.vmap(lambda b:
-                 multivariate_normal_logpdf(mean_state_filt[n_steps][b], mean=mean_state_filt[n_steps][b], cov=var_state_filt[n_steps][b])
-                )(jnp.arange(n_block)))
+        jax.vmap(multivariate_normal_logpdf)(mean_state_filt[n_steps], mean=mean_state_filt[n_steps], cov=var_state_filt[n_steps])
+    )
     # initialize
     scan_init = {
         "mean": mean_state_filt[n_steps],
@@ -732,7 +783,7 @@ def _logx_yhat(mean_state_filt, var_state_filt,
 def _logx_z(uncond_mean, 
             mean_state_filt, var_state_filt,
             mean_state_pred, var_state_pred,
-            prior_weight):
+            prior_weight, prior_var, kalman_funs):
     r"""
     Compute the loglikelihood of :math:`p(X_{0:N} \mid Z_{1:N})`.
     
@@ -743,6 +794,8 @@ def _logx_z(uncond_mean,
         mean_state_filt (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
         var_state_filt (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
+        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
     
     Return:
         (float): Loglikelihood of :math:`p(X_{0:N} \mid Z_{1:N})`.
@@ -760,35 +813,23 @@ def _logx_z(uncond_mean,
         var_state_pred = smooth_kwargs['var_state_pred']
         uncond_next = smooth_kwargs['uncond_next']
         uncond_curr = smooth_kwargs['uncond_curr']
-        # logx_z = state_next["logx_z"]
-        mean_state_sim, var_state_sim = jax.vmap(
-            lambda b: smooth_sim(
-                x_state_next=uncond_next[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-                wgt_state=prior_weight[b]
-            )
-        )(jnp.arange(n_block))
-        logx_z += jnp.sum(
-            jax.vmap(lambda b:
-                     multivariate_normal_logpdf(uncond_curr[b], mean=mean_state_sim[b], cov=var_state_sim[b])
-                    )(jnp.arange(n_block))
+        mean_state_sim, var_state_sim = jax.vmap(kalman_funs.smooth_sim)(
+            x_state_next=uncond_next,
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
+            wgt_state=prior_weight,
+            var_state=prior_var
         )
-        # state_curr = {
-        #     "logx_z":  logx_z
-        # }
+        logx_z += jnp.sum(
+            jax.vmap(multivariate_normal_logpdf)(uncond_curr, mean=mean_state_sim, cov=var_state_sim)
+        )
         return logx_z, logx_z
     # compute log(mu_{N|N}) at the last filtering step
     logx_zN = jnp.sum(
-        jax.vmap(lambda b:
-                 multivariate_normal_logpdf(uncond_mean[n_steps][b], mean=mean_state_filt[n_steps][b], cov=var_state_filt[n_steps][b])
-                )(jnp.arange(n_block)))
-    # initialize
-    # scan_init = {
-    #     "logx_z": logx_z0,
-    # }
+        jax.vmap(multivariate_normal_logpdf)(uncond_mean[n_steps], mean=mean_state_filt[n_steps], cov=var_state_filt[n_steps])
+    )
     # scan arguments
     scan_kwargs = {
         'mean_state_filt': mean_state_filt[1:n_steps],
@@ -808,24 +849,25 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
              interrogate,
              prior_weight, prior_var,
              obs_data, obs_times, obs_loglik_i,
-             **params):
+             kalman_type="standard", **params):
     r"""
     Compute marginal loglikelihood of DALTON algorithm for non-Gaussian observations; :math:`p(\hat Y_{0:M} \mid Z_{1:N})`.
 
     Args:
         key (PRNGKey): PRNG key.
-        ode_fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        ode_fun (Callable): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
         ode_weight (ndarray(n_block, n_bmeas, n_bstate)): Weight matrix defining the measure prior; :math:`W`.
         ode_init (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         t_min (float): First time point of the time interval to be evaluated; :math:`a`.
         t_max (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
-        interrogate (function): Function defining the interrogation method.
+        interrogate (Callable): Function defining the interrogation method.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         obs_data (ndarray(n_obs, n_blocks, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
-        obs_loglik_i (function): Loglikelihood function for each observation.
+        obs_loglik_i (Callable): Loglikelihood function for each observation.
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     
@@ -834,6 +876,14 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
 
     """
     n_obs = obs_data.shape[0]
+
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
 
     # forward pass
     filt_out = _solve_filter_nn(
@@ -844,7 +894,7 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
         prior_weight=prior_weight, prior_var=prior_var,
         obs_data=obs_data, obs_times=obs_times,
         obs_loglik_i=obs_loglik_i,
-        **params   
+        kalman_funs=kalman_funs, **params   
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -855,7 +905,9 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
         var_state_filt=var_state_filt,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
-        prior_weight=prior_weight
+        prior_weight=prior_weight,
+        prior_var=prior_var,
+        kalman_funs=kalman_funs
     )
 
     # logp(Y_{0:M} | X_{0:M})
@@ -875,7 +927,7 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
         t_min=t_min, t_max=t_max, n_steps=n_steps, 
         interrogate=interrogate,
         prior_weight=prior_weight, prior_var=prior_var,
-        **params   
+        kalman_funs=kalman_funs, **params   
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -886,7 +938,9 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
         var_state_filt=var_state_filt,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
-        prior_weight=prior_weight
+        prior_weight=prior_weight,
+        prior_var=prior_var,
+        kalman_funs=kalman_funs
     )
 
     return logy_x + logx_z - logx_yhat
@@ -900,10 +954,10 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
                 interrogate,
                 prior_weight, prior_var,
                 obs_data, obs_times, obs_loglik_i,
-                **params):
+                kalman_type="standard", **params):
     r"""
     DALTON algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid \hat Y_{0:M}, Z_{1:N})` assuming non-Gaussian observations. 
-    Same arguments as :func:`~dalton.daltonng`.
+    Same arguments as :func:`daltonng`.
 
     Returns:
         (tuple):
@@ -912,6 +966,15 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
 
     """
     n_block, n_bstate, _ = prior_weight.shape
+    
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     # forward pass
     filt_out = _solve_filter_nn(
         key=key,
@@ -921,7 +984,7 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
         prior_weight=prior_weight, prior_var=prior_var,
         obs_data=obs_data, obs_times=obs_times,
         obs_loglik_i=obs_loglik_i,
-        **params   
+        kalman_funs=kalman_funs, **params   
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -931,17 +994,16 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
         var_state_filt = smooth_kwargs['var_state_filt']
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
-        mean_state_curr, var_state_curr = jax.vmap(lambda b:
-            smooth_mv(
-                mean_state_next=state_next["mean"][b],
-                var_state_next=state_next["var"][b],
-                wgt_state=prior_weight[b],
-                mean_state_filt=mean_state_filt[b],
-                var_state_filt=var_state_filt[b],
-                mean_state_pred=mean_state_pred[b],
-                var_state_pred=var_state_pred[b],
-            )
-        )(jnp.arange(n_block))
+        mean_state_curr, var_state_curr = jax.vmap(kalman_funs.smooth_mv)(
+            mean_state_next=state_next["mean"],
+            var_state_next=state_next["var"],
+            wgt_state=prior_weight,
+            mean_state_filt=mean_state_filt,
+            var_state_filt=var_state_filt,
+            mean_state_pred=mean_state_pred,
+            var_state_pred=var_state_pred,
+            var_state=prior_var
+        )
         state_curr = {
             "mean": mean_state_curr,
             "var": var_state_curr

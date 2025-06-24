@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.14.7
+    jupytext_version: 1.16.6
 kernelspec:
   display_name: Python 3 (ipykernel)
   language: python
@@ -38,6 +38,7 @@ import rodeo
 import rodeo.prior
 import rodeo.interrogate
 
+from functools import partial
 from jax import config
 config.update("jax_enable_x64", True)
 ```
@@ -71,12 +72,12 @@ t_max = 10.
 
 n_vars = 1                        # number of variables in the ODE
 n_deriv = 4  # max number of derivatives
-sigma = jnp.array([.1] * n_vars)  # IBM process scale factor
+sigma = jnp.array([.001] * n_vars)  # IBM process scale factor
 
 
 # ---  Evaluate the ODE solution --------------------------------------
 
-n_steps = 100                  # number of evaluations steps
+n_steps = 400                  # number of evaluations steps
 dt = (t_max - t_min) / n_steps  # step size
 
 # generate the Kalman parameters corresponding to the prior
@@ -87,7 +88,6 @@ prior_Q, prior_R = rodeo.prior.ibm_init(
 )
 
 key = jax.random.PRNGKey(0)  # JAX pseudo-RNG key
-
 
 # deterministic ODE solver: posterior mean
 Xt, _ = rodeo.solve_mv(
@@ -103,6 +103,46 @@ Xt, _ = rodeo.solve_mv(
     interrogate=rodeo.interrogate.interrogate_kramer,
     prior_weight=prior_Q,
     prior_var=prior_R
+)
+```
+
+We can also solve this using the square-root filter. In most setups, this is as easy as setting the argument `kalman_type` to be `square-root`. The only thing to be careful is with `interrogate_chkrebtii` which uses a nonzero variance. In that case, you will need to `partial` out the `kalman_type` in the `interrogate_chkrebtii` as follows. Also, the IBM prior we provide are on the variance scale, so you will need to take the cholesky of the `prior_R`.
+
+```{code-cell} ipython3
+# deterministic ODE solver with square-root filter
+prior_R = jax.vmap(jnp.linalg.cholesky)(prior_R) # square-root filter for stability
+Xt2, _ = rodeo.solve_mv(
+    key=key,
+    # define ode
+    ode_fun=higher_fun,
+    ode_weight=W,
+    ode_init=x0,
+    t_min=t_min,
+    t_max=t_max,
+    # solver parameters
+    n_steps=n_steps,
+    interrogate=rodeo.interrogate.interrogate_kramer,
+    prior_weight=prior_Q,
+    prior_var=prior_R,
+    kalman_type="square-root"
+)
+
+# using chkrebtii interrogate
+interrogate_chkrebtii = partial(rodeo.interrogate.interrogate_chkrebtii, kalman_type="square-root")
+Xt3, _ = rodeo.solve_mv(
+    key=key,
+    # define ode
+    ode_fun=higher_fun,
+    ode_weight=W,
+    ode_init=x0,
+    t_min=t_min,
+    t_max=t_max,
+    # solver parameters
+    n_steps=n_steps,
+    interrogate=interrogate_chkrebtii,
+    prior_weight=prior_Q,
+    prior_var=prior_R,
+    kalman_type="square-root"
 )
 ```
 
@@ -126,15 +166,18 @@ exact_x1 = np.zeros(n_steps+1)
 for t in range(n_steps+1):
     exact_x[t] = ode_exact_x(tseq[t])
     exact_x1[t] = ode_exact_x1(tseq[t])
+exact = [exact_x, exact_x1]
 
 # Plot them
+titles = ["$x^{(0)}_t$", "$x^{(1)}_t$"]
 fig, axs = plt.subplots(1, 2, figsize=(20, 5))
-axs[0].plot(tseq, Xt[:,0,0], label = 'rodeo')
-axs[0].plot(tseq, exact_x, label = 'Exact')
-axs[0].set_title("$x^{(0)}_t$")
+for i in range(2):
+    axs[i].plot(tseq, Xt[:,0,i], label = 'standard')
+    axs[i].plot(tseq, Xt2[:,0,i], label= 'square-root')
+    axs[i].plot(tseq, Xt3[:,0,i], label= 'chkrebtii')
+    axs[i].plot(tseq, exact[i], label = 'exact')
+    axs[i].set_title(titles[i])
+    
 axs[0].legend(loc='upper left')
-axs[1].plot(tseq, Xt[:,0,1], label = 'rodeo')
-axs[1].plot(tseq, exact_x1, label = 'Exact')
-axs[1].set_title("$x^{(1)}_t$")
 plt.show()
 ```

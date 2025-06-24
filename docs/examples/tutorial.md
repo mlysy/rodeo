@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.14.7
+    jupytext_version: 1.16.6
 kernelspec:
   display_name: Python 3 (ipykernel)
   language: python
@@ -40,6 +40,7 @@ from scipy.integrate import odeint
 from rodeo.prior import ibm_init
 import rodeo.interrogate
 from rodeo import solve_mv, solve_sim
+from rodeo.utils import first_order_pad
 from jax import config
 config.update("jax_enable_x64", True)
 ```
@@ -50,7 +51,7 @@ To illustrate the set-up, let's consider the following ODE example (**FitzHugh-N
 
 \begin{align*}
 \frac{dV}{dt} &= c(V - \frac{V^3}{3} + R), \\
-\frac{dR}{dt} &= -\frac{(V - a - bR)}{c}, \\
+\frac{dR}{dt} &= -\frac{(V - a + bR)}{c}, \\
 X(0) &= (V(0), R(0)) = (-1,1).
 \end{align*}
 
@@ -75,7 +76,7 @@ To initialize, we simply set $\boldsymbol{X(0)} = (V^{(0)}(0), V^{(1)}(0), 0, R^
 The Python code to implement all this is as follows.
 
 ```{code-cell} ipython3
-def ode_fun_jax(X_t, t, **params):
+def fitz_fun(X_t, t, **params):
     "FitzHugh-Nagumo ODE."
     a, b, c = params["theta"]
     V, R = X_t[:,0]
@@ -84,8 +85,8 @@ def ode_fun_jax(X_t, t, **params):
 
 
 # problem setup and intialization
-n_obs = 2  # Total observations
-n_deriv_prior = 3 # q
+n_vars = 2  # number of variables
+n_deriv = 3 # q
 
 # it is assumed that the solution is sought on the interval [tmin, tmax].
 n_steps = 400
@@ -96,19 +97,19 @@ theta = jnp.array([0.2, 0.2, 3])
 # The rest of the parameters can be tuned according to ODE
 # For this problem, we will use
 sigma = .01
-sigma = jnp.array([sigma]*n_obs)
+sigma = jnp.array([sigma]*n_vars)
 
 # Initial W for jax block
-W_mat = np.zeros((n_obs, 1, n_deriv_prior))
-W_mat[:, :, 1] = 1
-W = jnp.array(W_mat)
+W, fitz_init_pad = first_order_pad(fitz_fun, n_vars, n_deriv)
 
 # Initial x0 for jax block
-X0 = jnp.array([[-1., 1., 0.], [1., 1/3, 0.]])
+theta = jnp.array([0.2, 0.2, 3])  # ODE parameters
+x0 = jnp.array([-1.0, 1.0])  # initial value for the ODE-IVP
+X0 = fitz_init_pad(x0, 0, theta=theta)  # initial value in rodeo format
 
 # Get parameters needed to run the solver
 dt = (t_max-t_min)/n_steps
-prior_weight, prior_var = ibm_init(dt, n_deriv_prior, sigma)
+prior_weight, prior_var = ibm_init(dt, n_deriv, sigma)
 ```
 
 One of the key steps in the probabilisitc solver is the interrogation step. We offer several choices for this task: `interrogate_schober` by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7), `interrogate_chkrebtii` by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259), `interrogate_rodeo` which is a mix of the two, and `interrogate_kramer` by [Kramer et al (2021)](https://doi.org/10.48550/arXiv.2110.11812). 
@@ -129,12 +130,12 @@ key = jax.random.PRNGKey(0)
 sim_jit = jax.jit(solve_sim, static_argnums=(1, 6, 7))
 mv_jit = jax.jit(solve_mv, static_argnums=(1, 6, 7))
 
-xt = sim_jit(key=key, ode_fun=ode_fun_jax,
+xt = sim_jit(key=key, ode_fun=fitz_fun,
              ode_weight=W, ode_init=X0, theta=theta,
              t_min=t_min, t_max=t_max, n_steps=n_steps,
              interrogate=rodeo.interrogate.interrogate_kramer,
              prior_weight=prior_weight, prior_var=prior_var)
-mut, _ = mv_jit(key=key, ode_fun=ode_fun_jax,
+mut, _ = mv_jit(key=key, ode_fun=fitz_fun,
              ode_weight=W, ode_init=X0, theta=theta,
              t_min=t_min, t_max=t_max, n_steps=n_steps,
              interrogate=rodeo.interrogate.interrogate_kramer,

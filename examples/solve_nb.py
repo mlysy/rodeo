@@ -4,7 +4,7 @@ Non-block version of rodeo.
 
 import jax
 import jax.numpy as jnp
-from rodeo.kalmantv import *
+from rodeo.kalmantv.standard import *
 
 
 def interrogate_rodeo(key, ode_fun, ode_weight, t,

@@ -9,7 +9,7 @@ It has the analytical formulas for the parameters
 
 .. math::
 
-    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-1)!}, \qquad R_{ij} = \sigma^2 \frac{(\Delta t)^{2q-1-i-j}}{(2q-1-i-j)(q-i)!(q-j)!}.
+    Q_{ij} = 𝟙_{i\leq j}\frac{(\Delta t)^{j-i}}{(j-i)!}, \qquad R_{ij} = \sigma^2 \frac{(\Delta t)^{2q-1-i-j}}{(2q-1-i-j)(q-i)!(q-j)!}.
 
 """
 
@@ -74,8 +74,8 @@ def ibm_init(dt, n_deriv, sigma):
 
     Returns:
         (tuple):
-        - **wgt_state** (ndarray(n_block, p, p)) Weight matrix defining the solution prior; :math:`Q`.
-        - **var_state** (ndarray(n_block, p, p)) Variance matrix defining the solution prior; :math:`R`.
+        - **wgt_state** (ndarray(n_block, p, p)): Weight matrix defining the solution prior; :math:`Q`.
+        - **var_state** (ndarray(n_block, p, p)): Variance matrix defining the solution prior; :math:`R`.
 
     """
     n_block = len(sigma)

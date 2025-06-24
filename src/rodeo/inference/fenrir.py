@@ -29,8 +29,8 @@ with the reverse pass model to condition on data. Here :math:`\epsilon_n, \eta_m
 """
 import jax
 import jax.numpy as jnp
-import jax.scipy as jsp
-from rodeo.kalmantv import *
+from rodeo.kalmantv import standard
+from rodeo.kalmantv import square_root
 from rodeo.solve import _solve_filter
 from rodeo.utils import multivariate_normal_logpdf
 
@@ -39,7 +39,8 @@ from rodeo.utils import multivariate_normal_logpdf
 
 def _forecast_update(mean_state_pred, var_state_pred,
                      x_meas, mean_meas,
-                     wgt_meas, var_meas):
+                     wgt_meas, var_meas,
+                     kalman_funs):
     r"""
     Perform one update step of the Kalman filter and forecast.
 
@@ -50,6 +51,7 @@ def _forecast_update(mean_state_pred, var_state_pred,
         mean_meas (ndarray(n_block, n_bmeas)): Transition offsets defining the measure prior.
         wgt_meas (ndarray(n_block, n_bmeas, n_bstate)): Transition matrix defining the measure prior.
         var_meas (ndarray(n_block, n_bmeas, n_bmeas)): Variance matrix defining the measure prior.
+        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
 
     Returns:
         (tuple):
@@ -58,7 +60,7 @@ def _forecast_update(mean_state_pred, var_state_pred,
         - **var_state_filt** (ndarray(n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
     """
     # kalman forecast
-    mean_state_fore, var_state_fore = forecast(
+    mean_state_fore, var_state_fore = kalman_funs.forecast(
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
         mean_meas=mean_meas,
@@ -68,7 +70,7 @@ def _forecast_update(mean_state_pred, var_state_pred,
     logdens = multivariate_normal_logpdf(
         x_meas, mean=mean_state_fore, cov=var_state_fore)
     # kalman update
-    mean_state_filt, var_state_filt = update(
+    mean_state_filt, var_state_filt = kalman_funs.update(
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
         x_meas=x_meas,
@@ -83,10 +85,11 @@ def _forecast_update(mean_state_pred, var_state_pred,
 
 def _backward(mean_state_filt, var_state_filt,
               mean_state_pred, var_state_pred,
-              prior_weight,
+              prior_weight, prior_var,
               t_min, t_max, n_steps,
               obs_data, obs_times,
-              obs_weight, obs_var):
+              obs_weight, obs_var,
+              kalman_funs):
     r"""
     Compute the backward Markov chain parameters and forward pass but backwards in time.
 
@@ -96,6 +99,7 @@ def _backward(mean_state_filt, var_state_filt,
         mean_state_filt (ndarray(n_steps+1, n_block, n_bstate)): Mean estimate for state at time n given observations from times [0...n]; denoted by :math:`\mu_{n|n}`.
         var_state_filt (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Covariance of estimate for state at time n given observations from times [0...n]; denoted by :math:`\Sigma_{n|n}`.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
+        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         t_min (float): First time point of the time interval to be evaluated; :math:`t_0`.
         t_max (float): Last time point of the time interval to be evaluated; :math:`t_N`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
@@ -103,6 +107,7 @@ def _backward(mean_state_filt, var_state_filt,
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_weight (ndarray(n_obs, n_blocks, n_bobs, n_bstate)): Weight matrix in the observation model; :math:`D_{0:M}`.
         obs_var (ndarry(n_obs, n_blocks, n_bobs, n_bobs)): Variance matrix in the observation model; :math:`\Omega_{0:M}`
+        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
 
     Returns:
         (float) : The logdensity of :math:`p(y_{0:M} \mid Z_{1:N})`.
@@ -115,6 +120,13 @@ def _backward(mean_state_filt, var_state_filt,
     obs_ind = jnp.searchsorted(sim_times, obs_times)
     # offset of obs is assumed to be 0
     obs_mean = jnp.zeros((n_block, n_bobs))
+    # forecast function without kalman_funs
+    forecast_update = lambda mean_state_pred, var_state_pred,\
+                             x_meas, mean_meas, wgt_meas, var_meas\
+                             : _forecast_update(mean_state_pred, var_state_pred,
+                                                x_meas, mean_meas,
+                                                wgt_meas, var_meas,
+                                                kalman_funs)
 
     def scan_fun(carry, forward_states):
         # Kalman filter backwards in time
@@ -126,17 +138,17 @@ def _backward(mean_state_filt, var_state_filt,
         logdens = carry["logdens"]
         i = carry["i"]
         t = forward_states["t"] # t_n
-        ode_time = t_min + (t_max-t_min)*t/n_steps
         # get Markov params
-        wgt_state_back, mean_state_back, var_state_back = jax.vmap(smooth_cond)(
+        wgt_state_back, mean_state_back, var_state_back = jax.vmap(kalman_funs.smooth_cond)(
                 mean_state_filt=mean_state_filt,
                 var_state_filt=var_state_filt,
                 mean_state_pred=mean_state_pred,
                 var_state_pred=var_state_pred,
-                wgt_state=prior_weight
+                wgt_state=prior_weight,
+                var_state=prior_var
         )
         # kalman predict
-        bmean_state_pred, bvar_state_pred = jax.vmap(predict)(
+        bmean_state_pred, bvar_state_pred = jax.vmap(kalman_funs.predict)(
                 mean_state_past=bmean_state_filt,
                 var_state_past=bvar_state_filt,
                 mean_state=mean_state_back,
@@ -148,10 +160,11 @@ def _backward(mean_state_filt, var_state_filt,
         def _no_obs():
             return bmean_state_pred, bvar_state_pred, 0.0, i
 
+        
         # at time point of observation
         def _obs():
             # kalman forecast and update
-            logp, bmean_state_next, bvar_state_next = jax.vmap(_forecast_update)(
+            logp, bmean_state_next, bvar_state_next = jax.vmap(forecast_update)(
                     mean_state_pred=bmean_state_pred,
                     var_state_pred=bvar_state_pred,
                     x_meas=obs_data[i],
@@ -174,7 +187,8 @@ def _backward(mean_state_filt, var_state_filt,
         stack = {
             "state_pred": (bmean_state_pred, bvar_state_pred),
             "state_filt": (bmean_state_filt, bvar_state_filt),
-            "wgt_state": wgt_state_back
+            "wgt_state": wgt_state_back,
+            "var_state": var_state_back 
         }
         return carry, stack
 
@@ -191,7 +205,7 @@ def _backward(mean_state_filt, var_state_filt,
     # observation
     def _obs():
         # kalman forecast and update
-        logp, bmean_state_next, bvar_state_next = jax.vmap(_forecast_update)(
+        logp, bmean_state_next, bvar_state_next = jax.vmap(forecast_update)(
                 mean_state_pred=mean_state_term,
                 var_state_pred=var_state_term,
                 x_meas=obs_data[i],
@@ -239,7 +253,8 @@ def _backward(mean_state_filt, var_state_filt,
     scan_out2 = {
         "state_pred": (mean_state_pred, var_state_pred),
         "state_filt": (mean_state_filt, var_state_filt),
-        "wgt_state": scan_out2["wgt_state"]
+        "wgt_state": scan_out2["wgt_state"],
+        "var_state": scan_out2["var_state"]
     }
     return scan_out["logdens"], scan_out2
 
@@ -248,31 +263,39 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
            interrogate,
            prior_weight, prior_var,
            obs_data, obs_times, obs_weight, obs_var,
-           **params):
+           kalman_type="standard", **params):
     r"""
     Fenrir algorithm to compute the approximate loglikelihood of :math:`p(Y_{0:M} \mid Z_{1:N})`.
 
     Args:
         key (PRNGKey): PRNG key.
-        ode_fun (function): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
+        ode_fun (Callable): Higher order ODE function :math:`W X_t = F(X_t, t)` taking arguments :math:`X` and :math:`t`.
         ode_weight (ndarray(n_block, n_bmeas, n_bstate)): Weight matrix defining the measure prior; :math:`W`.
         ode_init (ndarray(n_block, n_bstate)): Initial value of the state variable :math:`X_t` at time :math:`t = a`.
         t_min (float): First time point of the time interval to be evaluated; :math:`a`.
         t_max (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
-        interrogate (function): Function defining the interrogation method.
+        interrogate (Callable): Function defining the interrogation method.
         prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
         prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
         obs_data (ndarray(n_obs, n_blocks, n_bobs)): Observed data; :math:`y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_weight (ndarray(n_obs, n_blocks, n_bobs, n_bstate)): Weight matrix in the observation model; :math:`D_{0:M}`.
         obs_var (ndarry(n_obs, n_blocks, n_bobs, n_bobs)): Variance matrix in the observation model; :math:`\Omega_{0:M}`
+        kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         params (kwargs): Optional model parameters.
 
     Returns:
         (float) : The loglikelihood of :math:`p(y_{0:M} \mid Z_{1:N})`.
 
     """
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
 
     # forward pass
     filt_out = _solve_filter(
@@ -281,7 +304,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         interrogate=interrogate,
         prior_weight=prior_weight, prior_var=prior_var,
-        **params
+        kalman_funs=kalman_funs, **params
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -293,9 +316,11 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
         prior_weight=prior_weight,
+        prior_var=prior_var,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         obs_data=obs_data, obs_times=obs_times,
-        obs_weight=obs_weight, obs_var=obs_var
+        obs_weight=obs_weight, obs_var=obs_var,
+        kalman_funs=kalman_funs
     )
 
     return logdens
@@ -303,13 +328,14 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
 # --- ODE solver --------------------------------------------------------------
 
 
-def _smooth_mv(state_par):
+def _smooth_mv(state_par, kalman_funs):
     r"""
     Smoothing pass of the Fenrir algorithm used to compute solution posterior.
 
     Args:
-        wgt_state (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`A_{0:N}`.
-        state_par (dict): Dictionary containing the mean and variance matrices of the predicted and updated steps of the Kalman filter.
+        state_par (dict): Dictionary containing the weight, mean and variance matrices of the predicted and updated steps of the Kalman filter.
+        kalman_funs (object): An object that contains the Kalman filtering functions: predict, update and smooth.
+
 
     Returns:
         (tuple):
@@ -320,6 +346,7 @@ def _smooth_mv(state_par):
     mean_state_pred, var_state_pred = state_par["state_pred"]
     mean_state_filt, var_state_filt = state_par["state_filt"]
     wgt_state = state_par["wgt_state"]
+    var_state = state_par["var_state"]
     n_tot = mean_state_pred.shape[0]
     # smooth pass
     # lax.scan setup
@@ -330,7 +357,8 @@ def _smooth_mv(state_par):
         mean_state_pred = smooth_kwargs['mean_state_pred']
         var_state_pred = smooth_kwargs['var_state_pred']
         wgt_state = smooth_kwargs['wgt_state']
-        mean_state_curr, var_state_curr = jax.vmap(smooth_mv)(
+        var_state = smooth_kwargs['var_state']
+        mean_state_curr, var_state_curr = jax.vmap(kalman_funs.smooth_mv)(
                 mean_state_next=state_next["mean"],
                 var_state_next=state_next["var"],
                 wgt_state=wgt_state,
@@ -338,6 +366,7 @@ def _smooth_mv(state_par):
                 var_state_filt=var_state_filt,
                 mean_state_pred=mean_state_pred,
                 var_state_pred=var_state_pred,
+                var_state=var_state
         )
         state_curr = {
             "mean": mean_state_curr,
@@ -355,7 +384,8 @@ def _smooth_mv(state_par):
         'var_state_filt': var_state_filt[2:],
         'mean_state_pred': mean_state_pred[1:n_tot-1],
         'var_state_pred': var_state_pred[1:n_tot-1],
-        'wgt_state': wgt_state[1:n_tot]
+        'wgt_state': wgt_state[1:n_tot],
+        'var_state': var_state[1:n_tot]
     }
     # Note: initial value x0 is assumed to be known, so no need to smooth it
     _, scan_out = jax.lax.scan(scan_fun, scan_init, scan_kwargs)
@@ -375,9 +405,9 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
              interrogate,
              prior_weight, prior_var,
              obs_data, obs_times, obs_weight, obs_var,
-             **params):
+             kalman_type="standard", **params):
     r"""
-    Fenrir algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid Z_{1:N}, Y_{0:M})`. Same arguments as :func:`~fenrir.fenrir`.
+    Fenrir algorithm to compute the mean and variance of :math:`p(X_{0:N} \mid Z_{1:N}, Y_{0:M})`. Same arguments as :func:`fenrir`.
 
     Returns:
         (tuple):
@@ -385,7 +415,14 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-
+    # standard or square-root filter
+    if kalman_type == "standard":
+        kalman_funs = standard
+    elif kalman_type == "square-root":
+        kalman_funs = square_root
+    else:
+        raise NotImplementedError
+    
     # forward pass
     filt_out = _solve_filter(
         key=key,
@@ -393,7 +430,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         interrogate=interrogate,
         prior_weight=prior_weight, prior_var=prior_var,
-        **params
+        kalman_funs=kalman_funs, **params
     )
     mean_state_pred, var_state_pred = filt_out["state_pred"]
     mean_state_filt, var_state_filt = filt_out["state_filt"]
@@ -405,10 +442,12 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         mean_state_pred=mean_state_pred,
         var_state_pred=var_state_pred,
         prior_weight=prior_weight,
+        prior_var=prior_var,
         t_min=t_min, t_max=t_max, n_steps=n_steps,
         obs_data=obs_data, obs_times=obs_times,
-        obs_weight=obs_weight, obs_var=obs_var
+        obs_weight=obs_weight, obs_var=obs_var,
+        kalman_funs=kalman_funs
     )
 
-    mean_state_smooth, var_state_smooth = _smooth_mv(state_par)
+    mean_state_smooth, var_state_smooth = _smooth_mv(state_par, kalman_funs)
     return mean_state_smooth, var_state_smooth

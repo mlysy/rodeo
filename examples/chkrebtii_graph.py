@@ -14,7 +14,7 @@ from rodeo.prior import ibm_init
 from rodeo.interrogate import interrogate_chkrebtii
 from euler import *
 config.update("jax_enable_x64", True)
-plt.rcParams.update({'font.size': 20})
+plt.rcParams.update({'font.size': 25, 'lines.linewidth':4})
 
 # Example ODE Exact Solution for x_t^{(0)}
 def ode_exact_x(t):
@@ -25,7 +25,7 @@ def ode_exact_x1(t):
     return (-2*cos(2*t) + 3*sin(t) + 2*cos(t))/3
 
 # Example ode written for Euler Approximation
-def ode_euler(x, t):
+def ode_euler(x, t, theta):
     return jnp.array([x[1], jnp.sin(2*t) -x[0]])
 
 # Setup the IVP problem in rodeo block form
@@ -166,10 +166,10 @@ def graph():
             for i in range(draws):
                 if i == (draws - 1):
                     axs[prow, pcol].plot(tseq[pcol], Xn[pcol][i,:,prow], 
-                                        color="lightgray", alpha=.3, label="rodeo draws")
+                                        color="gray", alpha=.5, label="rodeo draws")
                 else:
                     axs[prow, pcol].plot(tseq[pcol], Xn[pcol][i,:,prow], 
-                                        color="lightgray", alpha=.3)
+                                        color="gray", alpha=.3)
             # plot Kalman mean
             axs[prow, pcol].plot(tseq[pcol], Xmean[pcol][:,prow],
                                  label="rodeo mean")
@@ -185,7 +185,7 @@ def graph():
     axs[0, -1].legend(loc='upper left', bbox_to_anchor=[1, 1])
     
     fig.tight_layout()
-    # fig.savefig('figures/chkrebtiifigure.pdf')
+    fig.savefig('figures/chkrebtiifigure.pdf', bbox_inches='tight')
     plt.show()
     return fig
 
