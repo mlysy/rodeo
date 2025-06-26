@@ -4,3 +4,60 @@ requires = [
     "wheel"
 ]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "rodeo"
+description = "Probabilistic Methods of Parameter Inference for ODEs"
+readme = "README.md"
+requires-python = ">=3.9"
+dynamic = ["version"]
+authors = [
+    {email = "mhwu@uwaterloo.ca", name = "Mohan Wu"},
+    {email = "mlysy@uwaterloo.ca", name = "Martin Lysy"}
+]
+maintainers = [
+    {email = "mlysy@uwaterloo.ca", name = "Martin Lysy"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics"
+]
+dependencies = [
+    "jaxlib",
+    "jax",
+    "blackjax <= 1.2.3"
+]
+keywords = ["jax", 
+    "parameter-inference", 
+    "differential-equations", 
+    "rodeo", 
+    "probabilistic-solver"
+]
+license = "MIT"
+license-files = ["LICENSE.*"]
+
+[project.urls]
+repository = "https://github.com/mlysy/rodeo"
+documentation = "https://rodeo.readthedocs.io/"
+
+[project.optional-dependencies]
+docs = [
+    "numpy",
+    "scipy",
+    "jaxopt",
+    "matplotlib",
+    "seaborn",
+    "myst_nb",
+    "sphinx_rtd_theme",
+    "jupytext"
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "rodeo.__version__"}
