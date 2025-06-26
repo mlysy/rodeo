@@ -1,4 +1,4 @@
-# **rodeo:** Probabilistic Methods of Parameter Inference for ODEs
+# **rodeo:** Probabilistic Methods of Parameter Inference for Ordinary Differential Equations
 
 [**Home**](https://rodeo.readthedocs.io/)
 | [**Installation**](#installation)
