@@ -32,7 +32,8 @@ classifiers = [
 dependencies = [
     "jaxlib",
     "jax",
-    "blackjax <= 1.2.3"
+    "blackjax <= 1.2.3; python_version < '3.10'",
+    "blackjax; python_version >= '3.10'"
 ]
 keywords = ["jax", 
     "parameter-inference", 
