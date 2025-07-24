@@ -142,9 +142,10 @@ def _solve_filter(key, ode_fun,  ode_weight, ode_init,
 def solve_sim(key, ode_fun,  ode_weight, ode_init,
               t_min, t_max, n_steps,
               interrogate,
-              prior_weight, prior_var,
+              prior_pars,
               **params):
     
+    prior_weight, prior_var = prior_pars
     n_block, n_bstate, _ = prior_weight.shape
     key, *subkeys = jax.random.split(key, num=n_steps+1)
     subkeys = jnp.array(subkeys)
@@ -193,9 +194,10 @@ def solve_sim(key, ode_fun,  ode_weight, ode_init,
 def solve_mv(key, ode_fun,  ode_weight, ode_init,
              t_min, t_max, n_steps,
              interrogate,
-             prior_weight, prior_var,
+             prior_pars,
              **params):
 
+    prior_weight, prior_var = prior_pars
     n_block, n_bstate, _ = prior_weight.shape
     mean_state_smooth = jnp.zeros((n_steps+1, n_block, n_bstate))
     mean_state_smooth = mean_state_smooth.at[0].set(ode_init)

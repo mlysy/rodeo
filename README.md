@@ -5,6 +5,7 @@
 | [**Documentation**](#documentation)
 | [**Tutorial**](#walkthrough)
 | [**Developers**](#developers)
+| [**Change logs**](https://rodeo.readthedocs.io/en/latest/changelog.html)
 
 ---
 [![Continuous integration](https://github.com/mlysy/rodeo/actions/workflows/build_test.yml/badge.svg)](https://github.com/mlysy/rodeo/actions/workflows/build_test.yml)

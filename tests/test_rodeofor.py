@@ -94,13 +94,13 @@ class TestrodeoFor(unittest.TestCase):
         sim1 = solve_sim(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                          ode_init=self.x0_block, theta=self.theta,
                          t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                         prior_weight=self.prior_Q, prior_var=self.prior_R,
+                         prior_pars=self.prior_pars,
                          interrogate=interrogate_rodeo)
         # for
         sim2 = bfor.solve_sim(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                               ode_init=self.x0_block, theta=self.theta,
                               t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                              prior_weight=self.prior_Q, prior_var=self.prior_R,
+                              prior_pars=self.prior_pars,
                               interrogate=interrogate_rodeo)
         
         self.assertAlmostEqual(utils.rel_err(sim1, sim2), 0.0)
@@ -109,13 +109,13 @@ class TestrodeoFor(unittest.TestCase):
         mu1, var1 = solve_mv(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                              ode_init=self.x0_block, theta=self.theta,
                              t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                             prior_weight=self.prior_Q, prior_var=self.prior_R,
+                             prior_pars=self.prior_pars,
                              interrogate=interrogate_rodeo)
         # for
         mu2, var2 = bfor.solve_mv(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                                   ode_init=self.x0_block, theta=self.theta,
                                   t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                                  prior_weight=self.prior_Q, prior_var=self.prior_R,
+                                  prior_pars=self.prior_pars,
                                   interrogate=interrogate_rodeo)
         self.assertAlmostEqual(utils.rel_err(mu1, mu2), 0.0)
         self.assertAlmostEqual(utils.rel_err(var1, var2), 0.0)

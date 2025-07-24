@@ -85,8 +85,9 @@ def fitz_setup(self):
     # function parameter
     self.theta = jnp.array([0.2, 0.2, 3])  # True theta
     sigma = jnp.array([sigma]*n_vars)
-    self.prior_Q, self.prior_R = ibm_init(h, n_deriv, sigma)
-
+    self.prior_pars = ibm_init(h, n_deriv, sigma)
+    self.prior_Q, self.prior_R = self.prior_pars
+    
     # block
     n_bmeas = 1
     n_bstate = 3
