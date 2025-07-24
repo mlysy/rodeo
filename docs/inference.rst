@@ -24,7 +24,8 @@ MAGI
 
 Marginal MCMC
 =============
-.. automodule:: rodeo.inference.random_walk_aux
+.. automodule:: rodeo.inference.pseudo_marginal
     :members:
     :undoc-members:
     :exclude-members: RWAState, RWAInfo
+    

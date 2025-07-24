@@ -16,7 +16,7 @@ from rodeo.solve import solve_mv
 def basic(key, ode_fun, ode_weight, ode_init, 
           t_min, t_max, n_steps,
           interrogate,
-          prior_weight, prior_var,
+          prior_pars,
           obs_data, obs_times, obs_loglik,
           kalman_type="standard", **params):
     
@@ -32,8 +32,7 @@ def basic(key, ode_fun, ode_weight, ode_init,
         t_max (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
         interrogate (Callable): Function defining the interrogation method.
-        prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
-        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        prior_pars (tuple): A tuple containing the weight matrix and the variance matrix defining the solution prior; :math:`Q, R`.
         obs_data (ndarray(n_obs, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_loglik (Callable): Observation loglikelihood function.
@@ -54,8 +53,7 @@ def basic(key, ode_fun, ode_weight, ode_init,
         t_max=t_max,
         n_steps=n_steps,
         interrogate=interrogate,
-        prior_weight=prior_weight,
-        prior_var=prior_var,
+        prior_pars=prior_pars,
         kalman_type=kalman_type,
         **params
     )
