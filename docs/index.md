@@ -32,7 +32,7 @@ examples/parameter.md
 
 ```{toctree}
 :hidden:
-:mathdepth: 1
+:maxdepth: 1
 
 changelog.md
 ```

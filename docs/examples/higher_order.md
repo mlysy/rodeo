@@ -35,8 +35,6 @@ import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 import rodeo
-import rodeo.prior
-import rodeo.interrogate
 
 from functools import partial
 from jax import config
@@ -81,7 +79,7 @@ n_steps = 400                  # number of evaluations steps
 dt = (t_max - t_min) / n_steps  # step size
 
 # generate the Kalman parameters corresponding to the prior
-prior_Q, prior_R = rodeo.prior.ibm_init(
+prior_pars = rodeo.prior.ibm_init(
     dt=dt,
     n_deriv=n_deriv,
     sigma=sigma
@@ -101,8 +99,7 @@ Xt, _ = rodeo.solve_mv(
     # solver parameters
     n_steps=n_steps,
     interrogate=rodeo.interrogate.interrogate_kramer,
-    prior_weight=prior_Q,
-    prior_var=prior_R
+    prior_pars=prior_pars
 )
 ```
 
@@ -110,7 +107,9 @@ We can also solve this using the square-root filter. In most setups, this is as 
 
 ```{code-cell} ipython3
 # deterministic ODE solver with square-root filter
-prior_R = jax.vmap(jnp.linalg.cholesky)(prior_R) # square-root filter for stability
+prior_Q, prior_R = prior_pars
+prior_chol = jax.vmap(jnp.linalg.cholesky)(prior_R) # square-root filter for stability
+prior_pars = (prior_Q, prior_chol)
 Xt2, _ = rodeo.solve_mv(
     key=key,
     # define ode
@@ -122,8 +121,7 @@ Xt2, _ = rodeo.solve_mv(
     # solver parameters
     n_steps=n_steps,
     interrogate=rodeo.interrogate.interrogate_kramer,
-    prior_weight=prior_Q,
-    prior_var=prior_R,
+    prior_pars=prior_pars,
     kalman_type="square-root"
 )
 
@@ -140,8 +138,7 @@ Xt3, _ = rodeo.solve_mv(
     # solver parameters
     n_steps=n_steps,
     interrogate=interrogate_chkrebtii,
-    prior_weight=prior_Q,
-    prior_var=prior_R,
+    prior_pars=prior_pars,
     kalman_type="square-root"
 )
 ```

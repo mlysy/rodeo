@@ -37,8 +37,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 
+import rodeo
 from rodeo.prior import ibm_init
-import rodeo.interrogate
 from rodeo import solve_mv, solve_sim
 from rodeo.utils import first_order_pad
 from jax import config
@@ -109,7 +109,7 @@ X0 = fitz_init_pad(x0, 0, theta=theta)  # initial value in rodeo format
 
 # Get parameters needed to run the solver
 dt = (t_max-t_min)/n_steps
-prior_weight, prior_var = ibm_init(dt, n_deriv, sigma)
+prior_pars = ibm_init(dt, n_deriv, sigma)
 ```
 
 One of the key steps in the probabilisitc solver is the interrogation step. We offer several choices for this task: `interrogate_schober` by [Schober et al (2019)](http://link.springer.com/10.1007/s11222-017-9798-7), `interrogate_chkrebtii` by [Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259), `interrogate_rodeo` which is a mix of the two, and `interrogate_kramer` by [Kramer et al (2021)](https://doi.org/10.48550/arXiv.2110.11812). 
@@ -134,12 +134,12 @@ xt = sim_jit(key=key, ode_fun=fitz_fun,
              ode_weight=W, ode_init=X0, theta=theta,
              t_min=t_min, t_max=t_max, n_steps=n_steps,
              interrogate=rodeo.interrogate.interrogate_kramer,
-             prior_weight=prior_weight, prior_var=prior_var)
+             prior_pars=prior_pars)
 mut, _ = mv_jit(key=key, ode_fun=fitz_fun,
              ode_weight=W, ode_init=X0, theta=theta,
              t_min=t_min, t_max=t_max, n_steps=n_steps,
              interrogate=rodeo.interrogate.interrogate_kramer,
-             prior_weight=prior_weight, prior_var=prior_var)
+             prior_pars=prior_pars)
 ```
 
 To compare the `rodeo` solution, we use the deterministic solution provided by `odeint`.
