@@ -25,7 +25,7 @@ For the latter we provide the likelihood approximation methods:
 - `basic`: Implementation of a basic likelihood approximation method (details can be found in [Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html)).
 - `fenrir`: Implementation of Fenrir ([Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html)).
 - `dalton`: Implementation of the data-adaptive ODE likelihood approximation ([Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html)).
-- `pseudo_marginal`: Implement of Chkrebtii's marginal MCMC algorithm ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
+- `pseudo_marginal`: Implementation of Chkrebtii's marginal MCMC algorithm ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
 - `magi`: Implementation of MAGI ([Wong et al (2023)](https://arxiv.org/abs/2203.06066)) with a Markov prior.
 
 Detailed examples for their usage can be found in the [Documentation](#documentation) section. Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
