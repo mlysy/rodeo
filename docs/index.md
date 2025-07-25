@@ -28,3 +28,11 @@ examples/higher_order.md
 examples/lorenz.md
 examples/parameter.md
 ```
+
+
+```{toctree}
+:hidden:
+:mathdepth: 1
+
+changelog.md
+```

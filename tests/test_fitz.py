@@ -18,12 +18,12 @@ class TestFitzOdeint(unittest.TestCase):
         sim = solve_sim(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                         ode_init=self.x0_block, theta=self.theta,
                         t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                        prior_weight=self.prior_Q, prior_var=self.prior_R,
+                        prior_pars=self.prior_pars,
                         interrogate=interrogate_rodeo)
         m = solve_mv(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                      ode_init=self.x0_block, theta=self.theta,
                      t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                     prior_weight=self.prior_Q, prior_var=self.prior_R,
+                     prior_pars=self.prior_pars,
                      interrogate=interrogate_rodeo)[0]
         self.assertLessEqual(utils.rel_err(sim[:, :, 0], det), 5.0)
         self.assertLessEqual(utils.rel_err(m[:, :, 0], det), 5.0)

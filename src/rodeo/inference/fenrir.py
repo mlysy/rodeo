@@ -261,7 +261,7 @@ def _backward(mean_state_filt, var_state_filt,
 def fenrir(key, ode_fun, ode_weight, ode_init,
            t_min, t_max, n_steps,
            interrogate,
-           prior_weight, prior_var,
+           prior_pars,
            obs_data, obs_times, obs_weight, obs_var,
            kalman_type="standard", **params):
     r"""
@@ -276,8 +276,7 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
         t_max (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
         interrogate (Callable): Function defining the interrogation method.
-        prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
-        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        prior_pars (tuple): A tuple containing the weight matrix and the variance matrix defining the solution prior; :math:`Q, R`.
         obs_data (ndarray(n_obs, n_blocks, n_bobs)): Observed data; :math:`y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_weight (ndarray(n_obs, n_blocks, n_bobs, n_bstate)): Weight matrix in the observation model; :math:`D_{0:M}`.
@@ -296,6 +295,9 @@ def fenrir(key, ode_fun, ode_weight, ode_init,
         kalman_funs = square_root
     else:
         raise NotImplementedError
+
+    # prior variables
+    prior_weight, prior_var = prior_pars
 
     # forward pass
     filt_out = _solve_filter(
@@ -403,7 +405,7 @@ def _smooth_mv(state_par, kalman_funs):
 def solve_mv(key, ode_fun, ode_weight, ode_init,
              t_min, t_max, n_steps,
              interrogate,
-             prior_weight, prior_var,
+             prior_pars,
              obs_data, obs_times, obs_weight, obs_var,
              kalman_type="standard", **params):
     r"""
@@ -423,6 +425,8 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
     else:
         raise NotImplementedError
     
+    prior_weight, prior_var = prior_pars
+
     # forward pass
     filt_out = _solve_filter(
         key=key,

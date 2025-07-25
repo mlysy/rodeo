@@ -58,7 +58,6 @@ from jax import numpy as jnp
 from blackjax.base import SamplingAlgorithm
 from blackjax.mcmc import proposal
 from blackjax.types import Array, ArrayLikeTree, ArrayTree, PRNGKey
-from blackjax.util import generate_gaussian_noise
 from blackjax.mcmc.random_walk import normal as normal
 
 # ignore this for now
@@ -133,7 +132,9 @@ class RWAInfo(NamedTuple):
     """The proposed state of the chain."""
 
 
-def init(position: ArrayLikeTree, logdensity_fn: Callable) -> RWAState:
+def init(
+    position: ArrayLikeTree, logdensity_fn: Callable, rng_key: PRNGKey
+) -> RWAState:
     """
     Create an initial chain state from a given position.
 
@@ -144,7 +145,7 @@ def init(position: ArrayLikeTree, logdensity_fn: Callable) -> RWAState:
     Returns:
         (RWAState): The initialized state of the chain.
     """
-    logdensity, auxdata = logdensity_fn(position)
+    logdensity, auxdata = logdensity_fn(position, rng_key)
     return RWAState(position, logdensity, auxdata)
 
 
@@ -222,8 +223,8 @@ def additive_step_random_walk(
     kernel = build_additive_step()
 
     def init_fn(position: ArrayLikeTree, rng_key=None):
-        del rng_key
-        return init(position, logdensity_fn)
+        # del rng_key
+        return init(position, logdensity_fn, rng_key)
 
     def step_fn(rng_key: PRNGKey, state):
         return kernel(rng_key, state, logdensity_fn, random_step)
@@ -313,8 +314,8 @@ def irmh_as_top_level_api(
     kernel = build_irmh()
 
     def init_fn(position: ArrayLikeTree, rng_key=None):
-        del rng_key
-        return init(position, logdensity_fn)
+        # del rng_key
+        return init(position, logdensity_fn, rng_key)
 
     def step_fn(rng_key: PRNGKey, state):
         return kernel(
@@ -419,8 +420,8 @@ def rmh_as_top_level_api(
     kernel = build_rmh()
 
     def init_fn(position: ArrayLikeTree, rng_key=None):
-        del rng_key
-        return init(position, logdensity_fn)
+        # del rng_key
+        return init(position, logdensity_fn, rng_key)
 
     def step_fn(rng_key: PRNGKey, state):
         return kernel(
@@ -466,10 +467,10 @@ def rmh_proposal(
     """
 
     def generate(rng_key, previous_state: RWAState) -> tuple[RWAState, bool, float]:
-        key_proposal, key_accept = jax.random.split(rng_key, 2)
+        key_proposal, key_accept, key_logdensity = jax.random.split(rng_key, 3)
         position, _, _ = previous_state
         new_position = transition_distribution(key_proposal, position)
-        new_logdensity, new_auxdata = logdensity_fn(new_position)
+        new_logdensity, new_auxdata = logdensity_fn(new_position, key_logdensity)
         proposed_state = RWAState(new_position, new_logdensity, new_auxdata)
         log_p_accept = compute_acceptance_ratio(previous_state, proposed_state)
         accepted_state, info = sample_proposal(
@@ -477,5 +478,6 @@ def rmh_proposal(
         )
         do_accept, p_accept, _ = info
         return accepted_state, do_accept, p_accept
+
 
     return generate

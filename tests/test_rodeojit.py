@@ -6,7 +6,7 @@ import jax.random as random
 from rodeo.solve import *
 from rodeo.interrogate import *
 import utils
-# from jax.config import config
+# from jax import config
 # config.update("jax_enable_x64", True)
     
 class TestrodeoJit(unittest.TestCase):
@@ -142,14 +142,14 @@ class TestrodeoJit(unittest.TestCase):
         mu1, var1 = solve_mv(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                              ode_init=self.x0_block, theta=self.theta,
                              t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                             prior_weight=self.prior_Q, prior_var=self.prior_R,
+                             prior_pars=self.prior_pars,
                              interrogate=interrogate_rodeo)
         # with jit
         mv_jit = jax.jit(solve_mv, static_argnums=(1, 6, 7))
         mu2, var2 = mv_jit(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                             ode_init=self.x0_block, theta=self.theta,
                             t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                            prior_weight=self.prior_Q, prior_var=self.prior_R,
+                            prior_pars=self.prior_pars,
                             interrogate=interrogate_rodeo)
         # objective function for gradient
         def obj_fun(theta):
@@ -157,7 +157,7 @@ class TestrodeoJit(unittest.TestCase):
                 solve_mv(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                         ode_init=self.x0_block, theta=self.theta,
                         t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                        prior_weight=self.prior_Q, prior_var=self.prior_R,
+                        prior_pars=self.prior_pars,
                         interrogate=interrogate_rodeo)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)
@@ -172,14 +172,14 @@ class TestrodeoJit(unittest.TestCase):
         sim1 = solve_sim(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                         ode_init=self.x0_block, theta=self.theta,
                         t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                        prior_weight=self.prior_Q, prior_var=self.prior_R,
+                        prior_pars=self.prior_pars,
                         interrogate=interrogate_rodeo)
         # with jit
         sim_jit = jax.jit(solve_sim, static_argnums=(1, 6, 7))
         sim2 = sim_jit(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                        ode_init=self.x0_block, theta=self.theta,
                        t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                       prior_weight=self.prior_Q, prior_var=self.prior_R,
+                       prior_pars=self.prior_pars,
                        interrogate=interrogate_rodeo)
         # objective function for gradient
         def obj_fun(theta):
@@ -187,7 +187,7 @@ class TestrodeoJit(unittest.TestCase):
                 solve_sim(key=self.key, ode_fun=self.fitz_jax, ode_weight=self.W_block,
                         ode_init=self.x0_block, theta=self.theta,
                         t_min=self.t_min, t_max=self.t_max, n_steps=self.n_steps, 
-                        prior_weight=self.prior_Q, prior_var=self.prior_R,
+                        prior_pars=self.prior_pars,
                         interrogate=interrogate_rodeo)[0])
         # grad without jit
         grad1 = jax.grad(obj_fun)(self.theta)

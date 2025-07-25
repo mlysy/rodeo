@@ -28,7 +28,7 @@ import rodeo
 from rodeo.prior import ibm_init
 from rodeo.solve import solve_mv, solve_sim
 from rodeo.interrogate import interrogate_chkrebtii, interrogate_kramer
-from rodeo.inference import basic, fenrir, random_walk_aux
+from rodeo.inference import basic, fenrir, pseudo_marginal
 from rodeo.utils import first_order_pad
 
 import matplotlib.pyplot as plt
@@ -111,7 +111,7 @@ sim_times = jnp.linspace(t_min, t_max,
 
 # prior parameters
 dt_sim = (t_max - t_min) / n_steps  # grid size for simulation
-prior_Q, prior_R = rodeo.prior.ibm_init(
+prior_pars = rodeo.prior.ibm_init(
     dt=dt_sim,
     n_deriv=n_deriv,
     sigma=sigma
@@ -135,8 +135,7 @@ Xt, _ = rodeo.solve_mv(
     # solver parameters
     n_steps=n_steps,
     interrogate=rodeo.interrogate.interrogate_kramer,
-    prior_weight=prior_Q,
-    prior_var=prior_R
+    prior_pars=prior_pars
 )
 
 # generate observations
@@ -167,8 +166,6 @@ axs[1].set_title("$R(t)$")
 axs[1].legend(loc=1)
 fig1.tight_layout()
 ```
-
-
 
 We now turn to the problem of parameter estimation.  In the Bayesian context, this is achieved by postulating a prior distribution $p(\TTh)$ on $\TTh = (\tth, \pph)$, and then combining it with the stochastic solver's likelihood function $\Ell(\TTh \mid \YY_{0:M}) \propto p(\YY_{0:M} \mid \ZZ_{1:N} = \bz, \TTh)$ to obtain the posterior distribution
 \begin{equation*}
@@ -231,12 +228,12 @@ def fitz_constrain_pars(upars, dt):
     x0 = upars[3:5]
     X0 = fitz_init_pad(x0, 0, theta=theta)
     sigma = upars[5:]
-    Q, R = rodeo.prior.ibm_init(
+    prior_pars = rodeo.prior.ibm_init(
         dt=dt,
         n_deriv=n_deriv,
         sigma=sigma
     )
-    return theta, X0, Q, R
+    return theta, X0, prior_pars
 
 
 def fitz_laplace(key, neglogpost, n_samples, upars_init):
@@ -291,7 +288,7 @@ where in terms of the ODE solver discretization time points $t = t_0, \ldots, t_
 def neglogpost_basic(upars):
     "Negative logposterior for basic approximation."
     # solve ODE
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     # basic loglikelihood
     ll, Xt = rodeo.inference.basic(
         key=key,  # immaterial, since not used
@@ -305,8 +302,7 @@ def neglogpost_basic(upars):
         # solver parameters
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # observations
         obs_data=Y,
         obs_times=obs_times,
@@ -334,13 +330,11 @@ There are three main steps to using the marginal MCMC method. First, a likelihoo
 ```{code-cell} ipython3
 interrogate_chkrebtii_partial = partial(interrogate_chkrebtii, kalman_type="standard")
 
-def fitz_logpost_mcmc(key, upars):
+def fitz_logpost_mcmc(upars, key):
+    r"""
+    Compute the log-posterior for Chkrebtii's marginal MCMC algorithm.
     """
-    Computes marginal MCMC posterior.
-
-    Also returns solution path Xt that was generated.
-    """
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     Xt = solve_sim(
         key=key,
         # define ode
@@ -353,54 +347,50 @@ def fitz_logpost_mcmc(key, upars):
         # solver parameters
         n_steps=n_steps,
         interrogate=interrogate_chkrebtii_partial,
-        prior_weight=prior_Q,
-        prior_var=prior_R
+        prior_pars=prior_pars,
     )
     ode_data = Xt[obs_ind]
-    lp = fitz_logprior(upars) + fitz_loglik(Y, ode_data, theta=theta)
+    lp = fitz_logprior(upars) + fitz_loglik(Y, ode_data)
     return lp, Xt
 
 
-def fitz_mcmc(key, n_samples, upars):
-    r"""
-    Marginal MCMC using blackjax.
+def fitz_marginal_mcmc(key, upars_init, n_samples):
     """
-    key, subkey = jax.random.split(key)
-    # initialize mcmc
-    state = random_walk_aux.init(
-        position = upars,
-        logdensity_fn=lambda upars : fitz_logpost_mcmc(subkey, upars)
-    )
-    keys = jax.random.split(key, num=n_samples)
-    # blackjax
-    # RW with auxiliary outputs
-    rwa_kernel = random_walk_aux.build_additive_step()
+    Sample from the parameter posterior via Chkrebtii marginal MCMC.
+
+    Args:
+        key : PRNG key.
+        upars_init : Initial value to the optimization algorithm.
+        n_samples : Number of posterior samples to draw.
+        
+    Returns:
+        JAX array of shape ``(n_samples, 5)`` of posterior samples from ``(theta, x0)``.
+    """
+    key, *subkeys = jax.random.split(key, num=3)
+
     # standard deviation of the random walk
     scale = jnp.array(
         [0.01, 0.1, 0.01, 0.01, 0.01, 0.01, 0.01])
-    
-    # inference loop
-    def marginal_rw_step(key, state, sigma):
-        "One step of Marginal Random Walk."
-        keys = jax.random.split(key, num=2)
-        return rwa_kernel(
-            rng_key=keys[0], # for RW proposal
-            state=state,
-            # logpost for each step has its own key for generating Xt
-            logdensity_fn=lambda position: fitz_logpost_mcmc(keys[1], position),
-            random_step=blackjax.mcmc.random_walk.normal(sigma=sigma)
-        )   
+    # choose the mcmc algorithm
+    marginal_mcmc = pseudo_marginal.normal_random_walk(fitz_logpost_mcmc, scale)
 
-    def step(state, rng_key):
-        state, info = marginal_rw_step(key=rng_key, state=state, sigma=scale)
-        return state, (state, info)
+    # initialize mcmc state
+    initial_state = marginal_mcmc.init(upars_init, subkeys[0])
 
-    _, out = jax.lax.scan(
-        f=step,
-        init=state,
-        xs=keys
-    )
-    uode_sample = out[0].position[:, :5]
+    # setup the kernel
+    kernel = marginal_mcmc.step
+
+    def inference_loop(key, kernel, initial_state, n_samples):
+        def one_step(state, rng_key):
+            state, _ = kernel(rng_key, state)
+            return state, state
+
+        keys = jax.random.split(key, n_samples)
+        _, states = jax.lax.scan(one_step, initial_state, keys)
+        return states
+
+    uode_sample = inference_loop(
+        subkeys[1], kernel, initial_state, n_samples).position[:, :5]
     # convert back to original scale
     ode_sample = uode_sample.at[:, :3].set(jnp.exp(uode_sample[:, :3]))
     return ode_sample
@@ -409,7 +399,7 @@ def fitz_mcmc(key, n_samples, upars):
 n_samples = 10000
 upars_init = jnp.append(jnp.log(theta), x0)
 upars_init = jnp.append(upars_init, .1*jnp.ones(n_vars))
-mcmc_post = fitz_mcmc(key, n_samples, upars_init)
+mcmc_post = fitz_marginal_mcmc(key, upars_init,  n_samples)
 ```
 
 ### Fenrir
@@ -440,7 +430,7 @@ The way to construct a likelihood estimation is very similar to the basic method
 ```{code-cell} ipython3
 def neglogpost_fenrir(upars):
     "Negative logposterior for basic approximation."
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     # fenrir loglikelihood
     ll = rodeo.inference.fenrir(
         key=key,  # immaterial, since not used
@@ -454,8 +444,7 @@ def neglogpost_fenrir(upars):
         # solver
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # gaussian measurement model
         obs_data=obs_data,
         obs_times=obs_times,
@@ -482,7 +471,7 @@ The DALTON approximation [Wu and Lysy (2024)](https://proceedings.mlr.press/v238
 ```{code-cell} ipython3
 def neglogpost_dalton(upars):
     "Negative logposterior for basic approximation."
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     # fenrir loglikelihood
     ll = rodeo.inference.dalton(
         key=key,  # immaterial, since not used
@@ -496,8 +485,7 @@ def neglogpost_dalton(upars):
         # solver
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # gaussian measurement model
         obs_data=obs_data,
         obs_times=obs_times,
@@ -573,7 +561,7 @@ def obs_loglik_i(obs_data_i, ode_data_i, ind, **params):
 
 def neglogpost_daltonng(upars):
     "Negative logposterior for non-Gaussian DALTON approximation."
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     # non-Gaussian DALTON loglikelihood
     ll = rodeo.inference.daltonng(
         key=key,  # immaterial, since not used
@@ -587,8 +575,7 @@ def neglogpost_daltonng(upars):
         # solver
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # non-gaussian measurement model
         obs_data=obs_data,
         obs_times=obs_times,

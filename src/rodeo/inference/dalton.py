@@ -39,7 +39,7 @@ from rodeo.solve import _solve_filter as _solve_filter_ode
 def dalton(key, ode_fun, ode_weight, ode_init, 
            t_min, t_max, n_steps,
            interrogate,
-           prior_weight, prior_var,
+           prior_pars,
            obs_data, obs_times, obs_weight, obs_var,
            kalman_type="standard", **params):
     r"""
@@ -54,8 +54,7 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         t_max (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
         interrogate (Callable): Function defining the interrogation method.
-        prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
-        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        prior_pars (tuple): A tuple containing the weight matrix and the variance matrix defining the solution prior; :math:`Q, R`.
         obs_data (ndarray(n_obs, n_blocks, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_weight (ndarray(n_obs, n_blocks, n_bobs, n_bstate)): Weight matrix in the observation model; :math:`D_{0:M}`.
@@ -79,6 +78,9 @@ def dalton(key, ode_fun, ode_weight, ode_init,
         kalman_funs = square_root
     else:
         raise NotImplementedError
+    
+    # prior variables
+    prior_weight, prior_var = prior_pars
     
     # insert observations on solver time grid
     sim_times = jnp.linspace(t_min, t_max, n_steps + 1)
@@ -372,7 +374,7 @@ def _solve_filter(key, ode_fun, ode_weight, ode_init,
 def solve_mv(key, ode_fun, ode_weight, ode_init, 
              t_min, t_max, n_steps,
              interrogate,
-             prior_weight, prior_var,
+             prior_pars,
              obs_data, obs_times, obs_weight, obs_var,
              kalman_type="standard", **params):
     r"""
@@ -385,6 +387,8 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
+    
+    prior_weight, prior_var = prior_pars
     n_block, n_bstate, _ = prior_weight.shape
 
     # standard or square-root filter
@@ -459,7 +463,7 @@ def solve_mv(key, ode_fun, ode_weight, ode_init,
 def solve_sim(key, ode_fun, ode_weight, ode_init, 
               t_min, t_max, n_steps,
               interrogate,
-              prior_weight, prior_var,
+              prior_pars,
               obs_data, obs_times, obs_weight, obs_var,
               kalman_type="standard", **params):
     r"""
@@ -472,7 +476,7 @@ def solve_sim(key, ode_fun, ode_weight, ode_init,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
-    n_block, n_bstate, _ = prior_weight.shape
+    prior_weight, prior_var = prior_pars
     
     # standard or square-root filter
     if kalman_type == "standard":
@@ -847,7 +851,7 @@ def _logx_z(uncond_mean,
 def daltonng(key, ode_fun, ode_weight, ode_init, 
              t_min, t_max, n_steps,
              interrogate,
-             prior_weight, prior_var,
+             prior_pars,
              obs_data, obs_times, obs_loglik_i,
              kalman_type="standard", **params):
     r"""
@@ -862,8 +866,7 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
         t_max (float): Last time point of the time interval to be evaluated; :math:`b`.
         n_steps (int): Number of discretization points (:math:`N`) of the time interval that is evaluated, such that discretization timestep is :math:`dt = (b-a)/N`.
         interrogate (Callable): Function defining the interrogation method.
-        prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
-        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        prior_pars (tuple): A tuple containing the weight matrix and the variance matrix defining the solution prior; :math:`Q, R`.
         obs_data (ndarray(n_obs, n_blocks, n_bobs)): Observed data; :math:`Y_{0:M}`.
         obs_times (ndarray(n_obs)): Observation time; :math:`0, \ldots, M`.
         obs_loglik_i (Callable): Loglikelihood function for each observation.
@@ -884,6 +887,8 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
         kalman_funs = square_root
     else:
         raise NotImplementedError
+
+    prior_weight, prior_var = prior_pars
 
     # forward pass
     filt_out = _solve_filter_nn(
@@ -914,8 +919,6 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
     sim_times = jnp.linspace(t_min, t_max, n_steps+1)
     obs_ind = jnp.searchsorted(sim_times, obs_times)
     def vmap_fun(i):
-        # Cx = jax.vmap(lambda b: mean_state_smooth[obs_ind[i]][b])(jnp.arange(n_block))
-        # return fun_obs(Cx, y_obs[i], theta, i)
         return obs_loglik_i(obs_data[i], mean_state_smooth[obs_ind[i]], i, **params)
     logy_x = jnp.sum(jax.vmap(vmap_fun)(jnp.arange(n_obs)))
 
@@ -952,7 +955,7 @@ def daltonng(key, ode_fun, ode_weight, ode_init,
 def solve_mv_nn(key, ode_fun, ode_weight, ode_init, 
                 t_min, t_max, n_steps,
                 interrogate,
-                prior_weight, prior_var,
+                prior_pars,
                 obs_data, obs_times, obs_loglik_i,
                 kalman_type="standard", **params):
     r"""
@@ -965,6 +968,7 @@ def solve_mv_nn(key, ode_fun, ode_weight, ode_init,
         - **var_state_smooth** (ndarray(n_steps+1, n_block, n_bstate, n_bstate)): Posterior variance of the solution process at times :math:`t \in [a, b]`.
 
     """
+    prior_weight, prior_var = prior_pars
     n_block, n_bstate, _ = prior_weight.shape
     
     # standard or square-root filter

@@ -6,7 +6,7 @@ from rodeo.kalmantv import square_root
 def magi_logdens(ode_data_subset,
                  ode_expand,
                  n_active,
-                 prior_weight, prior_var,
+                 prior_pars,
                  kalman_type,
                  **params):
     """
@@ -16,13 +16,12 @@ def magi_logdens(ode_data_subset,
         ode_data_subset (ndarray(n_steps+1, n_block, n_deriv-1)): Array specifying :math:`U_{0:N}`, the subset of the solution process needed to reconstruct the entire solution with `ode_expand()`.
         ode_expand (Callable): Function taking inputs `ode_data_subset` and `**params` and returning the full solution process :math:`X_{0:N}`.
         n_active (int): Number of active derivatives -- i.e., not those zero-padded -- for the solution process.
-        prior_weight (ndarray(n_block, n_bstate, n_bstate)): Weight matrix defining the solution prior; :math:`Q`.
-        prior_var (ndarray(n_block, n_bstate, n_bstate)): Variance matrix defining the solution prior; :math:`R`.
+        prior_pars (tuple): A tuple containing the weight matrix and the variance matrix defining the solution prior; :math:`Q, R`.
         kalman_type (str): Determine which type of Kalman (standard, square-root) to use.
         **params (kwargs): Parameters to pass to `ode_expand`.
 
     Returns:
-        (float): Value of the logdensity `p(ode_data_subset, Z = 0 | params, prior_weight, prior_var)`.
+        (float): Value of the logdensity `p(ode_data_subset, Z = 0 | params, prior_pars)`.
     """
     # standard or square-root filter
     if kalman_type == "standard":
@@ -46,9 +45,7 @@ def magi_logdens(ode_data_subset,
     
     # construct remaining `*_state` parameters
     mean_state = jnp.zeros((n_vars, n_deriv))
-    wgt_state = prior_weight
-    var_state = prior_var
-    # var_state = jax.vmap(jnp.linalg.cholesky)(prior_var) # square-root filter for stability
+    wgt_state, var_state = prior_pars
 
     # kalman filter
     def filter_scan(carry, x_meas):
@@ -100,4 +97,3 @@ def magi_logdens(ode_data_subset,
     )
 
     return res["logdens"]
-
