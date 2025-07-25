@@ -332,9 +332,7 @@ interrogate_chkrebtii_partial = partial(interrogate_chkrebtii, kalman_type="stan
 
 def fitz_logpost_mcmc(upars, key):
     r"""
-    Computes the log-posterior of a marginal MCMC algorithm which marginalizes over Xt.
-
-    Also returns solution path Xt that was generated.
+    Compute the log-posterior for Chkrebtii's marginal MCMC algorithm.
     """
     theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     Xt = solve_sim(
