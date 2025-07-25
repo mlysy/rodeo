@@ -114,7 +114,7 @@ x0 = lorenz_init_pad(jnp.array(ode0), 0, theta=theta)
 n_res = 200
 n_steps = n_obs*n_res
 dt = (tmax-tmin)/n_steps  # step size
-prior_weight, prior_var = ibm_init(dt, n_deriv, sigma)
+prior_pars = ibm_init(dt, n_deriv, sigma)
 
 # prng key
 key = jax.random.PRNGKey(0)
@@ -142,20 +142,20 @@ Now we can use the three solvers.
 # rodeo
 rsol, _ = solve_mv(key, lorenz, W, x0, tmin, tmax, n_steps,
                    interrogate_kramer,
-                   prior_weight, prior_var,
+                   prior_pars,
                    theta=theta)
 
 # dalton
 dsol, _ = dsolve(key, lorenz, W, x0, tmin, tmax, n_steps,
                  interrogate_kramer,
-                 prior_weight, prior_var,
+                 prior_pars,
                  obs_data, obs_times, obs_weight, obs_var,
                  theta=theta)
 
 # fenrir
 fsol, _ = fsolve(key, lorenz, W, x0, tmin, tmax, n_steps,
                  interrogate_kramer,
-                 prior_weight, prior_var,
+                 prior_pars,
                  obs_data, obs_times, obs_weight, obs_var,
                  theta=theta)
 ```

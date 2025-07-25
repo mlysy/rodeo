@@ -24,8 +24,8 @@ For the latter we provide the likelihood approximation methods:
 
 - `basic`: Implementation of a basic likelihood approximation method (details can be found in [Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html)).
 - `fenrir`: Implementation of Fenrir ([Tronarp et al (2022)](https://proceedings.mlr.press/v162/tronarp22a.html)).
-- `random_walk_aux`: MCMC implementation of Chkrebtii's method ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
-- `dalton`: Implementation of our data-adaptive ODE likelihood approximation ([Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html)).
+- `dalton`: Implementation of the data-adaptive ODE likelihood approximation ([Wu and Lysy (2024)](https://proceedings.mlr.press/v238/wu24b.html)).
+- `pseudo_marginal`: Implementation of Chkrebtii's marginal MCMC algorithm ([Chkrebtii et al (2016)](https://projecteuclid.org/euclid.ba/1473276259)).
 - `magi`: Implementation of MAGI ([Wong et al (2023)](https://arxiv.org/abs/2203.06066)) with a Markov prior.
 
 Detailed examples for their usage can be found in the [Documentation](#documentation) section. Please note that this is the **jax**-only version of **rodeo**. For the legacy versions using various other backends please see [here](https://github.com/mlysy/rodeo-legacy).
@@ -127,8 +127,8 @@ n_steps = 800  # number of evaluations steps
 dt = (t_max - t_min) / n_steps  # step size
 
 # generate the Kalman parameters corresponding to the prior
-prior_Q, prior_R = rodeo.prior.ibm_init(
-    dt=dt_sim,
+prior_pars = rodeo.prior.ibm_init(
+    dt=dt,
     n_deriv=n_deriv,
     sigma=sigma
 )
@@ -148,8 +148,7 @@ Xt, _ = rodeo.solve_mv(
     # solver parameters
     n_steps=n_steps,
     interrogate=rodeo.interrogate.interrogate_kramer,
-    prior_weight=prior_Q,
-    prior_var=prior_R
+    prior_pars=prior_pars
 )
 ```
 
@@ -213,24 +212,24 @@ def constrain_pars(upars, dt):
         tuple with elements:
         - theta : ODE parameters.
         - X0 : Initial values in rodeo format.
-        - Q, R : Prior matrices.
+        - prior_pars : Prior matrices.
     """
     theta = jnp.exp(upars[:3])
     x0 = upars[3:5]
-    X0 = fitz_init(x0, 0, theta=theta)
+    X0 = fitz_init_pad(x0, 0, theta=theta)
     sigma = upars[5:]
-    Q, R = rodeo.prior.ibm_init(
+    prior_pars = rodeo.prior.ibm_init(
         dt=dt,
         n_deriv=n_deriv,
         sigma=sigma
     )
-    return theta, X0, Q, R
+    return theta, X0, prior_pars
 
 
 def neglogpost_basic(upars):
     "Negative logposterior for basic approximation."
     # solve ODE
-    theta, X0, prior_Q, prior_R = constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = constrain_pars(upars, dt)
     # basic loglikelihood
     ll = rodeo.inference.basic(
         key=key, 
@@ -244,8 +243,7 @@ def neglogpost_basic(upars):
         # solver parameters
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # observations
         obs_data=obs_data,
         obs_times=obs_times,

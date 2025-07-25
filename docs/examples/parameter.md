@@ -222,7 +222,7 @@ def fitz_constrain_pars(upars, dt):
         tuple with elements:
         - theta : ODE parameters.
         - X0 : Initial values in rodeo format.
-        - Q, R : Prior matrices.
+        - prior_pars : Prior matrices.
     """
     theta = jnp.exp(upars[:3])
     x0 = upars[3:5]
