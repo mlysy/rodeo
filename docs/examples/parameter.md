@@ -111,7 +111,7 @@ sim_times = jnp.linspace(t_min, t_max,
 
 # prior parameters
 dt_sim = (t_max - t_min) / n_steps  # grid size for simulation
-prior_Q, prior_R = rodeo.prior.ibm_init(
+prior_pars = rodeo.prior.ibm_init(
     dt=dt_sim,
     n_deriv=n_deriv,
     sigma=sigma
@@ -135,8 +135,7 @@ Xt, _ = rodeo.solve_mv(
     # solver parameters
     n_steps=n_steps,
     interrogate=rodeo.interrogate.interrogate_kramer,
-    prior_weight=prior_Q,
-    prior_var=prior_R
+    prior_pars=prior_pars
 )
 
 # generate observations
@@ -229,12 +228,12 @@ def fitz_constrain_pars(upars, dt):
     x0 = upars[3:5]
     X0 = fitz_init_pad(x0, 0, theta=theta)
     sigma = upars[5:]
-    Q, R = rodeo.prior.ibm_init(
+    prior_pars = rodeo.prior.ibm_init(
         dt=dt,
         n_deriv=n_deriv,
         sigma=sigma
     )
-    return theta, X0, Q, R
+    return theta, X0, prior_pars
 
 
 def fitz_laplace(key, neglogpost, n_samples, upars_init):
@@ -289,7 +288,7 @@ where in terms of the ODE solver discretization time points $t = t_0, \ldots, t_
 def neglogpost_basic(upars):
     "Negative logposterior for basic approximation."
     # solve ODE
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     # basic loglikelihood
     ll, Xt = rodeo.inference.basic(
         key=key,  # immaterial, since not used
@@ -303,8 +302,7 @@ def neglogpost_basic(upars):
         # solver parameters
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # observations
         obs_data=Y,
         obs_times=obs_times,
@@ -334,11 +332,11 @@ interrogate_chkrebtii_partial = partial(interrogate_chkrebtii, kalman_type="stan
 
 def fitz_logpost_mcmc(upars, key):
     r"""
-    Computes marginal MCMC posterior.
+    Computes the log-posterior of a marginal MCMC algorithm which marginalizes over Xt.
 
     Also returns solution path Xt that was generated.
     """
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     Xt = solve_sim(
         key=key,
         # define ode
@@ -351,8 +349,7 @@ def fitz_logpost_mcmc(upars, key):
         # solver parameters
         n_steps=n_steps,
         interrogate=interrogate_chkrebtii_partial,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
     )
     ode_data = Xt[obs_ind]
     lp = fitz_logprior(upars) + fitz_loglik(Y, ode_data)
@@ -435,7 +432,7 @@ The way to construct a likelihood estimation is very similar to the basic method
 ```{code-cell} ipython3
 def neglogpost_fenrir(upars):
     "Negative logposterior for basic approximation."
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     # fenrir loglikelihood
     ll = rodeo.inference.fenrir(
         key=key,  # immaterial, since not used
@@ -449,8 +446,7 @@ def neglogpost_fenrir(upars):
         # solver
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # gaussian measurement model
         obs_data=obs_data,
         obs_times=obs_times,
@@ -477,7 +473,7 @@ The DALTON approximation [Wu and Lysy (2024)](https://proceedings.mlr.press/v238
 ```{code-cell} ipython3
 def neglogpost_dalton(upars):
     "Negative logposterior for basic approximation."
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     # fenrir loglikelihood
     ll = rodeo.inference.dalton(
         key=key,  # immaterial, since not used
@@ -491,8 +487,7 @@ def neglogpost_dalton(upars):
         # solver
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # gaussian measurement model
         obs_data=obs_data,
         obs_times=obs_times,
@@ -568,7 +563,7 @@ def obs_loglik_i(obs_data_i, ode_data_i, ind, **params):
 
 def neglogpost_daltonng(upars):
     "Negative logposterior for non-Gaussian DALTON approximation."
-    theta, X0, prior_Q, prior_R = fitz_constrain_pars(upars, dt_sim)
+    theta, X0, prior_pars = fitz_constrain_pars(upars, dt_sim)
     # non-Gaussian DALTON loglikelihood
     ll = rodeo.inference.daltonng(
         key=key,  # immaterial, since not used
@@ -582,8 +577,7 @@ def neglogpost_daltonng(upars):
         # solver
         n_steps=n_steps,
         interrogate=rodeo.interrogate.interrogate_kramer,
-        prior_weight=prior_Q,
-        prior_var=prior_R,
+        prior_pars=prior_pars,
         # non-gaussian measurement model
         obs_data=obs_data,
         obs_times=obs_times,

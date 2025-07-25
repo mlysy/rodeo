@@ -28,7 +28,7 @@
 ## rodeo 1.0.0
 
 * Breaking changes:
-    * rodeo now depends on jax and previous Cython/C implementations are completely removed.
+    * rodeo now depends on jax and previous Cython/C++ implementations are completely removed.
     * Standard Kalman algorithm is now under `rodeo.kalmantv.standard` instead of just `rodeo.kalmantv`.
     * The ODE solver in rodeo is now under `rodeo.solve`.
     * The IBM prior only returns `wgt_state`, and `var_state`. That is, `mu_state` is assumed to be 0.
@@ -38,3 +38,14 @@
     * Added square-root Kalman algorithms: `rodeo.kalmantv.square_root`
     * Added new interrogation functions from new research.
     * All ODE solver and parameter inference methods support block-wise computation for efficiency. This is the default option if the IBM prior is used from `rodeo.prior.ibm`.
+
+## rodeo 0.4.0
+
+* Initial release of rodeo: a probabilistic ODE solver based on the Bayesian filtering paradigm with Python frontend and three backends:
+    * C++ using Eigen
+    * Cython using BLAS/LAPACK
+    * numba using BLAS/LAPACK
+* Two methods for parameterizing the Gaussian Markov prior are included: IBM and CAR.
+* Three interrogation functions are included: Chkrebtii, Schobert, and a mix of the two called rodeo.
+* Kalman filtering/smoothing algorithms are written in C++ using Eigen.
+* This version is still available at [rodeo-legacy](https://github.com/mlysy/rodeo-legacy).
