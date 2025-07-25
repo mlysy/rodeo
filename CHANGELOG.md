@@ -39,7 +39,7 @@
     * Added new interrogation functions from new research.
     * All ODE solver and parameter inference methods support block-wise computation for efficiency. This is the default option if the IBM prior is used from `rodeo.prior.ibm`.
 
-## rodeo 0.4.0
+## rodeo 0.4
 
 * Initial release of rodeo: a probabilistic ODE solver based on the Bayesian filtering paradigm with Python frontend and three backends:
     * C++ using Eigen
