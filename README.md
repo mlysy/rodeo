@@ -32,7 +32,9 @@ Detailed examples for their usage can be found in the [Documentation](#documenta
 
 ## Installation
 
-Download the repo from GitHub and then install with the `setup.cfg` script:
+The stable version can be obtained from [PyPI](https://pypi.org/project/rodeo/) and installed with `pip install rodeo`.
+
+To use the latest development version, download the latest version from GitHub:
 ```bash
 git clone https://github.com/mlysy/rodeo.git
 cd rodeo
