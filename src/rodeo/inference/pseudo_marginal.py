@@ -1,8 +1,22 @@
 """
-Implements the user interfaces for Random Walk Rosenbluth-Metropolis-Hastings kernels with auxiliary variables.
-That is, the `logdensity_fn` returns a tuple of which the first element is the log-density, and the second
-is a PyTree containing the auxiliary variables.
-The remainder of this file is nearly identical to `blackjax.mcmc.random_walk.py`. 
+BlackJAX implementation of pseudomarginal MCMC with Random Walk kernels.
+
+The API is nearly identical to that provided by `blackjax.mcmc.random_walk.py`.  The main differences are:
+
+1.  `logdensity_fn` takes two arguments: the PyTree defining the marginal random variables (i.e., the position)
+     and a PRNG key to perform any random sampling inside `logdensity_fn` to obtain the stochastic estimate
+     of the log-density.
+
+2.  The return value of `logdensity_fn` is a tuple of which the first element is the stochastic
+    log-density estimate, and the second are auxiliary variables.  Most commonly, these would be the latent
+    variables which are stochastically marginalized over.
+
+    In this implementation, the second return value is mandatory.  If no auxiliary variables are needed
+    then set this tuple element to `None`.
+
+The remainder of this docstring is copied from `blackjax.mcmc.random_walk.py`.
+
+---
 
 Some interfaces are exposed here for convenience and for entry level users, who might be familiar
 with simpler versions of the algorithms, but in all cases they are particular instantiations
@@ -30,10 +44,10 @@ The variants offered are:
 
     Function: :func:`rmh` with proposal_logdensity_fn.
 
-    
+
 Reference: Andrew Gelman, John B Carlin, Hal S Stern, and Donald B Rubin. Bayesian data analysis. Chapman and Hall/CRC, 2014. Section 11.2
 
-Example:    
+Example:
     The simplest case is:
 
     .. code::
@@ -50,15 +64,15 @@ Example:
         new_state, info = step(rng_key, state)
 
 """
+
 from typing import Callable, NamedTuple, Optional
 
 import jax
-from jax import numpy as jnp
-
 from blackjax.base import SamplingAlgorithm
 from blackjax.mcmc import proposal
-from blackjax.types import Array, ArrayLikeTree, ArrayTree, PRNGKey
 from blackjax.mcmc.random_walk import normal as normal
+from blackjax.types import Array, ArrayLikeTree, ArrayTree, PRNGKey
+from jax import numpy as jnp
 
 # ignore this for now
 # __all__ = [
@@ -124,7 +138,7 @@ class RWAInfo(NamedTuple):
 
     acceptance_rate: float
     """acceptance_rate (float): The acceptance probability of the proposed transition."""
-    
+
     is_accepted: bool
     """Indicates whether the proposed state was accepted."""
 
@@ -158,12 +172,14 @@ def build_additive_step():
     """
 
     def kernel(
-        rng_key: PRNGKey, state: RWAState, logdensity_fn: Callable, random_step: Callable
+        rng_key: PRNGKey,
+        state: RWAState,
+        logdensity_fn: Callable,
+        random_step: Callable,
     ) -> tuple[RWAState, RWAInfo]:
         def proposal_generator(key_proposal, position):
             move_proposal = random_step(key_proposal, position)
-            new_position = jax.tree_util.tree_map(
-                jnp.add, position, move_proposal)
+            new_position = jax.tree_util.tree_map(jnp.add, position, move_proposal)
             return new_position
 
         inner_kernel = build_rmh()
@@ -236,11 +252,11 @@ def build_irmh() -> Callable:
     """
     Build an Independent Random Walk Rosenbluth-Metropolis-Hastings (RMH) kernel.
 
-    This kernel uses a proposal distribution that is independent of the current state, i.e., 
+    This kernel uses a proposal distribution that is independent of the current state, i.e.,
     the new proposed state is sampled independently of the particle's current position.
 
     Returns:
-        (Callable): A function (kernel) that takes a PRNG key and a PyTree containing the 
+        (Callable): A function (kernel) that takes a PRNG key and a PyTree containing the
         current state of the chain and that returns a new state of the chain along with
         information about the transition.
     """
@@ -254,7 +270,7 @@ def build_irmh() -> Callable:
     ) -> tuple[RWAState, RWAInfo]:
         """
         Args:
-            proposal_distribution (Callable): A function that takes a PRNG key and returns a 
+            proposal_distribution (Callable): A function that takes a PRNG key and returns a
                 sample in the same domain as the target distribution.
             proposal_logdensity_fn (Optional[Callable]): A function that returns the log-density
                 of obtaining a given proposal, given the current state. This is required
@@ -333,7 +349,7 @@ def build_rmh():
     """Build a Rosenbluth-Metropolis-Hastings kernel.
 
     Returns:
-        (Callable): A function (kernel) that takes a PRNG key and a PyTree containing the 
+        (Callable): A function (kernel) that takes a PRNG key and a PyTree containing the
         current state of the chain and that returns a new state of the chain along with
         information about the transition.
 
@@ -382,8 +398,7 @@ def build_rmh():
 def rmh_as_top_level_api(
     logdensity_fn: Callable,
     proposal_generator: Callable[[PRNGKey, ArrayLikeTree], ArrayTree],
-    proposal_logdensity_fn: Optional[Callable[[
-        ArrayLikeTree], ArrayTree]] = None,
+    proposal_logdensity_fn: Optional[Callable[[ArrayLikeTree], ArrayTree]] = None,
 ) -> SamplingAlgorithm:
     """
     Implements the user interface for the RMH.
@@ -461,7 +476,7 @@ def rmh_proposal(
         transition_distribution (Callable): A function that takes a random number generator key and the current state, then generates a new proposal.
         compute_acceptance_ratio (Callable): A function to compute the acceptance ratio.
         sample_proposal (Callable): A function to generate the next sample given proposal and previous state.
-    
+
     Returns:
         (Callable): Generator for sample proposals.
     """
@@ -478,6 +493,5 @@ def rmh_proposal(
         )
         do_accept, p_accept, _ = info
         return accepted_state, do_accept, p_accept
-
 
     return generate
