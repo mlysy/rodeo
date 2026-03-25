@@ -7,7 +7,7 @@ The ODE-IVP to be solved is defined as
 
 .. math:: W X_t = f(X_t, t, \theta)
 
-on the time interval :math:`t \in [a, b]` with initial condition :math:`X_a = x_0`.  
+on the time interval :math:`t \in [a, b]` with initial condition :math:`X_a = x_0`.
 
 The stochastic solver proceeds via Kalman filtering and smoothing of "interrogations" of the ODE model as described in Chkrebtii et al 2016, Schober et al 2019.  In the context of the underlying Kalman filterer/smoother, the Gaussian state-space model is
 
@@ -29,38 +29,47 @@ from rodeo.kalmantv.standard import *
 from rodeo.utils import *
 
 
-def interrogate_rodeo(key, ode_fun, ode_weight, t,
-                      mean_state_pred, var_state_pred,
-                      **params):
+def interrogate_rodeo(
+    key, ode_fun, ode_weight, t, mean_state_pred, var_state_pred, **params
+):
 
     n_block, n_bmeas, _ = ode_weight.shape
     var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
     for i in range(n_block):
-        var_meas = var_meas.at[i].set(jnp.linalg.multi_dot([ode_weight[i], var_state_pred[i], ode_weight[i].T]))
+        var_meas = var_meas.at[i].set(
+            jnp.linalg.multi_dot([ode_weight[i], var_state_pred[i], ode_weight[i].T])
+        )
 
     x_meas = -ode_fun(mean_state_pred, t, **params)
     # var_meas = jnp.array(var_meas)
     return jnp.zeros(ode_weight.shape), x_meas, var_meas
 
 
-def interrogate_chkrebtii(key, ode_fun, ode_weight, t,
-                          mean_state_pred, var_state_pred,
-                          **params):
- 
+def interrogate_chkrebtii(
+    key, ode_fun, ode_weight, t, mean_state_pred, var_state_pred, **params
+):
+
     n_block, n_bmeas, n_bstate = ode_weight.shape
-    key, *subkeys = jax.random.split(key, num=n_block+1)
+    key, *subkeys = jax.random.split(key, num=n_block + 1)
     var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
     x_state = jnp.zeros((n_block, n_bstate))
     for i in range(n_block):
-        var_meas = var_meas.at[i].set(jnp.linalg.multi_dot([ode_weight[i], var_state_pred[i], ode_weight[i].T]))
-        x_state = x_state.at[i].set(jax.random.multivariate_normal(subkeys[i], mean_state_pred[i], var_state_pred[i]))
+        var_meas = var_meas.at[i].set(
+            jnp.linalg.multi_dot([ode_weight[i], var_state_pred[i], ode_weight[i].T])
+        )
+        x_state = x_state.at[i].set(
+            jax.random.multivariate_normal(
+                subkeys[i], mean_state_pred[i], var_state_pred[i]
+            )
+        )
     x_meas = -ode_fun(x_state, t, **params)
     # var_meas = jnp.array(var_meas)
     return jnp.zeros(ode_weight.shape), x_meas, var_meas
 
-def interrogate_kramer(key, ode_fun, ode_weight, t,
-                       mean_state_pred, var_state_pred,
-                       **params):
+
+def interrogate_kramer(
+    key, ode_fun, ode_weight, t, mean_state_pred, var_state_pred, **params
+):
 
     n_block, n_bmeas, n_bstate = ode_weight.shape
     fun_meas = -ode_fun(mean_state_pred, t, **params)
@@ -78,11 +87,20 @@ def interrogate_kramer(key, ode_fun, ode_weight, t,
     var_meas = jnp.zeros((n_block, n_bmeas, n_bmeas))
     return wgt_meas, mean_meas, var_meas
 
-def _solve_filter(key, ode_fun,  ode_weight, ode_init,
-                  t_min, t_max, n_steps,
-                  interrogate,
-                  prior_weight, prior_var,
-                  **params):
+
+def _solve_filter(
+    key,
+    ode_fun,
+    ode_weight,
+    ode_init,
+    t_min,
+    t_max,
+    n_steps,
+    interrogate,
+    prior_weight,
+    prior_var,
+    **params
+):
 
     # Dimensions of block, state and measure variables
     n_block, n_bmeas, n_bstate = ode_weight.shape
@@ -90,10 +108,10 @@ def _solve_filter(key, ode_fun,  ode_weight, ode_init,
     # arguments for kalman_filter and kalman_smooth
     mean_meas = jnp.zeros((n_block, n_bmeas))
     mean_state = jnp.zeros((n_block, n_bstate))
-    mean_state_filt = jnp.zeros((n_steps+1, n_block, n_bstate))
-    mean_state_pred = jnp.zeros((n_steps+1, n_block, n_bstate))
-    var_state_filt = jnp.zeros((n_steps+1, n_block, n_bstate, n_bstate))
-    var_state_pred = jnp.zeros((n_steps+1, n_block, n_bstate, n_bstate))
+    mean_state_filt = jnp.zeros((n_steps + 1, n_block, n_bstate))
+    mean_state_pred = jnp.zeros((n_steps + 1, n_block, n_bstate))
+    var_state_filt = jnp.zeros((n_steps + 1, n_block, n_bstate, n_bstate))
+    var_state_pred = jnp.zeros((n_steps + 1, n_block, n_bstate, n_bstate))
 
     # initialize
     mean_state_filt = mean_state_filt.at[0].set(ode_init)
@@ -103,134 +121,164 @@ def _solve_filter(key, ode_fun,  ode_weight, ode_init,
     for t in range(n_steps):
         key, subkey = jax.random.split(key)
         for b in range(n_block):
-            mean_state_temp, var_state_temp = \
-                predict(
-                    mean_state_past=mean_state_filt[t, b],
-                    var_state_past=var_state_filt[t, b],
-                    mean_state=mean_state[b],
-                    wgt_state=prior_weight[b],
-                    var_state=prior_var[b]
-                )
-            mean_state_pred = mean_state_pred.at[t+1, b].set(mean_state_temp)
-            var_state_pred = var_state_pred.at[t+1, b].set(var_state_temp)
+            mean_state_temp, var_state_temp = predict(
+                mean_state_past=mean_state_filt[t, b],
+                var_state_past=var_state_filt[t, b],
+                mean_state=mean_state[b],
+                wgt_state=prior_weight[b],
+                var_state=prior_var[b],
+            )
+            mean_state_pred = mean_state_pred.at[t + 1, b].set(mean_state_temp)
+            var_state_pred = var_state_pred.at[t + 1, b].set(var_state_temp)
         # model interrogation
         wgt_meas, mean_meas, var_meas = interrogate(
             key=subkey,
             ode_fun=ode_fun,
             ode_weight=ode_weight,
-            t=t_min + (t_max-t_min)*(t+1)/n_steps,
-            mean_state_pred=mean_state_pred[t+1],
-            var_state_pred=var_state_pred[t+1],
+            t=t_min + (t_max - t_min) * (t + 1) / n_steps,
+            mean_state_pred=mean_state_pred[t + 1],
+            var_state_pred=var_state_pred[t + 1],
             **params
         )
         for b in range(n_block):
             # kalman update
-            mean_state_temp, var_state_temp = \
-                update(
-                    mean_state_pred=mean_state_pred[t+1, b],
-                    var_state_pred=var_state_pred[t+1, b],
-                    x_meas=x_meas[b],
-                    mean_meas=mean_meas[b],
-                    wgt_meas=wgt_meas[b]+ode_weight[b],
-                    var_meas=var_meas[b]
-                )
-            mean_state_filt = mean_state_filt.at[t+1, b].set(mean_state_temp)
-            var_state_filt = var_state_filt.at[t+1, b].set(var_state_temp)
+            mean_state_temp, var_state_temp = update(
+                mean_state_pred=mean_state_pred[t + 1, b],
+                var_state_pred=var_state_pred[t + 1, b],
+                x_meas=x_meas[b],
+                mean_meas=mean_meas[b],
+                wgt_meas=wgt_meas[b] + ode_weight[b],
+                var_meas=var_meas[b],
+            )
+            mean_state_filt = mean_state_filt.at[t + 1, b].set(mean_state_temp)
+            var_state_filt = var_state_filt.at[t + 1, b].set(var_state_temp)
     return mean_state_pred, var_state_pred, mean_state_filt, var_state_filt
 
 
-def solve_sim(key, ode_fun,  ode_weight, ode_init,
-              t_min, t_max, n_steps,
-              interrogate,
-              prior_pars,
-              **params):
-    
+def solve_sim(
+    key,
+    ode_fun,
+    ode_weight,
+    ode_init,
+    t_min,
+    t_max,
+    n_steps,
+    interrogate,
+    prior_pars,
+    **params
+):
+
     prior_weight, prior_var = prior_pars
     n_block, n_bstate, _ = prior_weight.shape
-    key, *subkeys = jax.random.split(key, num=n_steps+1)
-    subkeys = jnp.array(subkeys)
-    x_state_smooth = jnp.zeros((n_steps+1, n_block, n_bstate))
+    key1, key2 = jax.random.split(key)
+    # key, *subkeys = jax.random.split(key, num=n_steps+1)
+    # subkeys = jnp.array(subkeys)
+    x_state_smooth = jnp.zeros((n_steps + 1, n_block, n_bstate))
     x_state_smooth = x_state_smooth.at[0].set(ode_init)
 
     # forward pass
-    mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = \
-        _solve_filter(
-            key=key,
-            ode_fun=ode_fun, ode_weight=ode_weight, ode_init=ode_init,
-            t_min=t_min, t_max=t_max, n_steps=n_steps, 
-            interrogate=interrogate,
-            prior_weight=prior_weight, prior_var=prior_var,
-            **params   
+    mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = _solve_filter(
+        key=key1,
+        ode_fun=ode_fun,
+        ode_weight=ode_weight,
+        ode_init=ode_init,
+        t_min=t_min,
+        t_max=t_max,
+        n_steps=n_steps,
+        interrogate=interrogate,
+        prior_weight=prior_weight,
+        prior_var=prior_var,
+        **params
     )
 
+    subkeys = jax.random.split(key2, num=n_steps + 1)
     x_state_smooth = x_state_smooth.at[n_steps].set(
         jax.random.multivariate_normal(
-            subkeys[n_steps-1],
+            # subkeys[n_steps - 1],
+            subkeys[n_steps],
             mean_state_filt[n_steps],
             var_state_filt[n_steps],
-            method='svd')
+            method="svd",
         )
+    )
 
-    for t in range(n_steps-1, 0, -1):
+    for t in range(n_steps - 1, 0, -1):
         mean_state_temp = jnp.zeros((n_block, n_bstate))
         var_state_temp = jnp.zeros((n_block, n_bstate, n_bstate))
         for b in range(n_block):
             mean_state_sim, var_state_sim = smooth_sim(
-                    x_state_next=x_state_smooth[t+1, b],
-                    wgt_state=prior_weight[b],
-                    mean_state_filt=mean_state_filt[t, b],
-                    var_state_filt=var_state_filt[t, b],
-                    mean_state_pred=mean_state_pred[t+1, b],
-                    var_state_pred=var_state_pred[t+1, b]
-                )
+                x_state_next=x_state_smooth[t + 1, b],
+                wgt_state=prior_weight[b],
+                mean_state_filt=mean_state_filt[t, b],
+                var_state_filt=var_state_filt[t, b],
+                mean_state_pred=mean_state_pred[t + 1, b],
+                var_state_pred=var_state_pred[t + 1, b],
+            )
             mean_state_temp = mean_state_temp.at[b].set(mean_state_sim)
             var_state_temp = var_state_temp.at[b].set(var_state_sim)
         x_state_smooth = x_state_smooth.at[t].set(
-            jax.random.multivariate_normal(subkeys[t-1], mean_state_temp , var_state_temp, method='svd'))
-    
+            jax.random.multivariate_normal(
+                subkeys[t],
+                mean_state_temp,
+                var_state_temp,
+                method="svd",
+                # subkeys[t - 1], mean_state_temp, var_state_temp, method="svd"
+            )
+        )
+
     # x_state_smooth = jnp.reshape(x_state_smooth, newshape=(-1, n_block*n_bstate))
     return x_state_smooth
 
-def solve_mv(key, ode_fun,  ode_weight, ode_init,
-             t_min, t_max, n_steps,
-             interrogate,
-             prior_pars,
-             **params):
+
+def solve_mv(
+    key,
+    ode_fun,
+    ode_weight,
+    ode_init,
+    t_min,
+    t_max,
+    n_steps,
+    interrogate,
+    prior_pars,
+    **params
+):
 
     prior_weight, prior_var = prior_pars
     n_block, n_bstate, _ = prior_weight.shape
-    mean_state_smooth = jnp.zeros((n_steps+1, n_block, n_bstate))
+    mean_state_smooth = jnp.zeros((n_steps + 1, n_block, n_bstate))
     mean_state_smooth = mean_state_smooth.at[0].set(ode_init)
-    var_state_smooth = jnp.zeros((n_steps+1, n_block, n_bstate, n_bstate))
+    var_state_smooth = jnp.zeros((n_steps + 1, n_block, n_bstate, n_bstate))
 
     # forward pass
-    mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = \
-        _solve_filter(
-            key=key,
-            ode_fun=ode_fun, ode_weight=ode_weight, ode_init=ode_init,
-            t_min=t_min, t_max=t_max, n_steps=n_steps, 
-            interrogate=interrogate,
-            prior_weight=prior_weight, prior_var=prior_var,
-            **params   
+    mean_state_pred, var_state_pred, mean_state_filt, var_state_filt = _solve_filter(
+        key=key,
+        ode_fun=ode_fun,
+        ode_weight=ode_weight,
+        ode_init=ode_init,
+        t_min=t_min,
+        t_max=t_max,
+        n_steps=n_steps,
+        interrogate=interrogate,
+        prior_weight=prior_weight,
+        prior_var=prior_var,
+        **params
     )
-    
+
     mean_state_smooth = mean_state_smooth.at[-1].set(mean_state_filt[-1])
     var_state_smooth = var_state_smooth.at[-1].set(var_state_filt[-1])
     # backward pass
-    for t in range(n_steps-1, 0, -1):
+    for t in range(n_steps - 1, 0, -1):
         for b in range(n_block):
-            mean_state_temp, var_state_temp = \
-                smooth_mv(
-                    mean_state_next=mean_state_smooth[t+1, b],
-                    var_state_next=var_state_smooth[t+1, b],
-                    wgt_state=prior_weight[b],
-                    mean_state_filt=mean_state_filt[t, b],
-                    var_state_filt=var_state_filt[t, b],
-                    mean_state_pred=mean_state_pred[t+1, b],
-                    var_state_pred=var_state_pred[t+1, b],
+            mean_state_temp, var_state_temp = smooth_mv(
+                mean_state_next=mean_state_smooth[t + 1, b],
+                var_state_next=var_state_smooth[t + 1, b],
+                wgt_state=prior_weight[b],
+                mean_state_filt=mean_state_filt[t, b],
+                var_state_filt=var_state_filt[t, b],
+                mean_state_pred=mean_state_pred[t + 1, b],
+                var_state_pred=var_state_pred[t + 1, b],
             )
             mean_state_smooth = mean_state_smooth.at[t, b].set(mean_state_temp)
             var_state_smooth = var_state_smooth.at[t, b].set(var_state_temp)
 
     return mean_state_smooth, var_state_smooth
-
