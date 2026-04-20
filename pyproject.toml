@@ -74,5 +74,5 @@ test = [
 env = [
     "JAX_ENABLE_X64=True",
 ]
-addopts = "--ignore=tests/local"
+addopts = "--ignore=tests/local --ignore=tests/interactive"
 testpaths = ["tests"]
